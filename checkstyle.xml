@@ -1,0 +1,93 @@
+<?xml version="1.0"?>
+<!DOCTYPE module PUBLIC
+    "-//Checkstyle//DTD Checkstyle Configuration 1.3//EN"
+    "https://checkstyle.org/dtds/configuration_1_3.dtd">
+<!--
+  Khatm platform Checkstyle configuration.
+  Scope: structural rules only. Formatting is enforced by Spotless (google-java-format).
+  Rules here cover: naming, forbidden patterns, package declarations.
+-->
+<module name="Checker">
+  <property name="charset" value="UTF-8"/>
+  <property name="severity" value="error"/>
+  <property name="fileExtensions" value="java"/>
+
+  <!-- Require files end with a newline (Spotless also enforces this) -->
+  <module name="NewlineAtEndOfFile"/>
+
+  <!-- No tab characters (Spotless also enforces 2-space indent) -->
+  <module name="FileTabCharacter">
+    <property name="eachLine" value="true"/>
+  </module>
+
+  <module name="TreeWalker">
+
+    <!-- ── Naming conventions (CONVENTIONS.md §2) ── -->
+    <module name="PackageName">
+      <!-- All lowercase, dot-separated, no underscores -->
+      <property name="format" value="^[a-z]+(\.[a-z][a-z0-9]*)*$"/>
+    </module>
+    <module name="TypeName">
+      <!-- UpperCamelCase -->
+      <property name="format" value="^[A-Z][a-zA-Z0-9]*$"/>
+    </module>
+    <module name="MethodName">
+      <!-- lowerCamelCase -->
+      <property name="format" value="^[a-z][a-zA-Z0-9]*$"/>
+    </module>
+    <module name="ParameterName">
+      <property name="format" value="^[a-z][a-zA-Z0-9]*$"/>
+    </module>
+    <module name="LocalVariableName">
+      <property name="format" value="^[a-z][a-zA-Z0-9]*$"/>
+    </module>
+    <module name="MemberName">
+      <property name="format" value="^[a-z][a-zA-Z0-9]*$"/>
+    </module>
+    <module name="StaticVariableName">
+      <property name="format" value="^[a-z][a-zA-Z0-9]*$"/>
+    </module>
+    <module name="ConstantName">
+      <!--
+        UPPER_SNAKE_CASE for static final fields.
+        Logger fields (log / logger) are static final but are NOT true constants per
+        Google Java Style Guide §5.2.4 — allow both conventions.
+      -->
+      <property name="format"
+                value="^(log|logger|LOG|LOGGER)|([A-Z][A-Z0-9]*(_[A-Z0-9]+)*)$"/>
+    </module>
+
+    <!-- ── Forbidden patterns (security/quality guardrails) ── -->
+    <!-- Never swallow exceptions silently -->
+    <module name="RegexpSinglelineJava">
+      <property name="format" value="catch\s*\(\s*Exception\s+\w+\s*\)\s*\{\s*\}"/>
+      <property name="message" value="Empty catch blocks are forbidden (CLAUDE.md work rule 3)."/>
+    </module>
+    <!-- Never throw raw RuntimeException -->
+    <module name="RegexpSinglelineJava">
+      <property name="format" value="throw\s+new\s+RuntimeException\("/>
+      <property name="message" value="Throw a KhatmException subtype, not raw RuntimeException (CLAUDE.md work rule 3)."/>
+    </module>
+
+    <!-- ── Import hygiene ── -->
+    <module name="AvoidStarImport"/>
+    <module name="UnusedImports"/>
+    <module name="RedundantImport"/>
+    <module name="IllegalImport">
+      <!-- Block sun.* internal APIs -->
+      <property name="illegalPkgs" value="sun"/>
+    </module>
+
+    <!-- ── Code structure ── -->
+    <!-- No multiple variable declarations on one line -->
+    <module name="MultipleVariableDeclarations"/>
+    <!-- One top-level type per file -->
+    <module name="OneTopLevelClass"/>
+    <!-- Require package declaration -->
+    <module name="PackageDeclaration"/>
+
+    <!-- ── Modifier order (standard Java order) ── -->
+    <module name="ModifierOrder"/>
+
+  </module>
+</module>
