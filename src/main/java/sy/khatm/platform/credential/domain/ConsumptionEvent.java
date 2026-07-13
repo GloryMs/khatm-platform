@@ -6,12 +6,15 @@ import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.time.Instant;
 import java.util.UUID;
+import sy.khatm.platform.shared.Uuidv7;
 
 /**
  * Immutable record of a single credential consumption.
  *
- * <p>Written once when a consumption succeeds; never updated or deleted. Effectively append-only at
- * the application level (full append-only enforcement via DB trigger arrives in KH-0.6 / KH-1.5).
+ * <p>Written once when a consumption succeeds; never updated or deleted. {@code idempotencyKey} is
+ * the durable fallback for the double-submit guard — the Redis cache in {@code CredentialService}
+ * is only a fast path (spec FS-0.2 §3.9). {@code merkleLeaf} / {@code receiptSig} stay {@code null}
+ * until offline consumption receipts arrive (Phase 3).
  *
  * <p>This class is module-private.
  */
@@ -21,26 +24,34 @@ public class ConsumptionEvent {
 
   @Id private UUID id;
 
+  @Column(name = "tenant_id", nullable = false)
+  private UUID tenantId;
+
   @Column(name = "credential_id", nullable = false)
   private UUID credentialId;
 
-  /** Consumer organisation code or device identifier. Never a personal name (P1 rule). */
+  @Column(name = "consuming_party_id", nullable = false)
+  private UUID consumingPartyId;
+
+  @Column(name = "idempotency_key", nullable = false, unique = true)
+  private String idempotencyKey;
+
+  /** {@code ONLINE} or {@code OFFLINE} — records which verification path was used. */
   @Column(nullable = false)
-  private String consumer;
+  private String mode;
 
   @Column(name = "consumed_at", nullable = false)
   private Instant consumedAt;
 
-  /** {@code online} or {@code offline} — records which verification path was used. */
-  @Column(nullable = false)
-  private String mode;
-
   public ConsumptionEvent() {}
 
-  public ConsumptionEvent(UUID credentialId, String consumer, String mode) {
-    this.id = UUID.randomUUID();
+  public ConsumptionEvent(
+      UUID tenantId, UUID credentialId, UUID consumingPartyId, String idempotencyKey, String mode) {
+    this.id = Uuidv7.generate();
+    this.tenantId = tenantId;
     this.credentialId = credentialId;
-    this.consumer = consumer;
+    this.consumingPartyId = consumingPartyId;
+    this.idempotencyKey = idempotencyKey;
     this.mode = mode;
     this.consumedAt = Instant.now();
   }
@@ -49,19 +60,27 @@ public class ConsumptionEvent {
     return id;
   }
 
+  public UUID getTenantId() {
+    return tenantId;
+  }
+
   public UUID getCredentialId() {
     return credentialId;
   }
 
-  public String getConsumer() {
-    return consumer;
+  public UUID getConsumingPartyId() {
+    return consumingPartyId;
   }
 
-  public Instant getConsumedAt() {
-    return consumedAt;
+  public String getIdempotencyKey() {
+    return idempotencyKey;
   }
 
   public String getMode() {
     return mode;
+  }
+
+  public Instant getConsumedAt() {
+    return consumedAt;
   }
 }

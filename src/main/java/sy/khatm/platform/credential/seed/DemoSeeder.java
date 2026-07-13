@@ -1,6 +1,8 @@
 package sy.khatm.platform.credential.seed;
 
+import java.time.Duration;
 import java.util.Map;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
@@ -8,10 +10,12 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 import sy.khatm.platform.credential.api.IssueRequest;
 import sy.khatm.platform.credential.api.IssueResponse;
+import sy.khatm.platform.credential.domain.ClaimCodeIssued;
 import sy.khatm.platform.credential.domain.CredentialService;
 
 /**
- * Seeds one demo credential at startup.
+ * Seeds one demo credential end-to-end at startup: schema + holder + credential + claim code (spec
+ * FS-0.2 §5 acceptance criterion 2).
  *
  * <p>Active only in {@code local} and {@code dev} Spring profiles. Never runs in production.
  */
@@ -30,7 +34,7 @@ class DemoSeeder implements CommandLineRunner {
   @Override
   public void run(String... args) {
     try {
-      IssueResponse r =
+      IssueResponse issued =
           service.issue(
               new IssueRequest(
                   "CriminalRecordExtract/v1",
@@ -38,10 +42,13 @@ class DemoSeeder implements CommandLineRunner {
                   1,
                   60,
                   Map.of("result", "NO_RECORD")));
+      ClaimCodeIssued claim =
+          service.issueClaimCode(UUID.fromString(issued.id()), Duration.ofMinutes(15));
       log.info("========================================================");
       log.info("  Khatm platform ready. Seeded demo credential:");
-      log.info("   id  = {}", r.id());
-      log.info("   ref = {}", r.ref());
+      log.info("   id         = {}", issued.id());
+      log.info("   ref        = {}", issued.ref());
+      log.info("   claimCode  = {} (expires {})", claim.code(), claim.expiresAt());
       log.info("========================================================");
     } catch (Exception e) {
       log.warn("Demo seeder skipped: {}", e.getMessage());

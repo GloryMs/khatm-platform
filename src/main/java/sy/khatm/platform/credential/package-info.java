@@ -13,10 +13,22 @@
  * <p><b>Published events:</b> {@code CredentialIssued}, {@code CredentialConsumed}, {@code
  * CredentialRevoked} (future — KH-1.3)
  *
- * <p><b>Tables owned:</b> {@code credential}, {@code consumption_event}
+ * <p><b>Tables owned:</b> {@code credential}, {@code consumption_event}, {@code claim_code}
  *
  * <p><b>Cross-module dependencies:</b> {@code key :: api} ({@link
- * sy.khatm.platform.key.api.KeySigner}) for JWT signing.
+ * sy.khatm.platform.key.api.KeySigner}) for JWT signing; {@code schema :: api}, {@code holder ::
+ * api}, {@code status :: api}, {@code consumer :: api} — issuing/consuming a credential must
+ * resolve the schema, holder, status-list allocation, and consuming party its foreign keys point at
+ * (KH-0.2.1 baseline schema, spec FS-0.2 §3.6/§3.9); {@code shared} (its open root package — {@link
+ * sy.khatm.platform.shared.TenantContext}, {@link sy.khatm.platform.shared.Uuidv7}).
  */
-@org.springframework.modulith.ApplicationModule(allowedDependencies = "key :: api")
+@org.springframework.modulith.ApplicationModule(
+    allowedDependencies = {
+      "key :: api",
+      "schema :: api",
+      "holder :: api",
+      "status :: api",
+      "consumer :: api",
+      "shared"
+    })
 package sy.khatm.platform.credential;
