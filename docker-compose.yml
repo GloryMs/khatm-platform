@@ -1,0 +1,67 @@
+# khatm-platform — local dev compose (IntelliJ)
+# Prereq (once): docker network create khatm-net
+name: khatm-platform
+
+services:
+  khatm-postgres:
+    image: postgres:16
+    container_name: khatm-postgres
+    environment:
+      POSTGRES_DB: khatm
+      POSTGRES_USER: khatm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-khatm_local_only}
+    ports: ["5432:5432"]          # exposed for IntelliJ DB tools
+    volumes: [khatm_pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U khatm -d khatm"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [khatm-net]
+
+  khatm-redis:
+    image: redis:7
+    container_name: khatm-redis
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [khatm-net]
+
+  khatm-api:
+    build: .
+    container_name: khatm-api
+    environment:
+      SPRING_PROFILES_ACTIVE: local,api
+      SPRING_DATASOURCE_URL: jdbc:postgresql://khatm-postgres:5432/khatm
+      SPRING_DATASOURCE_USERNAME: khatm
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-khatm_local_only}
+      SPRING_DATA_REDIS_HOST: khatm-redis
+    ports: ["8080:8080"]
+    depends_on:
+      khatm-postgres: { condition: service_healthy }
+      khatm-redis:    { condition: service_healthy }
+    networks: [khatm-net]
+
+  khatm-worker:
+    build: .
+    container_name: khatm-worker
+    environment:
+      SPRING_PROFILES_ACTIVE: local,worker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://khatm-postgres:5432/khatm
+      SPRING_DATASOURCE_USERNAME: khatm
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-khatm_local_only}
+      SPRING_DATA_REDIS_HOST: khatm-redis
+    depends_on:
+      khatm-postgres: { condition: service_healthy }
+      khatm-redis:    { condition: service_healthy }
+    networks: [khatm-net]
+
+volumes:
+  khatm_pgdata:
+
+networks:
+  khatm-net:
+    external: true

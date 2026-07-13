@@ -1,0 +1,26 @@
+# ---- SECURITY: keys & secrets must NEVER be committed ----
+*.jks
+*.p12
+*.pem
+*.key
+*.keystore
+keystore/
+secrets/
+.env
+.env.*
+!.env.example
+
+# Build
+target/
+build/
+*.class
+
+# IDE
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# Logs & local data
+logs/
+*.log

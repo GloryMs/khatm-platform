@@ -1,0 +1,27 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/khatm}
+    username: ${SPRING_DATASOURCE_USERNAME:khatm}
+    password: ${SPRING_DATASOURCE_PASSWORD:khatm}
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:localhost}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+
+khatm:
+  issuer-did: "did:web:khatm.sy:demo"
+  key-id: "khatm-key-1"
+
+logging:
+  level:
+    sy.khatm: INFO
