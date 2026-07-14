@@ -125,3 +125,6 @@ migration — append a new one."* KH-0.2.2 makes this build-enforced, not just a
 - A PR introducing or modifying core invariant logic (atomic consume, idempotency, key
   signing, status-list allocation) MUST include its concurrency/correctness test in the
   same PR. No downstream-PR exceptions after 2026-07-13.
+- CI must be green before merge. `.github/workflows/ci.yml` (KH-0.3.1) runs the migration
+  checksum guard, then `mvn verify` (Spotless, Checkstyle, Modulith boundaries, all tests) on
+  every PR into `main` and every push to `main` — a red run blocks merging, no exceptions.

@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Build and verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # KH-0.2.2 — fail fast, cheap, no JVM needed: catch an edited/deleted/unregistered
+      # migration before spending time on a JDK setup and dependency download.
+      - name: Check migration checksums (append-only guard)
+        run: ./scripts/check-migration-checksums.sh
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      # Full gate: Spotless, Checkstyle, Modulith boundaries, unit + Testcontainers tests.
+      # Testcontainers needs Docker, which ubuntu-latest runners have preinstalled.
+      - name: Build and test (mvn verify)
+        run: mvn -B verify
