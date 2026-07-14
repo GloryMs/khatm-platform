@@ -1,0 +1,7 @@
+# Force LF for files whose bytes are hashed or executed as scripts, so behavior is identical
+# regardless of the checking-out OS/git config. Without this, a Windows clone (core.autocrlf=true)
+# and a Linux CI runner can end up with different line endings for the "same" file, which would
+# break MigrationImmutabilityTest's checksums (KH-0.2.2) and shell script shebangs.
+*.sql text eol=lf
+*.sh text eol=lf
+*.lock text eol=lf

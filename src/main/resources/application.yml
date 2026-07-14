@@ -22,6 +22,13 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration
+    # KH-0.2.2: explicit even though it's Flyway's own default — this is the runtime half of
+    # the append-only migration guard. MigrationImmutabilityTest catches edits to an applied
+    # migration at build time by comparing checksums against db/migration-checksums.lock;
+    # validate-on-migrate catches the same class of drift at startup against whatever a real
+    # database's flyway_schema_history table actually recorded, so a modified migration file
+    # fails fast even if someone bypasses the build-time check.
+    validate-on-migrate: true
 
 khatm:
   issuer-did: "did:web:khatm.sy:demo"
