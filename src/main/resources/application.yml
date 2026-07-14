@@ -8,6 +8,8 @@ spring:
     password: ${SPRING_DATASOURCE_PASSWORD:khatm}
   jpa:
     hibernate:
+      # KH-0.2.1 will switch this to 'validate' once Flyway migrations are in place.
+      # 'update' is kept for the current dev cycle to avoid requiring Flyway during KH-0.1.x.
       ddl-auto: update
     open-in-view: false
     properties:

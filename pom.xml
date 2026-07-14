@@ -12,16 +12,34 @@
   </parent>
 
   <groupId>sy.khatm</groupId>
-  <artifactId>khatm-poc-api</artifactId>
-  <version>0.1.0</version>
-  <name>khatm-poc-api</name>
-  <description>Khatm — verifiable documents POC API</description>
+  <artifactId>khatm-platform</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <name>khatm-platform</name>
+  <description>Khatm — enterprise digital document trust fabric (backend platform)</description>
 
   <properties>
     <java.version>17</java.version>
+    <spring-modulith.version>1.2.4</spring-modulith.version>
+    <spotless.version>2.43.0</spotless.version>
+    <google-java-format.version>1.22.0</google-java-format.version>
+    <checkstyle.version>3.3.1</checkstyle.version>
+    <checkstyle-tool.version>10.12.4</checkstyle-tool.version>
   </properties>
 
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.springframework.modulith</groupId>
+        <artifactId>spring-modulith-bom</artifactId>
+        <version>${spring-modulith.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
   <dependencies>
+    <!-- Spring Boot starters -->
     <dependency>
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-web</artifactId>
@@ -35,23 +53,124 @@
       <artifactId>spring-boot-starter-data-redis</artifactId>
     </dependency>
     <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-validation</artifactId>
+    </dependency>
+
+    <!-- Spring Modulith — structural enforcement + event infrastructure -->
+    <dependency>
+      <groupId>org.springframework.modulith</groupId>
+      <artifactId>spring-modulith-starter-core</artifactId>
+    </dependency>
+
+    <!-- Database -->
+    <dependency>
       <groupId>org.postgresql</groupId>
       <artifactId>postgresql</artifactId>
       <scope>runtime</scope>
     </dependency>
+
     <!-- JOSE / JWT signing (ES256) -->
     <dependency>
       <groupId>com.nimbusds</groupId>
       <artifactId>nimbus-jose-jwt</artifactId>
       <version>9.40</version>
     </dependency>
+
+    <!-- Test -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.modulith</groupId>
+      <artifactId>spring-modulith-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>
     <plugins>
+      <!-- Spring Boot packaging -->
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+
+      <!--
+        Spotless — enforces google-java-format on every .java file.
+        Run `mvn spotless:apply` to auto-format; `mvn spotless:check` to verify.
+        Bound to validate phase so it fails fast before compilation.
+      -->
+      <plugin>
+        <groupId>com.diffplug.spotless</groupId>
+        <artifactId>spotless-maven-plugin</artifactId>
+        <version>${spotless.version}</version>
+        <configuration>
+          <java>
+            <includes>
+              <include>src/main/java/**/*.java</include>
+              <include>src/test/java/**/*.java</include>
+            </includes>
+            <googleJavaFormat>
+              <version>${google-java-format.version}</version>
+              <style>GOOGLE</style>
+              <reflowLongStrings>true</reflowLongStrings>
+            </googleJavaFormat>
+            <removeUnusedImports/>
+            <trimTrailingWhitespace/>
+            <endWithNewline/>
+          </java>
+        </configuration>
+        <executions>
+          <execution>
+            <id>spotless-check</id>
+            <phase>validate</phase>
+            <goals>
+              <goal>check</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!--
+        Checkstyle — structural rules (naming, Javadoc on API surface,
+        forbidden patterns). Formatting is handled by Spotless above.
+        Bound to validate phase alongside Spotless.
+      -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-checkstyle-plugin</artifactId>
+        <version>${checkstyle.version}</version>
+        <dependencies>
+          <dependency>
+            <groupId>com.puppycrawl.tools</groupId>
+            <artifactId>checkstyle</artifactId>
+            <version>${checkstyle-tool.version}</version>
+          </dependency>
+        </dependencies>
+        <configuration>
+          <configLocation>checkstyle.xml</configLocation>
+          <consoleOutput>true</consoleOutput>
+          <failsOnError>true</failsOnError>
+          <includeTestSourceDirectory>true</includeTestSourceDirectory>
+          <sourceDirectories>
+            <sourceDirectory>${project.build.sourceDirectory}</sourceDirectory>
+          </sourceDirectories>
+          <testSourceDirectories>
+            <testSourceDirectory>${project.build.testSourceDirectory}</testSourceDirectory>
+          </testSourceDirectories>
+        </configuration>
+        <executions>
+          <execution>
+            <id>checkstyle-check</id>
+            <phase>validate</phase>
+            <goals>
+              <goal>check</goal>
+            </goals>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>
