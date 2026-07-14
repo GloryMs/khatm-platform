@@ -15,4 +15,5 @@
  * <p><b>Status:</b> minimal persistence + atomic bit allocation (KH-0.2.1); bitstring publication,
  * revoke-time bit flipping, capacity rollover deferred to KH-1.3.
  */
+@org.springframework.modulith.ApplicationModule
 package sy.khatm.platform.status;

@@ -16,4 +16,5 @@
  *
  * <p><b>Status:</b> stub — Java implementation deferred to KH-0.6 / KH-2.x.
  */
+@org.springframework.modulith.ApplicationModule
 package sy.khatm.platform.rbac;

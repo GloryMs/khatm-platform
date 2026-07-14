@@ -16,4 +16,5 @@
  * <p><b>Status:</b> minimal persistence + find-or-create API (KH-0.2.1); authoring workflow, claim
  * validation, versioning rules deferred to KH-1.x.
  */
+@org.springframework.modulith.ApplicationModule
 package sy.khatm.platform.schema;

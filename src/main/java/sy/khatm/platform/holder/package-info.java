@@ -15,4 +15,5 @@
  * <p><b>Status:</b> minimal persistence + find-or-create API (KH-0.2.1); wallet key-binding ({@code
  * wallet_jwk}) deferred to Phase 3.
  */
+@org.springframework.modulith.ApplicationModule
 package sy.khatm.platform.holder;

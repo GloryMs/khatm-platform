@@ -78,6 +78,7 @@ public class CredentialService {
   private final StatusListAllocator statusLists;
   private final ConsumingPartyRegistry consumingParties;
   private final StringRedisTemplate redis;
+  private final CredentialMapper mapper;
 
   @Value("${khatm.issuer-did:did:web:khatm.sy:demo}")
   private String issuerDid;
@@ -91,7 +92,8 @@ public class CredentialService {
       HolderDirectory holders,
       StatusListAllocator statusLists,
       ConsumingPartyRegistry consumingParties,
-      StringRedisTemplate redis) {
+      StringRedisTemplate redis,
+      CredentialMapper mapper) {
     this.credentials = credentials;
     this.events = events;
     this.claimCodes = claimCodes;
@@ -101,6 +103,7 @@ public class CredentialService {
     this.statusLists = statusLists;
     this.consumingParties = consumingParties;
     this.redis = redis;
+    this.mapper = mapper;
   }
 
   // ── Issue ────────────────────────────────────────────────────────────────
@@ -287,20 +290,7 @@ public class CredentialService {
   }
 
   public Optional<CredentialView> getView(UUID id) {
-    return credentials.findById(id).map(this::toView);
-  }
-
-  private CredentialView toView(Credential c) {
-    String schemaCode = schemas.findById(c.getSchemaId()).map(SchemaRef::code).orElse(null);
-    return new CredentialView(
-        c.getId().toString(),
-        c.getRef(),
-        schemaCode,
-        c.getUsesRemaining(),
-        c.getMaxUses(),
-        c.isRevoked(),
-        c.getValidTo(),
-        c.getSignedPayload());
+    return credentials.findById(id).map(mapper::toView);
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

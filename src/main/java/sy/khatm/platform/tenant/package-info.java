@@ -15,4 +15,5 @@
  *
  * <p><b>Status:</b> persistence only — business logic (create/suspend, quotas) deferred to KH-2.x.
  */
+@org.springframework.modulith.ApplicationModule
 package sy.khatm.platform.tenant;

@@ -14,4 +14,5 @@
  *
  * <p><b>Status:</b> stub — implementation deferred to Phase 3.
  */
+@org.springframework.modulith.ApplicationModule
 package sy.khatm.platform.ledger;
