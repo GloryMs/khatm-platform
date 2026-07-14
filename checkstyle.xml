@@ -32,8 +32,12 @@
       <property name="format" value="^[A-Z][a-zA-Z0-9]*$"/>
     </module>
     <module name="MethodName">
-      <!-- lowerCamelCase -->
-      <property name="format" value="^[a-z][a-zA-Z0-9]*$"/>
+      <!--
+        lowerCamelCase, with optional underscore-separated segments so test methods can
+        follow CONVENTIONS.md §7's methodName_condition_expectedResult convention (Google
+        Java Style Guide §5.2.3 explicitly permits this for test method names).
+      -->
+      <property name="format" value="^[a-z][a-zA-Z0-9]*(_[a-zA-Z0-9]+)*$"/>
     </module>
     <module name="ParameterName">
       <property name="format" value="^[a-z][a-zA-Z0-9]*$"/>

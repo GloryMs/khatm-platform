@@ -12,4 +12,5 @@
  *
  * <p><b>Status:</b> stub — implementation deferred to KH-1.x.
  */
+@org.springframework.modulith.ApplicationModule
 package sy.khatm.platform.connector;

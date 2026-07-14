@@ -24,6 +24,11 @@ src/main/resources/
 - Services: `<Concept>Service`; mappers: `<Concept>Mapper`; events: past tense (`CredentialIssued`).
 - Error codes: `KH-<MOD>-<NNNN>`; module tags: TEN, KEY, SCH, CRD, STS, LDG, HLD, CNS, RBC, CON, SYS.
 - REST: `/api/v1/<plural-resource>`; path params are opaque refs, never DB ids.
+- Checkstyle exceptions (documented here, not just in `checkstyle.xml`): the `ConstantName`
+  rule permits `log`/`logger` in addition to `UPPER_SNAKE_CASE` (logger fields are mutable
+  state, not true constants — Google Java Style Guide §5.2.4); the `MethodName` rule permits
+  underscore-separated segments after the initial lowerCamelCase start, so the test naming
+  convention in §7 (`methodName_condition_expectedResult`) is actually enforceable.
 
 ## 3. The i18n pattern (rule 2) — exactly this, everywhere
 - **Stored display names** → JSONB column `name_i18n` mapped to `LocalizedText` record
@@ -58,11 +63,19 @@ throw new NotFoundException(ErrorCode.KH_CRD_0404, "credential.not-found", ref);
 - Optimistic locking (`@Version`) on mutable aggregates; the consume path relies on the
   conditional UPDATE, not on versions.
 - Pagination mandatory on list endpoints (`Pageable`, max 200).
+- JPA entities are `public` classes with `public` accessors — Java visibility alone cannot
+  express Modulith module-privacy. Keeping an entity out of another module's reach is
+  `ModulithBoundariesTest`'s job (it lives in `domain/`, a module-private sub-package), not
+  the entity's own access modifiers.
 
 ## 6. Async pattern (ADR-09) — exactly this
 - Publish Modulith application event (record) inside the transaction; externalization →
   Redis Streams via outbox. Workers consume with consumer groups; handlers idempotent
   (keyed on event id). No `@Async` for anything that must survive a crash.
+- The `event_publication` table in `V1__baseline.sql` is Spring Modulith's own schema,
+  copied verbatim from `spring-modulith-events-jdbc`. Upgrading `spring-modulith.version`
+  requires diffing the library's official `schema-postgresql.sql` for that version against
+  our migration — never hand-edit the table to "keep up."
 
 ## 7. Tests
 - Unit: JUnit 5 + Mockito, no Spring context where avoidable.
@@ -81,3 +94,6 @@ throw new NotFoundException(ErrorCode.KH_CRD_0404, "credential.not-found", ref);
 ## 9. Commits & PRs
 - Conventional commits: `feat(credential): KH-1.4.1 persistent idempotency`.
 - One WBS task per PR; PR description links spec + lists DoD checklist.
+- A PR introducing or modifying core invariant logic (atomic consume, idempotency, key
+  signing, status-list allocation) MUST include its concurrency/correctness test in the
+  same PR. No downstream-PR exceptions after 2026-07-13.

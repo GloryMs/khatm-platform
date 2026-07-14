@@ -8,9 +8,9 @@ spring:
     password: ${SPRING_DATASOURCE_PASSWORD:khatm}
   jpa:
     hibernate:
-      # KH-0.2.1 will switch this to 'validate' once Flyway migrations are in place.
-      # 'update' is kept for the current dev cycle to avoid requiring Flyway during KH-0.1.x.
-      ddl-auto: update
+      # KH-0.2.1: Flyway is now the only source of schema truth. Hibernate only verifies
+      # that entity mappings match the migrated schema; it never creates or alters DDL.
+      ddl-auto: validate
     open-in-view: false
     properties:
       hibernate:
@@ -19,6 +19,9 @@ spring:
     redis:
       host: ${SPRING_DATA_REDIS_HOST:localhost}
       port: ${SPRING_DATA_REDIS_PORT:6379}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
 
 khatm:
   issuer-did: "did:web:khatm.sy:demo"

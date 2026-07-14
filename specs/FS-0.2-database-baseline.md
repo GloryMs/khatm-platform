@@ -1,6 +1,6 @@
 # FS-0.2 — Enterprise Database Baseline (Flyway V1)
 
-> **Task:** KH-0.2.1 · **Repo:** khatm-platform · **Status:** APPROVED — 2026-07-13> (النقاط الثلاث المؤكدة: claim_code encrypted+cleared · single active key/tenant · sequential status_idx)
+> **Task:** KH-0.2.1 · **Repo:** khatm-platform · **Status:** APPROVED — 2026-07-13 · §5.7 partially deferred (error-codes.md → KH-0.6) — approved 2026-07-13 (النقاط الثلاث المؤكدة: claim_code encrypted+cleared · single active key/tenant · sequential status_idx)
 > **Sources of truth:** doc 05 (data model) · SAD 20 §4.1/§5.3/§7 · SEC 21 · ADR-09 · CLAUDE.md work rules
 > **اللغة:** شرح عربي، DDL ومعرّفات إنجليزية — حسب اصطلاح الوثائق.
 

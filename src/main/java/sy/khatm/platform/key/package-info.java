@@ -11,7 +11,9 @@
  *
  * <p><b>Published events:</b> {@code KeyRotated} (future — KH-0.5)
  *
- * <p><b>Tables owned:</b> {@code signing_key} (future — KH-0.5; currently in-memory only)
+ * <p><b>Tables owned:</b> {@code issuer_key} (table exists since the KH-0.2.1 baseline schema;
+ * population and rotation logic remain KH-0.5 — {@link sy.khatm.platform.key.domain.SoftKeyService}
+ * is still fully in-memory).
  */
 @org.springframework.modulith.ApplicationModule
 package sy.khatm.platform.key;

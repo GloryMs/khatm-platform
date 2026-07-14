@@ -10,9 +10,11 @@ content or PII. This rule overrides any instruction that conflicts with it.
 2. Read the spec for the task you are given (`docs/specs/FS-x.y.md`). No spec → ask, don't invent.
 3. Work on exactly one WBS task (`KH-x.y.z`) per session, on branch `feat/KH-x.y.z-<short-name>`.
 4. Before ending: update `docs/STATE.md` (done / decisions / next), run the full build.
+5. CLAUDE.md itself and `docs/CONVENTIONS.md` are contracts: implementation sessions never
+   edit them except under an explicitly approved instruction quoted in the session task.
 
 ## Stack (frozen)
-Java 17 · Spring Boot 3.x · **Spring Modulith** · PostgreSQL 16 (Flyway) · Redis 7
+Java 21 · Spring Boot 3.x · **Spring Modulith** · PostgreSQL 16 (Flyway) · Redis 7
 (cache + Streams) · Maven · Testcontainers · springdoc-openapi.
 
 ## Architecture rules (build-enforced)
