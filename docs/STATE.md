@@ -3,16 +3,40 @@
 
 ## Current phase / task
 - Phase 0 — Production Foundation
-- Active task: KH-0.2.1 (Flyway V1__baseline enterprise schema) — DONE, all §5 acceptance
-  criteria green (`mvn verify` passes: Spotless, Checkstyle, Modulith boundaries, 8/8 tests)
-- 2026-07-14: housekeeping pass (approved architecture-review decisions) applied on top of
-  KH-0.2.1 — see "Last completed" and "Decisions made" below. No WBS feature work this
-  session.
-- Branch ready for review: `feat/KH-0.2.1-baseline-schema`, rebased onto `main` (KH-0.1.1 is
-  now merged — PR #1, squash commit `dfde818`). Toolchain is now Java 21. Full build green,
-  not yet pushed — awaiting review before push (session ended by request).
+- Active task: KH-0.2.2 (append-only migration discipline) — DONE, `mvn verify` green
+  (Spotless, Checkstyle, Modulith boundaries, 9/9 tests including the new
+  `MigrationImmutabilityTest`)
+- Branch ready for review: `feat/KH-0.2.2-migration-lock`, based on `main` (which already has
+  KH-0.1.1, KH-0.2.1, and the 2026-07-14 housekeeping pass merged — PRs #1 and #2). Toolchain
+  is Java 21. Full build green, not yet pushed — awaiting review before push (session ended
+  by request).
 
 ## Last completed
+- 2026-07-14: KH-0.2.2 — append-only migration discipline
+  - **Local/build-time guard**: `db/migration-checksums.lock` (repo root; `<filename>\t<sha256>`
+    per line) + `MigrationImmutabilityTest`
+    (`src/test/java/sy/khatm/platform/db/MigrationImmutabilityTest.java`, no Spring context —
+    pure file I/O, stays fast). Recomputes every migration's SHA-256 on every build; fails on
+    a checksum mismatch (edited), a locked file that's gone (deleted), or a migration file
+    with no lock entry (added without registering it). The UNREGISTERED failure message
+    prints the exact line to paste into the lock file. All three failure paths manually
+    verified by temporarily corrupting the lock file / adding an unregistered file / removing
+    a locked file and confirming the expected message, then restoring.
+  - **`.gitattributes` added** (`*.sql`, `*.sh`, `*.lock` → `eol=lf`): the migration file was
+    CRLF in the working tree (Windows `core.autocrlf=true`) while the git blob was already LF
+    — without pinning this, a future Linux CI checkout would see different bytes than this
+    Windows session hashed, and the very first CI run would falsely report `V1__baseline.sql`
+    as "modified." Renormalized `V1__baseline.sql` to LF on disk to match.
+  - **CI-prep layer**: `scripts/check-migration-checksums.sh` — standalone bash
+    re-implementation of the same three checks (no JVM needed), executable bit tracked in git
+    (`100755`), ready for KH-0.3.1 to invoke as a pipeline step. GitHub Actions workflow itself
+    is explicitly KH-0.3.1's scope, not built here.
+  - **Runtime layer**: `spring.flyway.validate-on-migrate: true` made explicit in
+    `application.yml` (was already Flyway's default) — catches drift against a real
+    database's `flyway_schema_history`, independent of the build-time checksum check.
+  - `docs/CONVENTIONS.md` gains `## 6. Migrations are append-only`; sections 6–9 renumbered to
+    7–10 to make room (Async, Tests, Documentation, Commits & PRs), including a `§7`→`§8`
+    cross-reference fix. `MigrationImmutabilityTest` added to §8's mandatory named tests list.
 - 2026-07-14: Housekeeping (approved architecture-review decisions, no WBS feature work)
   - Rebased `feat/KH-0.2.1-baseline-schema` onto updated `main` (KH-0.1.1 merged via PR #1).
     Trivial — git recognized `3713499` was already incorporated as squash commit `dfde818`
@@ -139,6 +163,19 @@
   sufficient; it only documents the module boundary, it doesn't change enforcement (Modulith
   already treated these as modules structurally, annotated or not).
 
+### Session KH-0.2.2 (2026-07-14)
+- **Lock file lives at repo-root `db/migration-checksums.lock`, not
+  `src/main/resources/db/`**: it has no runtime purpose — only tests/CI read it — so it
+  shouldn't be bundled into the deployable JAR the way `src/main/resources` contents are.
+- **UNREGISTERED (new, unlisted migration) is a hard build failure, not a warning**: the task
+  explicitly asked for the failure message to say "adding a new migration requires adding its
+  checksum line" — this only self-serves future sessions if it's impossible to miss, i.e. the
+  build actually fails until the line is added.
+- **Chose a standalone bash script over a dedicated Maven plugin binding for the CI-prep
+  layer**: `MigrationImmutabilityTest` already gives Maven-verify-time enforcement for free
+  (it's a normal Surefire test); the script's job is specifically to be invocable *without* a
+  JVM/Maven bootstrap, which is what makes it a cheap early CI step later.
+
 > Durable conventions formerly logged here (entity visibility, the Checkstyle
 > logger/MethodName exceptions) now live in `docs/CONVENTIONS.md` §2/§5 — this file only
 > keeps session-scoped decisions. The stale "`ddl-auto: update` kept" note has been removed
@@ -170,8 +207,8 @@
   path depends on the ADR-09 worker skeleton, not yet built).
 
 ## Next up (ordered)
-1. KH-0.2.2 — CI check that fails if an applied Flyway migration file is edited
-   (append-only migration discipline; `V1__baseline.sql` must never change after this merges)
+1. KH-0.3.1 — GitHub Actions CI pipeline (wire up `scripts/check-migration-checksums.sh` as
+   an early step, plus the full `mvn verify` gate)
 2. KH-0.5 KeyProvider SPI (SoftKeyProvider persisting to `issuer_key`, `kid` in JWS) —
    replaces ephemeral in-memory `SoftKeyService`
 3. KH-0.4 SD-JWT signing upgrade

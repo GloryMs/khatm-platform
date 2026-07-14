@@ -28,7 +28,7 @@ src/main/resources/
   rule permits `log`/`logger` in addition to `UPPER_SNAKE_CASE` (logger fields are mutable
   state, not true constants — Google Java Style Guide §5.2.4); the `MethodName` rule permits
   underscore-separated segments after the initial lowerCamelCase start, so the test naming
-  convention in §7 (`methodName_condition_expectedResult`) is actually enforceable.
+  convention in §8 (`methodName_condition_expectedResult`) is actually enforceable.
 
 ## 3. The i18n pattern (rule 2) — exactly this, everywhere
 - **Stored display names** → JSONB column `name_i18n` mapped to `LocalizedText` record
@@ -68,7 +68,34 @@ throw new NotFoundException(ErrorCode.KH_CRD_0404, "credential.not-found", ref);
   `ModulithBoundariesTest`'s job (it lives in `domain/`, a module-private sub-package), not
   the entity's own access modifiers.
 
-## 6. Async pattern (ADR-09) — exactly this
+## 6. Migrations are append-only
+
+CLAUDE.md "Database rules": *"Flyway is the ONLY source of schema... Never edit an applied
+migration — append a new one."* KH-0.2.2 makes this build-enforced, not just a convention:
+
+- **Local/build-time layer**: `db/migration-checksums.lock` (repo root — not under
+  `src/main/resources`, since it has no runtime purpose and shouldn't ship in the JAR) records
+  `<filename>\t<sha256>` for every file in `src/main/resources/db/migration/`.
+  `MigrationImmutabilityTest` recomputes every checksum on every build and fails on: a
+  mismatch (the file was edited), a locked file that's gone (deleted), or a migration file
+  with no lock entry (added without registering it).
+- **Adding a NEW migration**: create `V<N>__description.sql`, run the build once — the failing
+  test prints the exact line to add (filename + freshly computed checksum). Paste it into
+  `db/migration-checksums.lock` and re-run. Never hand-edit an *existing* line; that's the
+  violation this file exists to catch.
+- **Runtime layer**: `spring.flyway.validate-on-migrate: true` (`application.yml`) — Flyway's
+  own default, made explicit — catches the same class of drift at startup against whatever a
+  real database's `flyway_schema_history` actually recorded, independent of the build-time
+  check.
+- **CI-prep**: `scripts/check-migration-checksums.sh` is a standalone, JVM-free
+  re-implementation of the same three checks, meant to be dropped into KH-0.3.1's pipeline as
+  an early step. Keep it in sync with `MigrationImmutabilityTest` if the policy changes.
+- **`.gitattributes` pins `*.sql`/`*.sh`/`*.lock` to `eol=lf`**: without this, a Windows clone
+  (`core.autocrlf=true`) and a Linux CI runner can end up with different line endings for the
+  "same" file, which would make the checksum check fail spuriously on the first CI run for
+  reasons that have nothing to do with an actual edit.
+
+## 7. Async pattern (ADR-09) — exactly this
 - Publish Modulith application event (record) inside the transaction; externalization →
   Redis Streams via outbox. Workers consume with consumer groups; handlers idempotent
   (keyed on event id). No `@Async` for anything that must survive a crash.
@@ -77,21 +104,22 @@ throw new NotFoundException(ErrorCode.KH_CRD_0404, "credential.not-found", ref);
   requires diffing the library's official `schema-postgresql.sql` for that version against
   our migration — never hand-edit the table to "keep up."
 
-## 7. Tests
+## 8. Tests
 - Unit: JUnit 5 + Mockito, no Spring context where avoidable.
 - Integration: `@SpringBootTest` + Testcontainers (Postgres+Redis) per module slice.
 - Mandatory named tests: `ModulithBoundariesTest`, `MessageBundleParityTest`,
-  `ConcurrentConsumeTest` (50 parallel, exactly 1 success), `MigrationCleanBootTest`.
+  `ConcurrentConsumeTest` (50 parallel, exactly 1 success), `MigrationCleanBootTest`,
+  `MigrationImmutabilityTest` (checksum-locks every applied migration — KH-0.2.2, §6).
 - Naming: `methodName_condition_expectedResult`.
 
-## 8. Documentation (rule 1)
+## 9. Documentation (rule 1)
 - `package-info.java`: module purpose, exposed API, events published/consumed, tables owned.
 - Javadoc on exposed API: first sentence = what; body = why/invariants; `@throws` for
   every KhatmException subtype.
 - OpenAPI annotations complete on every endpoint incl. error envelope examples.
 - `docs/error-codes.md` regenerated from `ErrorCode` enum by a test — never hand-edited.
 
-## 9. Commits & PRs
+## 10. Commits & PRs
 - Conventional commits: `feat(credential): KH-1.4.1 persistent idempotency`.
 - One WBS task per PR; PR description links spec + lists DoD checklist.
 - A PR introducing or modifying core invariant logic (atomic consume, idempotency, key

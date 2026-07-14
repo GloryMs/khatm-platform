@@ -1,0 +1,12 @@
+# db/migration-checksums.lock — KH-0.2.2 append-only migration guard.
+#
+# One line per applied Flyway migration: <filename><TAB><sha256 lowercase hex of file bytes>.
+# MigrationImmutabilityTest (src/test/java/sy/khatm/platform/db) recomputes every checksum on
+# every build and fails if a listed file's hash changed, a listed file was deleted, or a file
+# exists under src/main/resources/db/migration/ with no line here.
+#
+# Adding a NEW migration: run the build once — the failing test prints the exact line to add
+# (filename + freshly computed checksum). Copy that line in below and re-run. Do NOT edit or
+# remove an existing line; per CLAUDE.md "Never edit an applied migration — append a new one",
+# doing so is exactly the mistake this file exists to catch.
+V1__baseline.sql	c4564f068594890783d2a4d278d313325887cea0b574f88dbade768d4d75e09f
