@@ -3,15 +3,30 @@
 
 ## Current phase / task
 - Phase 0 — Production Foundation
-- Active task: KH-0.2.2 (append-only migration discipline) — DONE, `mvn verify` green
-  (Spotless, Checkstyle, Modulith boundaries, 9/9 tests including the new
-  `MigrationImmutabilityTest`)
-- Branch ready for review: `feat/KH-0.2.2-migration-lock`, based on `main` (which already has
-  KH-0.1.1, KH-0.2.1, and the 2026-07-14 housekeeping pass merged — PRs #1 and #2). Toolchain
-  is Java 21. Full build green, not yet pushed — awaiting review before push (session ended
-  by request).
+- Active task: KH-0.3.1 (GitHub Actions CI pipeline) — DONE, CI green on its own PR
+  (`Build and verify` — 1m31s: migration checksum guard, JDK 21 setup, `mvn verify`)
+- PR #4 open (`feat/KH-0.3.1-ci-pipeline` → `main`), based on `main` (which already has
+  KH-0.1.1, KH-0.2.1 + housekeeping, and KH-0.2.2 merged — PRs #1, #2, #3). Not merged —
+  session ended by request before merge.
 
 ## Last completed
+- 2026-07-14: KH-0.3.1 — GitHub Actions CI pipeline
+  - `.github/workflows/ci.yml`: triggers on `pull_request` into `main` and `push` to `main`.
+    Fail-fast step order: `scripts/check-migration-checksums.sh` (cheap, no JVM) →
+    `actions/setup-java@v4` (Temurin JDK 21, `cache: maven`) → `mvn -B verify` (Spotless,
+    Checkstyle, Modulith boundaries, all tests). No deploy steps (KH-0.3.3 is out of scope).
+  - **Confirmed the `src/test/resources/docker-java.properties` (`api.version=1.44`) pin from
+    KH-0.2.1 does NOT break `ubuntu-latest` runners** — Testcontainers-backed tests passed in
+    CI on the first run with no changes needed. That pin was specifically for local Docker
+    Desktop/Windows quirks; GitHub-hosted runners' native Docker Engine negotiates the pinned
+    API version fine. No conditional logic added — none was needed.
+  - First CI run on this task's own PR (#4) went green end-to-end in 1m31s — verified via
+    `gh run watch` and `gh pr checks`, not just "should work."
+  - Minimal repo-root `README.md` added (one paragraph + CI badge); full README deferred.
+  - `docs/CONVENTIONS.md` §10 gains "CI must be green before merge."
+  - `.gitattributes`: extended `eol=lf` pinning to `*.yml`/`*.yaml` (same rationale as
+    KH-0.2.2's `*.sql`/`*.sh`/`*.lock` rule) and normalized the two YAML files that had
+    drifted to CRLF in the working tree.
 - 2026-07-14: KH-0.2.2 — append-only migration discipline
   - **Local/build-time guard**: `db/migration-checksums.lock` (repo root; `<filename>\t<sha256>`
     per line) + `MigrationImmutabilityTest`
@@ -176,6 +191,20 @@
   (it's a normal Surefire test); the script's job is specifically to be invocable *without* a
   JVM/Maven bootstrap, which is what makes it a cheap early CI step later.
 
+### Session KH-0.3.1 (2026-07-14)
+- **Single job, not split into separate "checksum" / "build" jobs**: splitting would add
+  GitHub Actions job-startup overhead (each job gets its own fresh VM) for no real benefit —
+  the checksum step already runs first within the one job and fails the whole run immediately
+  if it fails, which is all "fail-fast ordering" required.
+- **No `concurrency` group / run cancellation, no caching beyond `actions/setup-java`'s
+  built-in `cache: maven`**: kept the workflow to exactly what the task asked for; nice-to-have
+  CI ergonomics (auto-cancel superseded runs, etc.) can be added later without needing to
+  revisit this decision.
+- **Verified the Docker Desktop `api.version=1.44` pin against a real runner instead of
+  reasoning about it**: Docker's API is backward-compatible so it was likely fine, but "likely
+  fine" isn't the same as confirmed — the task asked to confirm, so the first PR's CI run is
+  the actual evidence, not an assumption.
+
 > Durable conventions formerly logged here (entity visibility, the Checkstyle
 > logger/MethodName exceptions) now live in `docs/CONVENTIONS.md` §2/§5 — this file only
 > keeps session-scoped decisions. The stale "`ddl-auto: update` kept" note has been removed
@@ -207,10 +236,9 @@
   path depends on the ADR-09 worker skeleton, not yet built).
 
 ## Next up (ordered)
-1. KH-0.3.1 — GitHub Actions CI pipeline (wire up `scripts/check-migration-checksums.sh` as
-   an early step, plus the full `mvn verify` gate)
-2. KH-0.5 KeyProvider SPI (SoftKeyProvider persisting to `issuer_key`, `kid` in JWS) —
+1. KH-0.5 KeyProvider SPI (SoftKeyProvider persisting to `issuer_key`, `kid` in JWS) —
    replaces ephemeral in-memory `SoftKeyService`
-3. KH-0.4 SD-JWT signing upgrade
-4. KH-0.6 Console auth + API-key filter + `rbac`/`shared.audit_log` write path + the
+2. KH-0.4 SD-JWT signing upgrade
+3. KH-0.6 Console auth + API-key filter + `rbac`/`shared.audit_log` write path + the
    `KhatmException`/`ErrorCode` hierarchy (CLAUDE.md work rule 3 — still not started)
+4. KH-0.3.3 — staging auto-deploy (explicitly out of scope for KH-0.3.1's CI pipeline)
