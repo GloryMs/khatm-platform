@@ -323,7 +323,8 @@
   (`C:\Program Files\Java\jdk-17`, original) and JDK 21 (Eclipse Temurin,
   `C:\Program Files\Eclipse Adoptium\jdk-21.0.11.10-hotspot`) are installed on this machine;
   `JAVA_HOME` must point at the JDK 21 install for builds to target the right release —
-  IntelliJ's project SDK needs updating to JDK 21 separately (not done by this session).
+  IntelliJ project SDK and JAVA_HOME both point at Eclipse Temurin 21 (fixed manually
+  2026-07-15) — the JDK 17 install remains on disk but is unused.
 - Default tenant strategy: single default tenant row until KH-2.1 — fixed UUID
   `00000000-0000-0000-0000-000000000001`, seeded by `V1__baseline.sql`, mirrored in Java as
   `sy.khatm.platform.shared.TenantContext.DEFAULT_TENANT_ID`.

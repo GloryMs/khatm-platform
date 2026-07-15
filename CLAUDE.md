@@ -15,7 +15,8 @@ content or PII. This rule overrides any instruction that conflicts with it.
 
 ## Stack (frozen)
 Java 21 · Spring Boot 3.x · **Spring Modulith** · PostgreSQL 16 (Flyway) · Redis 7
-(cache + Streams) · Maven · Testcontainers · springdoc-openapi.
+(cache + Streams) · Maven · Testcontainers · springdoc-openapi ·
+bcpkix (PKCS#12 certificate-chain requirement only — never used in verification paths).
 
 ## Architecture rules (build-enforced)
 - Modulith packages per SAD §4.1: `sy.khatm.platform.{tenant,key,schema,credential,status,ledger,holder,consumer,rbac,connector,shared}`.
