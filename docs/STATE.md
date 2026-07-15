@@ -3,11 +3,14 @@
 
 ## Current phase / task
 - Phase 0 — Production Foundation
-- Active task: KH-0.5.1 + KH-0.5.2 + KH-0.5.3 (Key Provider SPI & SoftKeyProvider) — DONE,
-  `mvn verify` green locally (23/23 tests, Spotless/Checkstyle/Modulith boundaries clean).
-- PR #5 open (`feat/KH-0.5-key-provider-spi` → `main`):
-  https://github.com/GloryMs/khatm-platform/pull/5 — not merged, session ended by request
-  before merge. PR #4 (KH-0.3.1) status unchanged from last session (still open, not merged).
+- Last task: KH-0.5.1 + KH-0.5.2 + KH-0.5.3 (Key Provider SPI & SoftKeyProvider) — DONE,
+  `mvn verify` green locally (23/23 tests, Spotless/Checkstyle/Modulith boundaries clean),
+  CI green.
+- PR #5 (`feat/KH-0.5-key-provider-spi` → `main`) merged 2026-07-15; branch deleted.
+- PR #4 (KH-0.3.1, CI pipeline) merged 2026-07-14 (commit `4a65a39`); branch deleted. A prior
+  session's note here claiming it was "still open" was stale — confirmed merged via
+  `gh pr view 4` (2026-07-15 housekeeping check, no rebase was needed).
+- `main` is current HEAD for the next session to branch from.
 
 ## Last completed
 - 2026-07-15: KH-0.5.1 + KH-0.5.2 + KH-0.5.3 — Key Provider SPI & SoftKeyProvider (spec
