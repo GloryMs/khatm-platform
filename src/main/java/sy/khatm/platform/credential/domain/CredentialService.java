@@ -3,6 +3,7 @@ package sy.khatm.platform.credential.domain;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.nimbusds.jose.JOSEException;
+import com.nimbusds.jose.crypto.ECDSAVerifier;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import java.nio.charset.StandardCharsets;
@@ -37,6 +38,9 @@ import sy.khatm.platform.credential.persistence.CredentialRepository;
 import sy.khatm.platform.holder.api.HolderDirectory;
 import sy.khatm.platform.holder.api.HolderRef;
 import sy.khatm.platform.key.api.KeySigner;
+import sy.khatm.platform.key.api.KeyVerifier;
+import sy.khatm.platform.key.api.PublicKeyHandle;
+import sy.khatm.platform.key.api.SignResult;
 import sy.khatm.platform.schema.api.SchemaCatalog;
 import sy.khatm.platform.schema.api.SchemaDefinition;
 import sy.khatm.platform.schema.api.SchemaRef;
@@ -73,6 +77,7 @@ public class CredentialService {
   private final ConsumptionEventRepository events;
   private final ClaimCodeRepository claimCodes;
   private final KeySigner keys;
+  private final KeyVerifier keyVerifier;
   private final SchemaCatalog schemas;
   private final HolderDirectory holders;
   private final StatusListAllocator statusLists;
@@ -88,6 +93,7 @@ public class CredentialService {
       ConsumptionEventRepository events,
       ClaimCodeRepository claimCodes,
       KeySigner keys,
+      KeyVerifier keyVerifier,
       SchemaCatalog schemas,
       HolderDirectory holders,
       StatusListAllocator statusLists,
@@ -98,6 +104,7 @@ public class CredentialService {
     this.events = events;
     this.claimCodes = claimCodes;
     this.keys = keys;
+    this.keyVerifier = keyVerifier;
     this.schemas = schemas;
     this.holders = holders;
     this.statusLists = statusLists;
@@ -139,7 +146,8 @@ public class CredentialService {
             .claim("status", Map.of("idx", allocation.idx()));
     claims.forEach(claimsBuilder::claim);
 
-    String jwt = keys.sign(claimsBuilder.build());
+    SignResult signed = keys.sign(claimsBuilder.build());
+    String jwt = signed.jws();
 
     Credential c = new Credential();
     c.setId(id);
@@ -204,7 +212,7 @@ public class CredentialService {
       return new VerifyResponse(false, "malformed_token", null, null, false);
     }
 
-    if (!keys.verifySignature(parsed)) {
+    if (!hasValidSignature(parsed)) {
       return new VerifyResponse(false, "bad_signature", null, null, false);
     }
 
@@ -327,6 +335,28 @@ public class CredentialService {
         claimsDef.toString(),
         List.copyOf(claims.keySet()),
         maxUses);
+  }
+
+  /**
+   * Verify a JWT's signature by resolving its {@code kid} header strictly through {@link
+   * KeyVerifier} — an unknown or {@code RETIRED} {@code kid} means {@link
+   * KeyVerifier#resolvePublicKey} returns empty, and there is no fallback to any other key (spec
+   * FS-0.5 §4).
+   */
+  private boolean hasValidSignature(SignedJWT jwt) {
+    String kid = jwt.getHeader().getKeyID();
+    if (kid == null) {
+      return false;
+    }
+    Optional<PublicKeyHandle> handle = keyVerifier.resolvePublicKey(kid);
+    if (handle.isEmpty()) {
+      return false;
+    }
+    try {
+      return jwt.verify(new ECDSAVerifier(handle.get().publicKey()));
+    } catch (JOSEException e) {
+      return false;
+    }
   }
 
   private static byte[] sha256(String value) {

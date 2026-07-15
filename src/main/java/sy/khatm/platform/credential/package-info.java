@@ -16,7 +16,8 @@
  * <p><b>Tables owned:</b> {@code credential}, {@code consumption_event}, {@code claim_code}
  *
  * <p><b>Cross-module dependencies:</b> {@code key :: api} ({@link
- * sy.khatm.platform.key.api.KeySigner}) for JWT signing; {@code schema :: api}, {@code holder ::
+ * sy.khatm.platform.key.api.KeySigner} for signing, {@link sy.khatm.platform.key.api.KeyVerifier}
+ * for strict-by-{@code kid} verification, no fallback); {@code schema :: api}, {@code holder ::
  * api}, {@code status :: api}, {@code consumer :: api} — issuing/consuming a credential must
  * resolve the schema, holder, status-list allocation, and consuming party its foreign keys point at
  * (KH-0.2.1 baseline schema, spec FS-0.2 §3.6/§3.9); {@code shared} (its open root package — {@link

@@ -39,7 +39,12 @@ services:
       SPRING_DATASOURCE_USERNAME: khatm
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-khatm_local_only}
       SPRING_DATA_REDIS_HOST: khatm-redis
+      # KH-0.5 (spec FS-0.5 §7): SoftKeyProvider's PKCS#12 keystore passphrase. Must come from
+      # env in any real deployment; this local-only default matches application.yml's 'local'
+      # profile document so `docker compose up` works with zero setup.
+      KHATM_KEYS_PASSPHRASE: ${KHATM_KEYS_PASSPHRASE:-khatm-local-dev-passphrase-change-me}
     ports: ["8080:8080"]
+    volumes: [khatm_keys:/var/khatm/keys]
     depends_on:
       khatm-postgres: { condition: service_healthy }
       khatm-redis:    { condition: service_healthy }
@@ -54,6 +59,8 @@ services:
       SPRING_DATASOURCE_USERNAME: khatm
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-khatm_local_only}
       SPRING_DATA_REDIS_HOST: khatm-redis
+      KHATM_KEYS_PASSPHRASE: ${KHATM_KEYS_PASSPHRASE:-khatm-local-dev-passphrase-change-me}
+    volumes: [khatm_keys:/var/khatm/keys]
     depends_on:
       khatm-postgres: { condition: service_healthy }
       khatm-redis:    { condition: service_healthy }
@@ -61,6 +68,7 @@ services:
 
 volumes:
   khatm_pgdata:
+  khatm_keys:
 
 networks:
   khatm-net:
