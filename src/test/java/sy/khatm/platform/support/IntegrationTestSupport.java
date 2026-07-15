@@ -1,5 +1,9 @@
 package sy.khatm.platform.support;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
@@ -27,9 +31,24 @@ public abstract class IntegrationTestSupport {
 
   protected static final PostgreSQLContainer<?> POSTGRES;
 
+  /**
+   * KH-0.5: the shared test context needs a working {@code khatm.keys.soft.*} config too, since the
+   * active profile here is {@code test}, not {@code local} — {@code SoftKeyProvider} fails startup
+   * on a blank passphrase outside {@code local} by design (spec FS-0.5 §3/§8.5). One keystore file
+   * for the whole shared-context test suite, same rationale as one Postgres container: every test
+   * class using this base reuses the same cached {@code ApplicationContext}.
+   */
+  private static final Path TEST_KEYSTORE_PATH;
+
   static {
     POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
     POSTGRES.start();
+    try {
+      TEST_KEYSTORE_PATH = Files.createTempFile("khatm-test-keys-", ".p12");
+      Files.deleteIfExists(TEST_KEYSTORE_PATH);
+    } catch (IOException e) {
+      throw new UncheckedIOException(e);
+    }
   }
 
   @DynamicPropertySource
@@ -37,5 +56,11 @@ public abstract class IntegrationTestSupport {
     registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
     registry.add("spring.datasource.username", POSTGRES::getUsername);
     registry.add("spring.datasource.password", POSTGRES::getPassword);
+  }
+
+  @DynamicPropertySource
+  static void keyProviderProperties(DynamicPropertyRegistry registry) {
+    registry.add("khatm.keys.soft.keystore-path", TEST_KEYSTORE_PATH::toString);
+    registry.add("khatm.keys.soft.passphrase", () -> "khatm-test-passphrase");
   }
 }

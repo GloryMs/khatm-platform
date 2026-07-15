@@ -32,8 +32,29 @@ spring:
 
 khatm:
   issuer-did: "did:web:khatm.sy:demo"
-  key-id: "khatm-key-1"
+  keys:
+    # KH-0.5 (spec FS-0.5 §7): SOFT today; KMS/PKCS11 later are a config change only (D3).
+    provider: SOFT
+    soft:
+      keystore-path: ${KHATM_KEYS_KEYSTORE_PATH:/var/khatm/keys/khatm-keys.p12}
+      # No default here on purpose — SoftKeyProvider fails startup if this is blank outside the
+      # 'local' profile (spec FS-0.5 §3/§8.5). The 'local' profile document below supplies the
+      # only permitted default.
+      passphrase: ${KHATM_KEYS_PASSPHRASE:}
 
 logging:
   level:
     sy.khatm: INFO
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+
+khatm:
+  keys:
+    soft:
+      # Documented local-only default so `docker compose up` / a bare local run work with zero
+      # setup (spec FS-0.5 §3). Never used outside 'local' — SoftKeyProvider enforces that.
+      passphrase: ${KHATM_KEYS_PASSPHRASE:khatm-local-dev-passphrase-change-me}

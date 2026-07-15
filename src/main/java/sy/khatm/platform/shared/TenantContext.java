@@ -17,6 +17,9 @@ public final class TenantContext {
   public static final UUID DEFAULT_TENANT_ID =
       UUID.fromString("00000000-0000-0000-0000-000000000001");
 
+  /** The default tenant's slug. Must match the {@code tenant.slug} seeded by V1__baseline.sql. */
+  public static final String DEFAULT_TENANT_SLUG = "khatm-default";
+
   private TenantContext() {}
 
   /**
@@ -28,5 +31,18 @@ public final class TenantContext {
    */
   public static UUID current() {
     return DEFAULT_TENANT_ID;
+  }
+
+  /**
+   * Resolve the current tenant's slug.
+   *
+   * <p>Always {@link #DEFAULT_TENANT_SLUG} until KH-2.1. Used e.g. by the {@code key} module to
+   * build {@code kid} values ({@code {tenant-slug}:key-{seq}}, spec FS-0.5 §4) without needing a
+   * cross-module dependency on the {@code tenant} module, which has no {@code api} sub-package yet.
+   *
+   * @return the current tenant's slug
+   */
+  public static String currentSlug() {
+    return DEFAULT_TENANT_SLUG;
   }
 }

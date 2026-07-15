@@ -97,6 +97,19 @@
       <version>9.40</version>
     </dependency>
 
+    <!--
+      KH-0.5: PKCS#12 KeyStore.setKeyEntry always requires a certificate chain alongside a
+      private key, even though we only ever use the key pair via standard JCA/Nimbus (ES256
+      signing/verification never touches BouncyCastle). Used solely to mint a minimal
+      self-signed X.509 certificate to satisfy that container-format requirement — see
+      SoftKeyProvider.
+    -->
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcpkix-jdk18on</artifactId>
+      <version>1.78.1</version>
+    </dependency>
+
     <!-- Test -->
     <dependency>
       <groupId>org.springframework.boot</groupId>

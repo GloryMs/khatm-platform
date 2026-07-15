@@ -118,6 +118,8 @@ migration — append a new one."* KH-0.2.2 makes this build-enforced, not just a
   every KhatmException subtype.
 - OpenAPI annotations complete on every endpoint incl. error envelope examples.
 - `docs/error-codes.md` regenerated from `ErrorCode` enum by a test — never hand-edited.
+- Approved specs live in `docs/specs/` only — copied there from khatm-docs at implementation
+  start. No other spec locations.
 
 ## 10. Commits & PRs
 - Conventional commits: `feat(credential): KH-1.4.1 persistent idempotency`.

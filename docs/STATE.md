@@ -3,13 +3,82 @@
 
 ## Current phase / task
 - Phase 0 — Production Foundation
-- Active task: KH-0.3.1 (GitHub Actions CI pipeline) — DONE, CI green on its own PR
-  (`Build and verify` — 1m31s: migration checksum guard, JDK 21 setup, `mvn verify`)
-- PR #4 open (`feat/KH-0.3.1-ci-pipeline` → `main`), based on `main` (which already has
-  KH-0.1.1, KH-0.2.1 + housekeeping, and KH-0.2.2 merged — PRs #1, #2, #3). Not merged —
-  session ended by request before merge.
+- Active task: KH-0.5.1 + KH-0.5.2 + KH-0.5.3 (Key Provider SPI & SoftKeyProvider) — DONE,
+  `mvn verify` green locally (23/23 tests, Spotless/Checkstyle/Modulith boundaries clean).
+- PR #5 open (`feat/KH-0.5-key-provider-spi` → `main`):
+  https://github.com/GloryMs/khatm-platform/pull/5 — not merged, session ended by request
+  before merge. PR #4 (KH-0.3.1) status unchanged from last session (still open, not merged).
 
 ## Last completed
+- 2026-07-15: KH-0.5.1 + KH-0.5.2 + KH-0.5.3 — Key Provider SPI & SoftKeyProvider (spec
+  FS-0.5, all four pre-approved design decisions D1–D4 implemented as given).
+  - **`key :: api`** unchanged surface, new shape: `KeySigner.sign()` now returns `SignResult`
+    (`kid`/`algo`/`jws`) instead of a bare `String`; new `KeyVerifier.resolvePublicKey(kid)` →
+    `Optional<PublicKeyHandle>`, resolving strictly by `kid` with no fallback (SEC §3, spec §4).
+  - **`key/domain/`** (all module-private): `KeyProvider` — a deliberately crypto-only SPI
+    (`generate`/`sign`/`publicKey` against an opaque `providerRef`), scoped this way (not the
+    tenant/DB-aware "full SEC §3 contract" shape literally) so a future `KmsProvider` never
+    needs to know about `issuer_key` rows or lifecycle states (D3). `SoftKeyProvider` — the only
+    implementation today: one PKCS#12 keystore file, alias == `kid`, selected via
+    `@ConditionalOnProperty(khatm.keys.provider=SOFT, matchIfMissing=true)`. Mints a throwaway
+    self-signed X.509 cert per key (via `bcpkix-jdk18on`, new `pom.xml` dependency) purely to
+    satisfy `KeyStore.setKeyEntry`'s chain requirement — verification never uses the cert chain,
+    only the raw EC public key. `KeyLifecycleService` — owns `issuer_key` persistence, the
+    `PENDING→ACTIVE→RETIRING→RETIRED` state machine, and the one-`ACTIVE` invariant; `rotate()`
+    is fully implemented (no REST endpoint — tests only, per spec) and writes `KEY_CREATED` /
+    `KEY_ROTATED` `audit_log` rows via a direct `JdbcTemplate` insert (minimal form; full audit
+    write path is KH-0.6). `KeyBootstrap` — idempotent `ApplicationRunner`, all profiles.
+  - **`key/web/JwksController`** replaces the old `WellKnownController`:
+    `GET /.well-known/jwks.json` only (the old `/.well-known/pubkey.pem` endpoint is gone — not
+    in FS-0.5's scope, and the old `KeySigner.publicKeyPem()` method it depended on no longer
+    exists), `ACTIVE`+`RETIRING` public keys, `Cache-Control: max-age=300`, no auth.
+  - **`SoftKeyService` deleted in full** (D4 — no `@Deprecated` shim); `CredentialService`
+    rewired to the new `KeySigner`/`KeyVerifier` contracts (added `KeyVerifier` constructor
+    dependency; `verify()` now resolves the JWT's `kid` header through it and checks the
+    signature manually with a Nimbus `ECDSAVerifier` — no other module needed to change).
+  - **`shared.TenantContext`** gained `DEFAULT_TENANT_SLUG`/`currentSlug()` (mirrors the
+    existing `DEFAULT_TENANT_ID`/`current()` pair) — lets `key` build `kid` values
+    (`{tenant-slug}:key-{seq}`) without a cross-module dependency on `tenant`, which has no
+    `api` sub-package yet.
+  - **`IssuerKeyRepository.retireActive`**: a `@Modifying` JPQL bulk `UPDATE` (not a plain
+    entity save) — deliberately runs immediately rather than being deferred to Hibernate's
+    flush-time ordering (which flushes pending inserts before pending updates), so `rotate()`'s
+    old-key-to-`RETIRING` transition is guaranteed to commit at the database *before* the new
+    key is inserted as `ACTIVE`. Without this, the `issuer_key_one_active` partial unique index
+    could see two `ACTIVE` rows momentarily and reject the insert.
+  - **`application.yml`**: new `khatm.keys.*` surface per spec §7. The base document leaves
+    `khatm.keys.soft.passphrase` with no default (`${KHATM_KEYS_PASSPHRASE:}`); a second
+    `spring.config.activate.on-profile: local` document supplies the only permitted default.
+    `SoftKeyProvider`'s constructor fails startup immediately if the passphrase is blank and the
+    `local` profile isn't active — verified by test, not just by inspection.
+  - **`docker-compose.yml`**: named volume `khatm_keys` mounted at `/var/khatm/keys` on both
+    `khatm-api` and `khatm-worker` (same file, both roles), plus `KHATM_KEYS_PASSPHRASE` env
+    (same local-only default as `application.yml`'s `local` profile document). `khatm-deploy`
+    (separate repo) intentionally untouched.
+  - **Tests** (`src/test/java/sy/khatm/platform/key/**`, plus one in `credential/domain/`):
+    `KeyLifecycleServiceTest` (bootstrap idempotency, `rotate()`'s one-active invariant +
+    JWKS-shows-both + old-signature-still-verifies + new-kid, unknown/`RETIRED` kid rejection,
+    no private material in `public_jwk`, both audit rows): 7 tests, all against the shared
+    Testcontainers context. `KeyProviderRestartPersistenceTest` — the criterion-2 test: two
+    fully independent `SpringApplicationBuilder` runs (own dedicated Postgres container, real
+    `.run()`/`.close()` cycle) against the *same* keystore file, proving a signature from the
+    first run still verifies under the same `kid` after the second. `SoftKeyProviderPassphraseFailureTest`
+    — wrong passphrase on an existing keystore, and missing passphrase outside `local`, both
+    fail startup with a message traceable to "passphrase," and the file is never overwritten.
+    `JwksControllerTest` — plain Mockito unit test (no Spring context) for the HTTP response
+    shape/headers. `CredentialSigningAndVerificationTest` — `kid` format through the real
+    issuance path, and a JWT signed by a key outside the registry rejected as `bad_signature`.
+  - **`IntegrationTestSupport`** (shared test base) gained its own `khatm.keys.soft.*`
+    `@DynamicPropertySource` (one temp keystore file for the whole shared-context suite) —
+    every pre-existing integration test runs under the `test` profile, not `local`, so without
+    this every one of them would have failed `SoftKeyProvider`'s new fail-fast passphrase check.
+  - **Toolchain note**: this session's `mvn verify` required `JAVA_HOME` pointed at the
+    Eclipse Temurin 21 install (`environment.md` memory had drifted back to JDK 17 — fixed).
+- 2026-07-15: Housekeeping — spec-directory reconciliation. Root `specs/` was a manual-copy
+  mistake; `docs/specs/` is the canonical location per CLAUDE.md. Both `FS-0.2` and `FS-0.5`
+  were byte-identical in both locations, so the root copies were `git mv`-removed and the
+  now-empty `specs/` directory deleted; `docs/CONVENTIONS.md` §9 gained a line stating
+  `docs/specs/` is the only approved spec location.
 - 2026-07-14: KH-0.3.1 — GitHub Actions CI pipeline
   - `.github/workflows/ci.yml`: triggers on `pull_request` into `main` and `push` to `main`.
     Fail-fast step order: `scripts/check-migration-checksums.sh` (cheap, no JVM) →
@@ -205,6 +274,39 @@
   fine" isn't the same as confirmed — the task asked to confirm, so the first PR's CI run is
   the actual evidence, not an assumption.
 
+### Session KH-0.5 (2026-07-15)
+- **`KeyProvider` scoped to pure crypto, not literally SEC §3's four-method
+  sign/publicJwks/rotate/keys shape**: the spec diagram lists `KeyProvider` as "the complete
+  SPI (sign / publicJwks / rotate / keys)," but giving the swappable interface DB/tenant/
+  lifecycle awareness would mean a future `KmsProvider` has to know about `issuer_key` rows and
+  the state machine — the opposite of D3's promise ("swap provider = config change, zero
+  code"). Split instead: `KeyProvider` = generate/sign/publicKey against an opaque
+  `providerRef`; `KeyLifecycleService` = everything DB/tenant/state-machine, calling into
+  whichever `KeyProvider` is active. D1–D4 as literally stated are unaffected — this is an
+  internal domain-layer split, invisible outside `key/domain/`.
+- **`KeyLifecycleService` (and `PublishedKey`) are `public` Java classes despite being
+  Modulith-module-private**: `key/web/JwksController` is a different Java package from
+  `key/domain/`, so package-private (the default) would make it uncompilable. Same precedent
+  CONVENTIONS.md §5 already documents for JPA entities — Java visibility can't express
+  Modulith module-privacy; `ModulithBoundariesTest`'s package-based analysis is what actually
+  enforces the boundary, not `public`/package-private.
+- **No REST endpoint for `rotate()`, by design (matches the approved D-decisions, not a gap)**:
+  spec FS-0.5 §5 is explicit that admin-triggered rotation is KH-2.2 (needs RBAC to gate it).
+  `KeyLifecycleService.rotate()` is `@Transactional` and fully correct today; it's exercised
+  only by tests until then.
+- **`KeyBootstrap` runs in every profile, not just `local`/`dev`**: unlike `DemoSeeder`, a
+  production boot with zero issuer keys is a broken deployment, not a missing convenience —
+  there is no other provisioning path yet (explicitly temporary; see the module README).
+- **Command-line-style `--key=value` args, not `.properties(...)`, for the two
+  multi-`SpringApplicationBuilder`-run tests**: `SpringApplicationBuilder.properties(String...)`
+  registers a *lowest-precedence* "defaultProperties" source — `application.yml`'s own
+  `spring.datasource.url` entry (with its `${SPRING_DATASOURCE_URL:localhost:5432}` fallback)
+  wins over it every time, so the override was silently ignored and the second/third context in
+  each test tried to reach a real `localhost:5432` (refused). `.run("--key=value", ...)` args
+  have near-top precedence and actually override the yml. `@DynamicPropertySource` (used by
+  `IntegrationTestSupport`) doesn't have this problem — it operates at a different layer
+  (`ContextCustomizer`) that always wins regardless.
+
 > Durable conventions formerly logged here (entity visibility, the Checkstyle
 > logger/MethodName exceptions) now live in `docs/CONVENTIONS.md` §2/§5 — this file only
 > keeps session-scoped decisions. The stale "`ddl-auto: update` kept" note has been removed
@@ -224,6 +326,10 @@
   `sy.khatm.platform.shared.TenantContext.DEFAULT_TENANT_ID`.
 - Docker Desktop on this machine needs `src/test/resources/docker-java.properties`
   (`api.version=1.44`) for Testcontainers to connect at all (see decisions above).
+- Docker Desktop does not auto-start on login on this machine — `docker info` fails until it's
+  launched manually (or via `"/c/Program Files/Docker/Docker/Docker Desktop.exe" &`, then
+  polled until `docker info` succeeds, ~10–30s). Needed before any Testcontainers-backed
+  `mvn verify` run.
 
 ## Open decisions / blockers
 - **`claim_code.disclosures_enc` is not AES-GCM encrypted per spec FS-0.2 §3.7 — it is left
@@ -236,9 +342,12 @@
   path depends on the ADR-09 worker skeleton, not yet built).
 
 ## Next up (ordered)
-1. KH-0.5 KeyProvider SPI (SoftKeyProvider persisting to `issuer_key`, `kid` in JWS) —
-   replaces ephemeral in-memory `SoftKeyService`
-2. KH-0.4 SD-JWT signing upgrade
-3. KH-0.6 Console auth + API-key filter + `rbac`/`shared.audit_log` write path + the
-   `KhatmException`/`ErrorCode` hierarchy (CLAUDE.md work rule 3 — still not started)
-4. KH-0.3.3 — staging auto-deploy (explicitly out of scope for KH-0.3.1's CI pipeline)
+1. KH-0.4 SD-JWT signing upgrade — signs via `KeySigner` unchanged (this is why KH-0.5 was
+   ordered first; spec FS-0.5 §9)
+2. KH-0.6 Console auth + API-key filter + `rbac`/`shared.audit_log` write path (a fuller
+   version than KH-0.5's minimal direct-insert audit rows) + the `KhatmException`/`ErrorCode`
+   hierarchy (CLAUDE.md work rule 3 — still not started) + the message bundles
+   (`messages_en.properties`/`messages_ar.properties` don't exist yet — CLAUDE.md work rule 2)
+3. KH-0.3.3 — staging auto-deploy (explicitly out of scope for KH-0.3.1's CI pipeline)
+4. KH-2.2 — RBAC, needed before `KeyLifecycleService.rotate()` can get a REST endpoint
+5. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM
