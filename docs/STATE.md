@@ -10,6 +10,12 @@
 - PR #4 (KH-0.3.1, CI pipeline) merged 2026-07-14 (commit `4a65a39`); branch deleted. A prior
   session's note here claiming it was "still open" was stale — confirmed merged via
   `gh pr view 4` (2026-07-15 housekeeping check, no rebase was needed).
+- PR #6 (`chore/docs-ratifications` → `main`) merged 2026-07-15; branch deleted. Doc-only
+  housekeeping: STATE.md JDK 21 note, FS-0.5 status-header amendment record, CLAUDE.md Stack
+  (frozen) gained `bcpkix` (approved contract edit — see PR #6 body for the quoted approval).
+  Branch protection is now enabled on this repo — housekeeping doc edits go through a PR from
+  here on, not direct pushes to `main` (the PR #4/#5-status fix on 2026-07-15 was the last
+  direct push made before protection was turned on).
 - `main` is current HEAD for the next session to branch from.
 
 ## Last completed
