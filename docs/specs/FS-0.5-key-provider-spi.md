@@ -4,6 +4,8 @@
 > **Sources of truth:** SEC 21 §3 (SPI), §4 (lifecycle) · FS-0.2 §3.2 (`issuer_key`) · SAD §4.1 (key module) · ADR-09
 > **يستبدل:** `SoftKeyService` المؤقت (in-memory، لا يبقى بعد إعادة التشغيل، لا يكتب في `issuer_key`)
 > **اللغة:** شرح عربي، عقود وكود إنجليزية.
+> §2 internal shape amended (crypto-only KeyProvider SPI + KeyLifecycleService owning
+> DB/tenant/state-machine) — approved 2026-07-15
 
 ---
 
