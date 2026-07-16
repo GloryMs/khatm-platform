@@ -2,6 +2,7 @@ package sy.khatm.platform.credential.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.authlete.sd.SDJWT;
 import com.nimbusds.jose.JOSEObjectType;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
@@ -36,9 +37,10 @@ class CredentialSigningAndVerificationTest extends IntegrationTestSupport {
   void issue_jwsHeaderCarriesAWellFormedKid() throws Exception {
     IssueResponse issued =
         credentialService.issue(
-            new IssueRequest("GenericDocument/v1", "holder-kid-test", 1, 60, Map.of()));
+            new IssueRequest("GenericDocument/v1", "holder-kid-test", 1, 60, Map.of(), null));
 
-    SignedJWT parsed = SignedJWT.parse(issued.jwt());
+    String compactJwt = SDJWT.parse(issued.sdJwt()).getCredentialJwt();
+    SignedJWT parsed = SignedJWT.parse(compactJwt);
     String kid = parsed.getHeader().getKeyID();
 
     assertThat(kid).isNotBlank();

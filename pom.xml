@@ -110,6 +110,32 @@
       <version>1.78.1</version>
     </dependency>
 
+    <!--
+      KH-0.4 (spec FS-0.4 D4): SD-JWT disclosure/digest construction only (SDObjectBuilder,
+      Disclosure, SDJWT). Confirmed before adopting: this library never touches signing or key
+      material — it hands us the payload Map to sign, and we sign it exclusively through
+      KeySigner (Nimbus), exactly as before. Its own pom pulls in Gson (own JSON handling) and
+      Nimbus at test-scope only, so nothing here conflicts with our existing Jackson/Nimbus use.
+    -->
+    <dependency>
+      <groupId>com.authlete</groupId>
+      <artifactId>sd-jwt</artifactId>
+      <version>1.9</version>
+    </dependency>
+
+    <!--
+      KH-0.4: OpenAPI annotations for the issue/verify request-response shapes (CLAUDE.md work
+      rule 1 / "Stack (frozen)"). Annotations + JSON generation (/v3/api-docs) only — the
+      "-api" artifact deliberately excludes the Swagger UI, which we don't want to expose yet
+      (no auth exists ahead of KH-0.6). Full endpoint coverage and CI-published openapi.json
+      remain KH-1.6 (spec FS-0.4 §7).
+    -->
+    <dependency>
+      <groupId>org.springdoc</groupId>
+      <artifactId>springdoc-openapi-starter-webmvc-api</artifactId>
+      <version>2.8.17</version>
+    </dependency>
+
     <!-- Test -->
     <dependency>
       <groupId>org.springframework.boot</groupId>

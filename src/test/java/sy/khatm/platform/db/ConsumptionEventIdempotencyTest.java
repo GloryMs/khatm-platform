@@ -35,7 +35,8 @@ class ConsumptionEventIdempotencyTest extends IntegrationTestSupport {
   void save_duplicateIdempotencyKey_violatesUniqueConstraint() throws Exception {
     IssueResponse issued =
         credentialService.issue(
-            new IssueRequest("IdempotencyProbe/v1", "holder-idempotency-probe", 5, 60, Map.of()));
+            new IssueRequest(
+                "IdempotencyProbe/v1", "holder-idempotency-probe", 5, 60, Map.of(), null));
     ConsumingPartyRef party = consumingParties.ensure("idempotency-probe-party");
     UUID credentialId = UUID.fromString(issued.id());
     String sharedKey = "idempotency-probe-" + UUID.randomUUID();

@@ -83,7 +83,11 @@ class SoftKeyProviderPassphraseFailureTest {
                 "--spring.datasource.url=" + POSTGRES.getJdbcUrl(),
                 "--spring.datasource.username=" + POSTGRES.getUsername(),
                 "--spring.datasource.password=" + POSTGRES.getPassword(),
-                "--khatm.keys.soft.keystore-path=" + keystorePath));
+                "--khatm.keys.soft.keystore-path=" + keystorePath,
+                // KH-0.4: ClaimsEncryptionService also needs a valid key outside 'local' (spec
+                // FS-0.4 D7) — kept valid here so these tests isolate the passphrase failure
+                // specifically, not an unrelated one.
+                "--khatm.claims.enc-key=a2hhdG0tdGVzdC1jbGFpbXMtZW5jLWtleS0zMmJ5dGU="));
     if (passphrase != null) {
       args.add("--khatm.keys.soft.passphrase=" + passphrase);
     }
