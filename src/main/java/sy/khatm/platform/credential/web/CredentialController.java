@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import jakarta.validation.Valid;
 import java.util.UUID;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
 import org.springframework.http.ResponseEntity;
@@ -40,6 +41,10 @@ import sy.khatm.platform.shared.web.ErrorEnvelope;
  */
 @RestController
 @RequestMapping("/api/v1/credentials")
+// api-role only (ADR-09): the worker image runs stream consumers and exposes no business REST
+// endpoints. matchIfMissing=true keeps this active in every profile that doesn't explicitly set
+// khatm.web.enabled=false (i.e. api/test/local/default), so existing web tests are unaffected.
+@ConditionalOnProperty(name = "khatm.web.enabled", havingValue = "true", matchIfMissing = true)
 class CredentialController {
 
   private final CredentialService service;

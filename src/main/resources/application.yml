@@ -46,10 +46,71 @@ khatm:
     # base64-encoded. Same no-silent-default pattern as khatm.keys.soft.passphrase above —
     # ClaimsEncryptionService fails startup if this is blank outside the 'local' profile.
     enc-key: ${KHATM_CLAIMS_ENC_KEY:}
+  # ADR-09: one image, two runtime roles selected by Spring profile. These defaults are api-like
+  # (publishes events, exposes REST, runs no stream consumers); the 'worker' profile document below
+  # flips them. khatm.role is read by RoleStartupLogger; the flags drive the @ConditionalOnProperty
+  # gating on controllers (khatm.web.enabled) and worker beans (khatm.worker.enabled).
+  role: api
+  web:
+    enabled: true
+  worker:
+    enabled: false
+    stream:
+      # How often the Redis Streams consumer polls for new + pending entries (ADR-09 backbone).
+      poll-interval-ms: 2000
+      # Handler failures before an entry is moved to the dead-letter stream (task step 4; N
+      # configurable). Default 3 per the task contract.
+      max-attempts: 3
+      # Redis Streams consumer group + the stream each externalized credential event lands on.
+      group: khatm-workers
+      credential-events-stream: khatm.credential.events
+      dlq-stream: khatm.dlq
+    claim-code:
+      # FS-0.2 §3.7 expiry-zeroing sweep interval. Default 300000 ms = 5 minutes (task step 5a).
+      expiry-sweep-ms: 300000
 
 logging:
   level:
     sy.khatm: INFO
+
+---
+spring:
+  config:
+    activate:
+      on-profile: api
+khatm:
+  role: api
+  web:
+    enabled: true
+  worker:
+    enabled: false
+
+---
+spring:
+  config:
+    activate:
+      on-profile: worker
+khatm:
+  role: worker
+  web:
+    # The worker image runs stream consumers and exposes no business REST endpoints (ADR-09).
+    # Gating flags off CredentialController + JwksController via @ConditionalOnProperty.
+    enabled: false
+  worker:
+    enabled: true
+
+---
+spring:
+  config:
+    activate:
+      on-profile: test
+khatm:
+  events:
+    # The existing shared-context test suite (IntegrationTestSupport) has no Redis container.
+    # Disable Modulith→Redis externalization there so issue()'s CredentialIssued event never
+    # attempts an XADD. The worker-stream integration tests override this to true and bring their
+    # own Redis Testcontainer.
+    externalize: false
 
 ---
 spring:

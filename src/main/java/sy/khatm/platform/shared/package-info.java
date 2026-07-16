@@ -16,10 +16,12 @@
  * framework libraries.
  *
  * <p><b>Exposed API:</b> all public types directly in this package (the implicit unnamed
- * interface), plus two deliberate {@code @NamedInterface}s: {@code error} (other modules throw
- * {@code KhatmException} subtypes and use {@code VerifyReason} directly) and {@code web} (other
+ * interface), plus three deliberate {@code @NamedInterface}s: {@code error} (other modules throw
+ * {@code KhatmException} subtypes and use {@code VerifyReason} directly), {@code web} (other
  * modules' OpenAPI annotations reference {@code ErrorEnvelope} as the shared error-response
- * schema). Sub-packages such as {@code config/} remain module-private.
+ * schema), and {@code events} (the ADR-09 async backbone — other modules implement {@code
+ * StreamEventHandler} to consume externalized events from Redis Streams). Sub-packages such as
+ * {@code config/} remain module-private.
  *
  * <p><b>Tables owned:</b> {@code audit_log} (append-only; the write path is KH-0.6b).
  */
