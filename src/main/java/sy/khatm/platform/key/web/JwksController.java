@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.time.Duration;
 import java.util.List;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.CacheControl;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -27,6 +28,9 @@ import sy.khatm.platform.shared.TenantContext;
  * visible.
  */
 @RestController
+// api-role only (ADR-09): JWKS is part of the api/verify public surface; the worker image exposes
+// no business REST endpoints. See CredentialController for the matchIfMissing rationale.
+@ConditionalOnProperty(name = "khatm.web.enabled", havingValue = "true", matchIfMissing = true)
 class JwksController {
 
   private static final Duration CACHE_MAX_AGE = Duration.ofMinutes(5);

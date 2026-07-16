@@ -3,10 +3,17 @@
 
 ## Current phase / task
 - Phase 0 — Production Foundation
-- Last task: KH-0.6a (error handling hierarchy & bilingual messages — work rules 2 & 3, first
-  half of KH-0.6 as split) — DONE & MERGED via PR #10 (2026-07-16), `mvn verify` green (54/54
-  tests, Spotless/Checkstyle/Modulith boundaries clean). **CLAUDE.md work rules 2 & 3 are now
-  LIVE** — see "Decisions made" below for what that obligates future sessions to do.
+- Current task: **ADR-09-WORKER** — async worker skeleton (Spring Modulith externalized events →
+  transactional outbox → Redis Streams) + first real worker (claim_code `disclosures_enc`
+  expiry-zeroing, closing the remaining half of that blocker per FS-0.2 §3.7). DONE, `mvn verify`
+  green (62/62 tests, Spotless/Checkstyle/Modulith boundaries clean). PR open against `main`
+  (`feat/ADR-09-worker-skeleton`) — **NOT merged** (session ended before merge by instruction).
+  **ADR-09's worker architecture is now REAL, not aspirational**; the `disclosures_enc` blocker
+  is reduced to on-claim zeroing only (folds into KH-1.2.1). See "Decisions made" → Session
+  ADR-09-worker.
+- Prev task: KH-0.6a (error hierarchy & bilingual messages — CLAUDE.md work rules 2 & 3) — DONE
+  & MERGED via PR #10 (2026-07-16). **Work rules 2 & 3 are now LIVE** — see "Decisions made"
+  below for what that obligates future sessions to do.
 - The FS-0.6a §4 Arabic-speaker review gate ran in the merge session itself: one wording
   refinement on `verify.reason.bad_sd_alg` (dropped the redundant "digest"/هضم qualifier); the
   rest of `messages_ar.properties` confirmed natural MSA as written. Keys untouched, so
@@ -23,6 +30,58 @@
   go through a PR, never a direct push to `main`.
 
 ## Last completed
+- 2026-07-16: ADR-09-WORKER — async worker skeleton + claim_code expiry zeroing (spec ADR-09 +
+  FS-0.2 §3.7; `mvn verify` green, 62/62 tests).
+  - **Externalizer decision (custom, not official)**: there is **no `spring-modulith-events-redis`
+    for Modulith 1.2.x** (verified against the 1.2.4 source tree — only amqp/kafka/jms/aws-sqs/
+    aws-sns ship). So `shared/events/RedisStreamsExternalizationConfig` provides the same shape
+    those completions do: a `DelegatingEventExternalizer` bean whose `BiFunction` delegate `XADD`s
+    each `@Externalized` event to its target stream, returns a completed `CompletableFuture`
+    (normal → outbox row marked complete; failed → row stays incomplete for replay). All required
+    event artifacts (`events-api`, `events-core`, `events-jackson`, `events-jdbc`) were ALREADY on
+    the runtime classpath via `spring-modulith-starter-jdbc`; the one pom change is promoting
+    **`spring-modulith-events-core` to compile scope** so `DelegatingEventExternalizer` is visible
+    at compile time (it ships runtime-scoped under the starter).
+  - **`api`/`worker` role split**: one `@SpringBootApplication`, role selected by Spring profile
+    (compose already passes `local,api` / `local,worker`). `application.yml` `api`/`worker`/`test`
+    profile documents set `khatm.role`/`khatm.web.enabled`/`khatm.worker.enabled`; the two business
+    controllers (`CredentialController`, `JwksController`) are `@ConditionalOnProperty(web.enabled,
+    matchIfMissing=true)` so they vanish in `worker`; the stream consumer + expiry sweep are
+    `@ConditionalOnProperty(worker.enabled=true)`; `@EnableScheduling` on the main class (a no-op
+    in `api` since no `@Scheduled` beans load); `RoleStartupLogger` logs the active role.
+  - **`CredentialIssued` event** (`credential/events/`): `@Externalized("khatm.credential.events")`,
+    proof-shaped payload `(ref, claimCodeExpiresAt, occurredAt)` — refs + timestamps only, never
+    claims/disclosures (SEC §9). Published inside `CredentialService#issue`'s transaction; the JDBC
+    outbox captures it, the externalizer ships it after commit. `claimCodeExpiresAt` is `null` for
+    bare issuance (no claim code created there) — forward-looking field for a future consumer.
+  - **Consumer infra** (`shared/events/`, `events` named interface exposed from `shared`):
+    `WorkerStreamProperties` (`khatm.worker.stream.*`), `RedisStreamConsumer` (ensures the
+    `khatm-workers` group, `@Scheduled` poll of `khatm.credential.events`), `StreamEventDispatcher`
+    (idempotent by stream entry id via `khatm:processed:*` keys w/ TTL, synchronous retry up to
+    `max-attempts` default 3, then dead-letter to `khatm.dlq` + ACK; `StreamEventHandler` SPI).
+    `shared/events/README.md` documents the DLQ inspection commands (`XLEN`/`XRANGE`/`XREVRANGE`)
+    and the no-automatic-requeue design.
+  - **`ClaimCodeExpiryWorker`** (`credential/worker/`, worker-role only, `@Scheduled` default 5
+    min): single bulk `UPDATE claim_code SET disclosures_enc=NULL WHERE expires_at<now AND
+    disclosures_enc IS NOT NULL AND claimed_at IS NULL` (new `ClaimCodeRepository#zeroExpiredUnclaimed`
+    JPQL `@Modifying` query), count logged, `CLAIM_CODES_EXPIRED` audit row written **only when
+    count>0** (detail `{"count":N}`). This closes FS-0.2 §3.7's **expiry** half; the **on-claim**
+    half belongs to the claim-delivery endpoint (KH-1.2.1).
+  - **docker-compose**: unchanged — the `khatm-worker` service already passes `local,worker`, which
+    now actually activates the consumer beans + disables business REST. Verified by inspection +
+    the worker-role integration tests (no compose edit needed; the profile assumption was correct
+    once the profiles meant something).
+  - **Tests** (8 new): `WorkerRoleGuardTest` (7e — `ApplicationContextRunner`: worker=true loads
+    consumer/dispatcher beans, worker=false/api loads none), `ClaimCodeExpirySweepTest` (7d — only
+    expired-unclaimed zeroed; unexpired + already-claimed untouched; `CLAIM_CODES_EXPIRED` audit
+    row with count; `disclosures_enc` NULL after ⇒ decrypt impossible), `RedisStreamWorkerTest`
+    (7a outbox→stream→consumer round-trip + 7b idempotency), `RedisStreamDeadLetterTest` (7c — N
+    failures → `khatm.dlq`, original ACKed/cleared). `NoDisclosureContentInLogsTest` extended with a
+    sweep method (proves the sweep's logs never carry a claim value or salt).
+  - **Side-fix (pre-existing, discovered)**: `docs/error-codes.md` had no `eol=lf` pin in
+    `.gitattributes`, so a Windows CRLF checkout made `ErrorCodesDocGenerationTest`'s byte-for-byte
+    comparison fail locally (passed on CI/Linux). Pinned `docs/error-codes.md text eol=lf` — the
+    same fix CONVENTIONS §6 already applies to migrations/checksums. No content change to the file.
 - 2026-07-16: KH-0.6a — Error hierarchy, envelope & EN/AR bundles (spec FS-0.6a, all eight
   pre-approved design decisions D1–D8 implemented as given; CLAUDE.md work rules 2 & 3 now LIVE).
   - **`shared/error/`** (new `@NamedInterface("error")`): `KhatmException` (abstract;
@@ -538,6 +597,43 @@
   `1.5.6`, safely under what we actually resolve. Picked by checking each candidate version's
   POM directly rather than assuming "newest is fine."
 
+### Session ADR-09-worker (2026-07-16)
+- **Custom Redis externalizer, not an official artifact**: verified at the 1.2.4 source tree that
+  `spring-modulith-events-redis` does not exist for 1.2.x (the task pre-approved both paths). The
+  custom `DelegatingEventExternalizer` mirror what the official amqp/kafka completions do — the
+  only Modulith API surface depended on is the public `DelegatingEventExternalizer` + `@Externalized`
+  + `RoutingTarget` + `EventExternalizationConfiguration`, all confirmed against the 1.2.4 source
+  (not memory). The externalizer is gated by `khatm.events.externalize` (default true) and the
+  `test` profile sets it false so the existing Redis-less shared-context suite never attempts an
+  `XADD` (and `issue()`'s `CredentialIssued` publication stays a harmless no-op there).
+- **`spring-modulith-events-core` promoted to compile scope**: it ships runtime-scoped under
+  `spring-modulith-starter-jdbc`, so `DelegatingEventExternalizer` is invisible at compile time
+  without this one-line pom change. No version pinned (managed by the BOM); the artifact was
+  already transitively present at runtime.
+- **Role split via `@ConditionalOnProperty`, not `@Profile`**: `khatm.web.enabled` (default true,
+  matchIfMissing) on the two controllers and `khatm.worker.enabled` (default false) on the
+  consumer/sweep beans, driven by `api`/`worker` profile documents. Chosen over `@Profile` so (a)
+  the existing `test`-profile web tests are unaffected (`matchIfMissing=true` keeps controllers
+  on), and (b) the role-guard test can assert the conditional with a property-toggle, not a
+  profile swap. The worker image still has no business REST (controllers gated off) — note that
+  `/actuator/health` is not exposed (actuator is not a dependency); adding it is future ops work,
+  not this task's scope (the frozen stack stays frozen).
+- **Synchronous retry + DLQ, not PEL reclaim**: the dispatcher retries a failing handler
+  `max-attempts` times in-memory, then `XADD`s to `khatm.dlq` and ACKs the original. This covers
+  the task's stated at-least-once + DLQ semantics and is deterministic to test. Cross-instance
+  pending reclaim via `XAUTOCLAIM` (crash-recovery of an orphaned consumer's PEL) is a documented
+  future hardening, not a gap in the stated contract — called out in `shared/events/README.md`.
+- **`CredentialIssued.claimCodeExpiresAt` is nullable**: bare `issue()` creates no claim code
+  (`issueClaimCode` is a separate call), so it is `null` at issuance. Kept as a forward-looking
+  field for a future consumer rather than fabricating an expiry; documented on the record.
+- **Stream test isolation = per-class containers**: the round-trip and DLQ test classes each get
+  their OWN Postgres + Redis (not a shared static pair). Two cached worker contexts sharing one
+  Redis (both `@Scheduled` pollers alive) was flaky — the sole-consumer-per-broker setup is stable
+  and removes cross-context contention. The idempotency test uses a valid-format synthetic stream
+  id (`XACK` of a non-existent id is a no-op) rather than a real entry, for determinism.
+
+> Durable conventions formerly logged here
+
 > Durable conventions formerly logged here (entity visibility, the Checkstyle
 > logger/MethodName exceptions) now live in `docs/CONVENTIONS.md` §2/§5 — this file only
 > keeps session-scoped decisions. The stale "`ddl-auto: update` kept" note has been removed
@@ -564,14 +660,18 @@
   `mvn verify` run.
 
 ## Open decisions / blockers
-- **`claim_code.disclosures_enc` — encryption half CLOSED as of KH-0.4 (2026-07-16).**
-  `CredentialService#issueClaimCode` now populates real disclosures (extracted from the SD-JWT
-  presentation) and AES-256-GCM encrypts them via `ClaimsEncryptionService` before persisting
-  (spec FS-0.4 D7; key from `khatm.claims.enc-key`, fails startup outside `local` if missing).
-  **What remains open**: the expiry-zeroing worker that clears `disclosures_enc` back to
-  `NULL` on claim or timeout, and the actual claim-delivery path to a wallet — both are
-  KH-1.2.1, which still depends on the ADR-09 worker skeleton (not yet built). `decrypt()`
-  exists on `ClaimsEncryptionService` now (tested), ready for that worker to call.
+- **`claim_code.disclosures_enc` — expiry-zeroing half now CLOSED (ADR-09-worker, 2026-07-16).
+  Only the on-claim half remains.** Full picture across sessions:
+  - Encryption: CLOSED (KH-0.4) — `issueClaimCode` AES-256-GCM encrypts disclosures before
+    persisting (key from `khatm.claims.enc-key`, fails startup outside `local` if missing).
+  - **Expiry-zeroing: CLOSED (ADR-09-worker, this session)** — `ClaimCodeExpiryWorker` sweeps
+    expired+unclaimed codes and NULLs `disclosures_enc`, writing a `CLAIM_CODES_EXPIRED` audit
+    row only when something changed (FS-0.2 §3.7's expiry case).
+  - **What remains open**: the **on-claim zeroing** (NULL `disclosures_enc` the instant a wallet
+    successfully claims a code) and the actual **claim-delivery path** to a wallet. Both are
+    KH-1.2.1 — which no longer has an unsatisfied dependency (the ADR-09 worker skeleton it was
+    waiting on is now real). `decrypt()` exists on `ClaimsEncryptionService` (tested), ready for
+    the claim endpoint to call.
 
 ## Next up (ordered)
 1. KH-0.6b — session/API-key auth filter + RBAC + the full `shared.audit_log` write path
@@ -579,8 +679,10 @@
    `AuthenticationException`/`AuthorizationException` and adds `KH-RBC-*` `ErrorCode`s. Needs
    its own spec (KH-0.6a's spec explicitly scoped this out — FS-0.6a §1 "خارج النطاق").
 2. KH-0.3.3 — staging auto-deploy (explicitly out of scope for KH-0.3.1's CI pipeline)
-3. KH-1.2.1 — claim-delivery worker + `disclosures_enc` expiry-zeroing (needs the ADR-09
-   worker skeleton; the encryption half it depends on landed in KH-0.4)
+3. KH-1.2.1 — claim-delivery endpoint: a wallet claims a code → `ClaimsEncryptionService.decrypt`
+   → deliver disclosures → **on-claim zero** `disclosures_enc` to NULL. The ADR-09 worker skeleton
+   it was blocked on is now real, and the **expiry-zeroing** half of FS-0.2 §3.7 landed this
+   session (ADR-09-worker); only the on-claim half + delivery path remain.
 4. KH-1.3 — Status List: publish the real signed bitstring artifact endpoint (the `status`
    claim's `uri` is a placeholder until then, KH-0.4 D3)
 5. KH-1.6 — published OpenAPI contract: full endpoint annotation coverage (KH-0.4/KH-0.6a only

@@ -74,6 +74,18 @@
       <groupId>org.springframework.modulith</groupId>
       <artifactId>spring-modulith-starter-jdbc</artifactId>
     </dependency>
+    <!--
+      ADR-09 worker skeleton: the custom Redis Streams externalizer (shared/events) instantiates
+      DelegatingEventExternalizer directly. That class lives in spring-modulith-events-core, which
+      spring-modulith-starter-jdbc pulls in at RUNTIME scope only — so it is absent at compile time.
+      Promoting it to the default (compile) scope here makes the externalization SPI visible to our
+      code. Version managed by the spring-modulith BOM (no official spring-modulith-events-redis
+      exists for 1.2.x, hence the custom transport — see RedisStreamsExternalizationConfig).
+    -->
+    <dependency>
+      <groupId>org.springframework.modulith</groupId>
+      <artifactId>spring-modulith-events-core</artifactId>
+    </dependency>
 
     <!-- Database -->
     <dependency>

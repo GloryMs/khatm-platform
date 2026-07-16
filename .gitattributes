@@ -1,9 +1,12 @@
-# Force LF for files whose bytes are hashed or executed as scripts, so behavior is identical
-# regardless of the checking-out OS/git config. Without this, a Windows clone (core.autocrlf=true)
-# and a Linux CI runner can end up with different line endings for the "same" file, which would
-# break MigrationImmutabilityTest's checksums (KH-0.2.2) and shell script shebangs.
+# Force LF for files whose bytes are hashed, executed as scripts, or compared byte-for-byte by a
+# test, so behavior is identical regardless of the checking-out OS/git config. Without this, a
+# Windows clone (core.autocrlf=true) and a Linux CI runner can end up with different line endings
+# for the "same" file, which would break MigrationImmutabilityTest's checksums (KH-0.2.2), shell
+# script shebangs, and ErrorCodesDocGenerationTest's byte-for-byte comparison of error-codes.md
+# (KH-0.6a — surfaces on Windows CRLF checkouts).
 *.sql text eol=lf
 *.sh text eol=lf
 *.lock text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
+docs/error-codes.md text eol=lf

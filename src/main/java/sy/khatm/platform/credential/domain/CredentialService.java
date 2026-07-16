@@ -31,6 +31,7 @@ import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -42,6 +43,7 @@ import sy.khatm.platform.credential.api.CredentialView;
 import sy.khatm.platform.credential.api.IssueRequest;
 import sy.khatm.platform.credential.api.IssueResponse;
 import sy.khatm.platform.credential.api.VerifyResponse;
+import sy.khatm.platform.credential.events.CredentialIssued;
 import sy.khatm.platform.credential.persistence.ClaimCodeRepository;
 import sy.khatm.platform.credential.persistence.ConsumptionEventRepository;
 import sy.khatm.platform.credential.persistence.CredentialRepository;
@@ -106,6 +108,7 @@ public class CredentialService {
   private final StringRedisTemplate redis;
   private final CredentialMapper mapper;
   private final ClaimsEncryptionService claimsEncryption;
+  private final ApplicationEventPublisher eventPublisher;
 
   @Value("${khatm.issuer-did:did:web:khatm.sy:demo}")
   private String issuerDid;
@@ -122,7 +125,8 @@ public class CredentialService {
       ConsumingPartyRegistry consumingParties,
       StringRedisTemplate redis,
       CredentialMapper mapper,
-      ClaimsEncryptionService claimsEncryption) {
+      ClaimsEncryptionService claimsEncryption,
+      ApplicationEventPublisher eventPublisher) {
     this.credentials = credentials;
     this.events = events;
     this.claimCodes = claimCodes;
@@ -135,6 +139,7 @@ public class CredentialService {
     this.redis = redis;
     this.mapper = mapper;
     this.claimsEncryption = claimsEncryption;
+    this.eventPublisher = eventPublisher;
   }
 
   // ── Issue ────────────────────────────────────────────────────────────────
@@ -222,6 +227,12 @@ public class CredentialService {
     c.setRevoked(false);
     c.setCreatedAt(now);
     credentials.save(c);
+
+    // ADR-09: publish CredentialIssued inside this transaction. Spring Modulith writes it to the
+    // event_publication outbox now (same tx) and externalizes it to the khatm.credential.events
+    // Redis Stream after commit. Proof-shaped payload only — ref + timestamps, never claims or
+    // disclosures (SEC §9 applies to the stream exactly as to logs).
+    eventPublisher.publishEvent(new CredentialIssued(ref, null, now));
 
     return new IssueResponse(id.toString(), ref, presentation);
   }
