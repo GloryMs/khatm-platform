@@ -4,15 +4,17 @@
 ## Current phase / task
 - Phase 0 — Production Foundation
 - Last task: KH-0.6a (error handling hierarchy & bilingual messages — work rules 2 & 3, first
-  half of KH-0.6 as split) — DONE, `mvn verify` green (54/54 tests, Spotless/Checkstyle/
-  Modulith boundaries clean). **CLAUDE.md work rules 2 & 3 are now LIVE** — see "Decisions
-  made" below for what that obligates future sessions to do.
-- PR open (`feat/KH-0.6a-errors-i18n` → `main`) — see PR number/URL in the commit that adds it,
-  or `gh pr list`. Not merged — session ended by request before merge. **The Arabic bundle
-  (`messages_ar.properties`) needs the human Arabic-speaker review gate (spec FS-0.6a §4)
-  before this PR merges** — flagged explicitly in the PR body.
+  half of KH-0.6 as split) — DONE & MERGED via PR #10 (2026-07-16), `mvn verify` green (54/54
+  tests, Spotless/Checkstyle/Modulith boundaries clean). **CLAUDE.md work rules 2 & 3 are now
+  LIVE** — see "Decisions made" below for what that obligates future sessions to do.
+- The FS-0.6a §4 Arabic-speaker review gate ran in the merge session itself: one wording
+  refinement on `verify.reason.bad_sd_alg` (dropped the redundant "digest"/هضم qualifier); the
+  rest of `messages_ar.properties` confirmed natural MSA as written. Keys untouched, so
+  `MessageBundleParityTest` stayed green.
 - KH-0.6b (auth/API-key filter + full audit write path) is the second half — NOT this session,
   needs its own spec.
+- PR #10 (`feat/KH-0.6a-errors-i18n` → `main`) merged 2026-07-16 (merge commit `ec20f95`);
+  branch deleted.
 - PR #8 (`feat/KH-0.4-sdjwt-upgrade` → `main`) merged 2026-07-16; branch deleted.
 - PR #6/#7 (docs ratifications + STATE.md follow-up) merged 2026-07-15; branches deleted.
 - PR #5 (`feat/KH-0.5-key-provider-spi` → `main`) merged 2026-07-15; branch deleted.
@@ -572,21 +574,19 @@
   exists on `ClaimsEncryptionService` now (tested), ready for that worker to call.
 
 ## Next up (ordered)
-1. **Merge gate for this session's own PR**: `messages_ar.properties` needs the human
-   Arabic-speaker review pass (spec FS-0.6a §4) before `feat/KH-0.6a-errors-i18n` merges.
-2. KH-0.6b — session/API-key auth filter + RBAC + the full `shared.audit_log` write path
+1. KH-0.6b — session/API-key auth filter + RBAC + the full `shared.audit_log` write path
    (KH-0.5's minimal direct-insert audit rows were explicitly a stopgap) + fills in
    `AuthenticationException`/`AuthorizationException` and adds `KH-RBC-*` `ErrorCode`s. Needs
    its own spec (KH-0.6a's spec explicitly scoped this out — FS-0.6a §1 "خارج النطاق").
-3. KH-0.3.3 — staging auto-deploy (explicitly out of scope for KH-0.3.1's CI pipeline)
-4. KH-1.2.1 — claim-delivery worker + `disclosures_enc` expiry-zeroing (needs the ADR-09
+2. KH-0.3.3 — staging auto-deploy (explicitly out of scope for KH-0.3.1's CI pipeline)
+3. KH-1.2.1 — claim-delivery worker + `disclosures_enc` expiry-zeroing (needs the ADR-09
    worker skeleton; the encryption half it depends on landed in KH-0.4)
-5. KH-1.3 — Status List: publish the real signed bitstring artifact endpoint (the `status`
+4. KH-1.3 — Status List: publish the real signed bitstring artifact endpoint (the `status`
    claim's `uri` is a placeholder until then, KH-0.4 D3)
-6. KH-1.6 — published OpenAPI contract: full endpoint annotation coverage (KH-0.4/KH-0.6a only
+5. KH-1.6 — published OpenAPI contract: full endpoint annotation coverage (KH-0.4/KH-0.6a only
    annotated `/issue`/`/verify`) + CI-published `openapi.json`
-7. KH-2.2 — RBAC-gated REST endpoint for `KeyLifecycleService.rotate()`
-8. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM
+6. KH-2.2 — RBAC-gated REST endpoint for `KeyLifecycleService.rotate()`
+7. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM
 
 ## Immediate note for future sessions (CLAUDE.md work rules 2 & 3 are now LIVE)
 Adding a new user-facing string or throw site from here on means, in the **same commit**:
