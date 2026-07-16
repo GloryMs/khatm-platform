@@ -41,7 +41,10 @@
  * api}, {@code status :: api}, {@code consumer :: api} — issuing/consuming a credential must
  * resolve the schema, holder, status-list allocation, and consuming party its foreign keys point at
  * (KH-0.2.1 baseline schema, spec FS-0.2 §3.6/§3.9); {@code shared} (its open root package — {@link
- * sy.khatm.platform.shared.TenantContext}, {@link sy.khatm.platform.shared.Uuidv7}).
+ * sy.khatm.platform.shared.TenantContext}, {@link sy.khatm.platform.shared.Uuidv7}); {@code shared
+ * :: error} (spec FS-0.6a — {@code KhatmException} subtypes to throw, {@code VerifyReason} for
+ * {@code CredentialService#verify}'s domain results); {@code shared :: web} (spec FS-0.6a — {@code
+ * ErrorEnvelope}, referenced only from this module's OpenAPI error-response annotations).
  */
 @org.springframework.modulith.ApplicationModule(
     allowedDependencies = {
@@ -50,6 +53,8 @@
       "holder :: api",
       "status :: api",
       "consumer :: api",
-      "shared"
+      "shared",
+      "shared :: error",
+      "shared :: web"
     })
 package sy.khatm.platform.credential;

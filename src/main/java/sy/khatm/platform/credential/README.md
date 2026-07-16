@@ -45,5 +45,18 @@ writes a durable `idempotency_key` (Redis is only the fast-path cache). The atom
 invariant (`CredentialRepository#consumeOne`) is unchanged: a single conditional `UPDATE`
 ensures exactly one concurrent consumer wins.
 
+**Error handling & i18n (KH-0.6a, spec FS-0.6a):** `CredentialService#verify` now returns
+`VerifyReason` codes (`shared :: error`) instead of raw string literals — a verification
+failure is still always a `200` domain result, never a thrown exception (D1); `#checkSignature`
+now distinguishes `unknown_kid` (missing/unresolvable `kid`) from `bad_signature` (resolved key,
+bad signature bytes), a split the old single boolean check couldn't express. `#issue` wraps a
+`KeySigner` `JOSEException` as `IntegrityException(KH-KEY-0500)` instead of propagating a
+checked exception. `CredentialController` resolves `VerifyResponse.reasonMessage` (localized)
+via `MessageSource` + the request's `Accept-Language` and throws `NotFoundException` instead of
+building `ResponseEntity.notFound()` by hand — `GlobalExceptionHandler` (`shared :: web`) is now
+the only place that builds an error response. `IssueRequest.holderRef` and `VerifyRequest.sdJwt`
+gained `@NotBlank`.
+
 **Cross-module dependencies:** `key :: api`, `schema :: api`, `holder :: api`,
-`status :: api`, `consumer :: api`, `shared` (open root package).
+`status :: api`, `consumer :: api`, `shared` (open root package), `shared :: error`
+(`KhatmException` subtypes, `VerifyReason`), `shared :: web` (`ErrorEnvelope`, OpenAPI-only).

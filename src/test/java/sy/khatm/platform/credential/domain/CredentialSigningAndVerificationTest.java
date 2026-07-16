@@ -50,9 +50,12 @@ class CredentialSigningAndVerificationTest extends IntegrationTestSupport {
   }
 
   @Test
-  void verify_tokenSignedByKeyOutsideRegistry_rejectedAsBadSignature_noFallback() throws Exception {
+  void verify_tokenSignedByKeyOutsideRegistry_rejectedAsUnknownKid_noFallback() throws Exception {
     // A key that was never generated through KeyLifecycleService — its kid cannot possibly be in
     // issuer_key. Proves resolution is strict-by-kid with no "try the current key instead."
+    // Reason is "unknown_kid" (spec FS-0.6a D2 split this from the old generic "bad_signature":
+    // a kid that can't be resolved at all is a different situation from a resolved key whose
+    // signature bytes don't verify).
     var rogueKey = new ECKeyGenerator(Curve.P_256).keyID("rogue-tenant:key-1").generate();
     JWSHeader header =
         new JWSHeader.Builder(JWSAlgorithm.ES256)
@@ -72,6 +75,6 @@ class CredentialSigningAndVerificationTest extends IntegrationTestSupport {
     VerifyResponse result = credentialService.verify(rogue.serialize());
 
     assertThat(result.valid()).isFalse();
-    assertThat(result.reason()).isEqualTo("bad_signature");
+    assertThat(result.reason()).isEqualTo("unknown_kid");
   }
 }

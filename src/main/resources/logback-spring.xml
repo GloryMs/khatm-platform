@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Khatm platform logging configuration (CLAUDE.md work rule 3, spec FS-0.6a D6).
+
+  JSON in every profile except 'local' (staging/production/CI/test all get the structured
+  encoder); 'local' keeps a human-readable console pattern for interactive development.
+  traceId (set into MDC by shared.web.TraceIdFilter) rides on every line either way — via the
+  JSON encoder's automatic MDC inclusion in non-local profiles, and via the explicit %X{traceId}
+  pattern token in local. Log MESSAGES themselves are always English (CONVENTIONS.md §4) — this
+  file only controls the surrounding format, never translates content.
+-->
+<configuration>
+  <include resource="org/springframework/boot/logging/logback/defaults.xml"/>
+
+  <springProfile name="local">
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+      <encoder>
+        <pattern>%d{HH:mm:ss.SSS} %-5level [%thread] traceId=%X{traceId:-} %logger{36} - %msg%n</pattern>
+      </encoder>
+    </appender>
+  </springProfile>
+
+  <springProfile name="!local">
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+      <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
+    </appender>
+  </springProfile>
+
+  <root level="INFO">
+    <appender-ref ref="CONSOLE"/>
+  </root>
+</configuration>
