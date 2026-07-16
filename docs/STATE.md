@@ -3,22 +3,75 @@
 
 ## Current phase / task
 - Phase 0 — Production Foundation
-- Last task: KH-0.5.1 + KH-0.5.2 + KH-0.5.3 (Key Provider SPI & SoftKeyProvider) — DONE,
-  `mvn verify` green locally (23/23 tests, Spotless/Checkstyle/Modulith boundaries clean),
-  CI green.
+- Last task: KH-0.4.1 + KH-0.4.2 + KH-0.4.3 (SD-JWT signing upgrade) — DONE, `mvn verify`
+  green locally (37/37 tests, Spotless/Checkstyle/Modulith boundaries clean). KH-0.4.4 (wallet
+  UI) is out of scope — different repo.
+- PR open (`feat/KH-0.4-sdjwt-upgrade` → `main`) — see PR number/URL in the commit that adds
+  it, or `gh pr list`. Not merged — session ended by request before merge.
+- PR #6/#7 (docs ratifications + STATE.md follow-up) merged 2026-07-15; branches deleted.
 - PR #5 (`feat/KH-0.5-key-provider-spi` → `main`) merged 2026-07-15; branch deleted.
-- PR #4 (KH-0.3.1, CI pipeline) merged 2026-07-14 (commit `4a65a39`); branch deleted. A prior
-  session's note here claiming it was "still open" was stale — confirmed merged via
-  `gh pr view 4` (2026-07-15 housekeeping check, no rebase was needed).
-- PR #6 (`chore/docs-ratifications` → `main`) merged 2026-07-15; branch deleted. Doc-only
-  housekeeping: STATE.md JDK 21 note, FS-0.5 status-header amendment record, CLAUDE.md Stack
-  (frozen) gained `bcpkix` (approved contract edit — see PR #6 body for the quoted approval).
-  Branch protection is now enabled on this repo — housekeeping doc edits go through a PR from
-  here on, not direct pushes to `main` (the PR #4/#5-status fix on 2026-07-15 was the last
-  direct push made before protection was turned on).
-- `main` is current HEAD for the next session to branch from.
+- PR #4 (KH-0.3.1, CI pipeline) merged 2026-07-14 (commit `4a65a39`); branch deleted.
+- Branch protection is enabled on this repo — all changes (including docs-only housekeeping)
+  go through a PR, never a direct push to `main`.
 
 ## Last completed
+- 2026-07-16: KH-0.4.1 + KH-0.4.2 + KH-0.4.3 — SD-JWT signing upgrade (spec FS-0.4, all eight
+  pre-approved design decisions D1–D8 implemented as given).
+  - **Library confirmed before adopting (D4 gate)**: `com.authlete:sd-jwt:1.9` — read its
+    actual source on GitHub (not just the README) to verify it never touches signing/key
+    material. Confirmed: `SDObjectBuilder`/`Disclosure`/`SDJWT` only build/parse the payload
+    Map and disclosure strings; signing stays exclusively through `KeySigner` (unchanged, D4).
+    Its own `_sd` digest-list builder already sorts alphanumerically — satisfies D5's
+    "(shuffled)" requirement for free, no manual shuffling needed. Its default `Disclosure`
+    salt generation is already `SecureRandom`, 128-bit, base64url — satisfies D5's salt
+    requirement exactly, verified by reading `SDUtility.generateRandomBytes`/`Disclosure`
+    source directly rather than trusting the README's word for it.
+  - **`CredentialService#issue`**: every `claims` entry → `SDObjectBuilder.putSDClaim` (D1);
+    only D3's structural fields (`iss`, `iat`, `nbf`, `exp`, `vct` = `{schema.code}:{version}`,
+    `ref`, `status`) added via `putClaim`; `status` follows the IETF Token Status List shape
+    (`status.status_list.{idx,uri}` — `uri` is a provisional placeholder, the raw
+    `status_list_id`, until KH-1.3 publishes a real signed-bitstring endpoint, spec §7).
+    `JWTClaimsSet.parse(Map)` converts the built payload Map into what `KeySigner.sign()`
+    still takes unchanged. `credential.signed_payload` stores the compact JWT only (D6); the
+    response returns the full tilde-separated presentation (`IssueResponse.sdJwt`, replacing
+    the old `jwt` field per work rule 4 — not kept alongside it).
+  - **`CredentialService#verify`**: accepts the tilde presentation, or a bare compact JWT
+    treated as a zero-disclosure presentation (spec §5 — not an error). Existing sig/exp/ref
+    /revoked checks unchanged; added `_sd_alg == "sha-256"` check, per-disclosure digest +
+    duplicate-name checks (`forged_disclosure`/`duplicate_disclosure`), and the D2
+    mandatory-disclosure check (every `claims_def` field not in `sd_fields` must be
+    disclosed, else `withheld_mandatory_claim`) via `SchemaCatalog#findById` — no new
+    cross-module dependency, `schema :: api` was already depended on.
+  - **`ClaimsEncryptionService`** (new, `credential.domain`, module-private): AES-256-GCM, key
+    from `khatm.claims.enc-key` (32-byte base64 env var), random 96-bit nonce per call
+    prepended to the ciphertext, fail-fast startup outside `local` — mirrors
+    `SoftKeyProvider`'s passphrase pattern exactly (constructor check + `application.yml`
+    profile document + dedicated fail-fast test). `CredentialService#issueClaimCode` now
+    actually encrypts `join(disclosures, "~")` into `disclosures_enc` (D7) — closes the
+    encryption half of the long-open `disclosures_enc` blocker (see below).
+  - **`schema :: api` widened**: `SchemaRef` gained `claimsDefJson` + `sdFields` (previously
+    id/code/version only) — the verify path's mandatory-disclosure check needs the full
+    field list. No new module boundary; `credential` already depended on `schema :: api`.
+  - **`DemoSeeder`**: demo schema now has a real mandatory/optional split (`result` mandatory;
+    `caseNumber`/`issuedAt` withholdable) so both directions are exercised by construction.
+  - **OpenAPI**: `springdoc-openapi-starter-webmvc-api:2.8.17` added (the last release in the
+    2.x line — matches Spring Boot 3.3.x; the 3.x line targets Boot 3.4+). Deliberately the
+    "-api" artifact, not "-webmvc-ui" — JSON generation (`/v3/api-docs`) and annotations only,
+    no live Swagger UI exposed (no auth exists ahead of KH-0.6). Only `/issue` and `/verify`
+    annotated (this session's actual scope); full endpoint coverage and CI-published
+    `openapi.json` remain KH-1.6 (spec FS-0.4 §7 names it explicitly).
+  - **Message bundles**: still don't exist (`messages_en/ar.properties` — KH-0.6, unchanged
+    from KH-0.5's note). No new user-facing message keys were introduced this session either,
+    so there was nothing to add even if the bundles existed.
+  - **Tests**: `SdJwtIssuanceStructuralTest` (DoD #1, flagship — decodes the *persisted*
+    `signed_payload` row and asserts no `claims_def` key/value appears anywhere, only D3
+    fields + `_sd`/`_sd_alg`), `SdJwtVerificationTest` (DoD #2 round-trip, #3 selective
+    disclosure, #4's four rejections — tampered value, forged digest, duplicate, withheld
+    mandatory — plus the zero-disclosure-presentation case), `ClaimsEncryptionServiceTest` +
+    `ClaimsEncryptionKeyFailureTest` (DoD #5), `NoDisclosureContentInLogsTest` (DoD #7 — a
+    Logback `ListAppender` captures a full issue→verify→claim-code cycle and asserts no
+    plaintext claim value or salt appears in any log line). DoD #6 (FS-0.5 key-module tests
+    unmodified and green) confirmed by running that suite untouched — all 23 pass.
 - 2026-07-15: KH-0.5.1 + KH-0.5.2 + KH-0.5.3 — Key Provider SPI & SoftKeyProvider (spec
   FS-0.5, all four pre-approved design decisions D1–D4 implemented as given).
   - **`key :: api`** unchanged surface, new shape: `KeySigner.sign()` now returns `SignResult`
@@ -316,6 +369,42 @@
   `IntegrationTestSupport`) doesn't have this problem — it operates at a different layer
   (`ContextCustomizer`) that always wins regardless.
 
+### Session KH-0.4 (2026-07-16)
+- **`status` claim follows the IETF Token Status List draft shape
+  (`status.status_list.{idx,uri}`), not a flatter `status.{idx,list}`**: spec D3's Arabic
+  gloss ("status_list: list URL + idx") reads naturally as naming the real IETF field
+  (`status_list`) containing `uri`+`idx` — matching a real spec beats inventing a bespoke
+  shape, and it costs nothing extra now. `uri` is a placeholder (the raw `status_list_id`) —
+  no real bitstring endpoint exists before KH-1.3, so there is nothing to point it at yet.
+- **`IssueRequest` gained `sdFields` rather than inventing a schema-authoring path**: real
+  schema authoring (mandatory vs. optional claims_def fields, typed editor) is KH-1.x and out
+  of scope. `DemoSeeder`/any dynamic-schema caller needed *some* way to express "these fields
+  are optional" for D2 to be exercisable at all; a nullable `List<String>` request field
+  (null → everything withholdable, preserving old single-caller behavior) was the smallest
+  change that didn't touch the schema module's actual authoring model.
+- **`SchemaRef` widened (`claimsDefJson`, `sdFields`) instead of adding a new schema-module
+  method**: the verify path's mandatory-disclosure check (D2) needs the full claims_def field
+  list, and `credential` already depends on `schema :: api` — widening the existing DTO some
+  callers already hold needs no new cross-module dependency and no new boundary for
+  `ModulithBoundariesTest` to police.
+- **`issueClaimCode` now takes the `sdJwt` presentation as a parameter, not just the
+  credential id**: disclosures are never persisted anywhere in plaintext (by design, P1-
+  adjacent), so a later, independent call has no other way to reach them. The only holder of
+  the plaintext disclosures at any point after `issue()` returns is whoever received the
+  `IssueResponse` — so encryption has to happen from that same handoff, not from a separate
+  DB-only lookup. `DemoSeeder` was updated to pass `issued.sdJwt()` through immediately.
+- **`springdoc-openapi-starter-webmvc-api` (no UI), 2.8.17 not 3.0.3**: CLAUDE.md's frozen
+  stack already names springdoc-openapi, so adding the dependency itself isn't a new decision
+  — but *how much* of it to add is: the "-api" artifact gives annotations + `/v3/api-docs`
+  JSON generation without exposing a live Swagger UI, which felt premature with zero auth in
+  front of anything before KH-0.6. Version 2.8.17 (not the newer 3.0.x line) because 3.x
+  targets Spring Boot 3.4+/Spring Framework 6.2+ and this project is pinned to Boot 3.3.4.
+- **Only `/issue` and `/verify` got OpenAPI annotations, not every endpoint**: the task scope
+  was "the changed issue/verify request-response shapes" specifically; retroactively
+  annotating `/consume`, `/revoke`, `/{id}` (unchanged this session) would have been scope
+  creep beyond what was asked, and full coverage + CI publishing is explicitly KH-1.6 per
+  spec FS-0.4 §7.
+
 > Durable conventions formerly logged here (entity visibility, the Checkstyle
 > logger/MethodName exceptions) now live in `docs/CONVENTIONS.md` §2/§5 — this file only
 > keeps session-scoped decisions. The stale "`ddl-auto: update` kept" note has been removed
@@ -342,22 +431,26 @@
   `mvn verify` run.
 
 ## Open decisions / blockers
-- **`claim_code.disclosures_enc` is not AES-GCM encrypted per spec FS-0.2 §3.7 — it is left
-  `NULL` entirely.** `CredentialService#issueClaimCode` (called by the local/dev `DemoSeeder`)
-  never sets `disclosuresEnc` on the `ClaimCode` it saves; this is stronger than "plaintext in
-  the column" (no disclosure data is written at all yet), but the net effect is the same: the
-  claim flow cannot currently hand real disclosure values to a wallet. Populating this field
-  (post real SD-JWT disclosure extraction), AES-GCM encrypting it, and the expiry-zeroing
-  worker that clears it on claim/timeout are all hard requirements of KH-1.2.1 (the worker
-  path depends on the ADR-09 worker skeleton, not yet built).
+- **`claim_code.disclosures_enc` — encryption half CLOSED as of KH-0.4 (2026-07-16).**
+  `CredentialService#issueClaimCode` now populates real disclosures (extracted from the SD-JWT
+  presentation) and AES-256-GCM encrypts them via `ClaimsEncryptionService` before persisting
+  (spec FS-0.4 D7; key from `khatm.claims.enc-key`, fails startup outside `local` if missing).
+  **What remains open**: the expiry-zeroing worker that clears `disclosures_enc` back to
+  `NULL` on claim or timeout, and the actual claim-delivery path to a wallet — both are
+  KH-1.2.1, which still depends on the ADR-09 worker skeleton (not yet built). `decrypt()`
+  exists on `ClaimsEncryptionService` now (tested), ready for that worker to call.
 
 ## Next up (ordered)
-1. KH-0.4 SD-JWT signing upgrade — signs via `KeySigner` unchanged (this is why KH-0.5 was
-   ordered first; spec FS-0.5 §9)
-2. KH-0.6 Console auth + API-key filter + `rbac`/`shared.audit_log` write path (a fuller
+1. KH-0.6 Console auth + API-key filter + `rbac`/`shared.audit_log` write path (a fuller
    version than KH-0.5's minimal direct-insert audit rows) + the `KhatmException`/`ErrorCode`
    hierarchy (CLAUDE.md work rule 3 — still not started) + the message bundles
    (`messages_en.properties`/`messages_ar.properties` don't exist yet — CLAUDE.md work rule 2)
-3. KH-0.3.3 — staging auto-deploy (explicitly out of scope for KH-0.3.1's CI pipeline)
-4. KH-2.2 — RBAC, needed before `KeyLifecycleService.rotate()` can get a REST endpoint
-5. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM
+2. KH-0.3.3 — staging auto-deploy (explicitly out of scope for KH-0.3.1's CI pipeline)
+3. KH-1.2.1 — claim-delivery worker + `disclosures_enc` expiry-zeroing (needs the ADR-09
+   worker skeleton; the encryption half it depends on landed in KH-0.4)
+4. KH-1.3 — Status List: publish the real signed bitstring artifact endpoint (the `status`
+   claim's `uri` is a placeholder until then, KH-0.4 D3)
+5. KH-1.6 — published OpenAPI contract: full endpoint annotation coverage (KH-0.4 only
+   annotated `/issue`/`/verify`) + CI-published `openapi.json`
+6. KH-2.2 — RBAC, needed before `KeyLifecycleService.rotate()` can get a REST endpoint
+7. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM

@@ -13,3 +13,9 @@ name, claim fields, selective-disclosure fields, default validity/max-uses.
 the console-driven authoring workflow exists. `SchemaCatalog#findById` resolves a schema back
 to its display code for read paths. Full authoring UI, claim validation, and versioning rules
 are KH-1.x.
+
+KH-0.4: `SchemaRef` now also carries `claimsDefJson` and `sdFields` (previously id/code/version
+only) — `credential.CredentialService#verify`'s mandatory-disclosure check (spec FS-0.4 D2)
+needs the full field list and the redefined `sd_fields` ("withholdable," not "hidden") to
+decide which claims_def fields a presentation must always disclose. No new cross-module
+boundary: this just widens the existing `schema :: api` DTO `credential` already depends on.

@@ -41,6 +41,11 @@ khatm:
       # 'local' profile (spec FS-0.5 §3/§8.5). The 'local' profile document below supplies the
       # only permitted default.
       passphrase: ${KHATM_KEYS_PASSPHRASE:}
+  claims:
+    # KH-0.4 (spec FS-0.4 D7): AES-256-GCM key for claim_code.disclosures_enc, 32 raw bytes
+    # base64-encoded. Same no-silent-default pattern as khatm.keys.soft.passphrase above —
+    # ClaimsEncryptionService fails startup if this is blank outside the 'local' profile.
+    enc-key: ${KHATM_CLAIMS_ENC_KEY:}
 
 logging:
   level:
@@ -58,3 +63,7 @@ khatm:
       # Documented local-only default so `docker compose up` / a bare local run work with zero
       # setup (spec FS-0.5 §3). Never used outside 'local' — SoftKeyProvider enforces that.
       passphrase: ${KHATM_KEYS_PASSPHRASE:khatm-local-dev-passphrase-change-me}
+  claims:
+    # Documented local-only default, 32 raw bytes base64-encoded (spec FS-0.4 D7). Never used
+    # outside 'local' — ClaimsEncryptionService enforces that.
+    enc-key: ${KHATM_CLAIMS_ENC_KEY:a2hhdG0tbG9jYWwtZGV2LWNsYWltcy1lbmMta2V5ISE=}

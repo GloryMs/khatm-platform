@@ -1,5 +1,7 @@
 package sy.khatm.platform.credential.web;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import java.util.UUID;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -35,14 +37,33 @@ class CredentialController {
     this.service = service;
   }
 
+  @Operation(
+      summary = "Issue a new SD-JWT verifiable credential",
+      description =
+          "Every claim becomes a salted, selectively-disclosable SD-JWT disclosure (spec FS-0.4"
+              + " D1) — none of them appear as a plaintext value in the persisted, signed"
+              + " payload. The response's sdJwt is a one-time delivery of the full presentation"
+              + " (compact JWT plus every disclosure); the platform never stores it in that"
+              + " form.",
+      responses = {@ApiResponse(responseCode = "200", description = "Credential issued")})
   @PostMapping("/issue")
   ResponseEntity<IssueResponse> issue(@RequestBody IssueRequest req) throws Exception {
     return ResponseEntity.ok(service.issue(req));
   }
 
+  @Operation(
+      summary = "Verify an SD-JWT credential presentation",
+      description =
+          "Accepts the standard tilde-separated SD-JWT presentation, or a bare compact JWT."
+              + " Passing a bare JWT with no disclosures at all is a valid zero-disclosure"
+              + " presentation (spec FS-0.4 §5) — it will typically (and correctly) fail with"
+              + " reason 'withheld_mandatory_claim' unless the schema's sd_fields happens to"
+              + " cover every claims_def field. Other rejection reasons include bad_signature,"
+              + " expired, revoked, bad_sd_alg, forged_disclosure, and duplicate_disclosure.",
+      responses = {@ApiResponse(responseCode = "200", description = "Verification result")})
   @PostMapping("/verify")
   VerifyResponse verify(@RequestBody VerifyRequest req) {
-    return service.verify(req.jwt());
+    return service.verify(req.sdJwt());
   }
 
   @PostMapping("/consume")

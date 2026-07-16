@@ -63,4 +63,14 @@ public abstract class IntegrationTestSupport {
     registry.add("khatm.keys.soft.keystore-path", TEST_KEYSTORE_PATH::toString);
     registry.add("khatm.keys.soft.passphrase", () -> "khatm-test-passphrase");
   }
+
+  /**
+   * KH-0.4: same rationale as {@link #keyProviderProperties} — {@code ClaimsEncryptionService}
+   * fails startup on a blank {@code khatm.claims.enc-key} outside {@code local} (spec FS-0.4 D7).
+   * 32 raw bytes, base64-encoded (AES-256 requires exactly that length).
+   */
+  @DynamicPropertySource
+  static void claimsEncryptionProperties(DynamicPropertyRegistry registry) {
+    registry.add("khatm.claims.enc-key", () -> "a2hhdG0tdGVzdC1jbGFpbXMtZW5jLWtleS0zMmJ5dGU=");
+  }
 }

@@ -1,6 +1,7 @@
 package sy.khatm.platform.schema.domain;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -61,6 +62,11 @@ class SchemaCatalogService implements SchemaCatalog {
   }
 
   private static SchemaRef toRef(CredentialSchema schema) {
-    return new SchemaRef(schema.getId(), schema.getCode(), schema.getVersion());
+    return new SchemaRef(
+        schema.getId(),
+        schema.getCode(),
+        schema.getVersion(),
+        schema.getClaimsDefJson(),
+        List.of(schema.getSdFields()));
   }
 }

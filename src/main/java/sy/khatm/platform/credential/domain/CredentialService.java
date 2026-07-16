@@ -1,5 +1,10 @@
 package sy.khatm.platform.credential.domain;
 
+import com.authlete.sd.Disclosure;
+import com.authlete.sd.SDJWT;
+import com.authlete.sd.SDObjectBuilder;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.nimbusds.jose.JOSEException;
@@ -13,13 +18,18 @@ import java.security.SecureRandom;
 import java.text.ParseException;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
@@ -65,11 +75,19 @@ import sy.khatm.platform.status.api.StatusListAllocator;
  * HolderDirectory} for {@code holder_id}, {@link StatusListAllocator} for {@code (status_list_id,
  * status_idx)}. All three "ensure/allocate" methods find-or-create — real console-driven onboarding
  * for schemas/holders/consuming parties is KH-1.x.
+ *
+ * <p><b>SD-JWT (spec FS-0.4):</b> every {@link IssueRequest#claims} entry becomes a salted {@link
+ * Disclosure} (D1) — {@code credential.signed_payload} stores only the compact JWT (digests + D3
+ * structural fields), never a disclosed value. {@link #issue} returns the full tilde-separated
+ * presentation as a one-time delivery; {@link #verify} accepts that same presentation format (or a
+ * bare compact JWT, treated as a zero-disclosure presentation per spec §5) and enforces every D8
+ * rejection plus the D2 mandatory-disclosure check.
  */
 @Service
 public class CredentialService {
 
   private static final String DEFAULT_STATUS_LIST_CODE = "default";
+  private static final String SD_ALG = "sha-256";
   private static final ObjectMapper JSON = new ObjectMapper();
   private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
@@ -84,6 +102,7 @@ public class CredentialService {
   private final ConsumingPartyRegistry consumingParties;
   private final StringRedisTemplate redis;
   private final CredentialMapper mapper;
+  private final ClaimsEncryptionService claimsEncryption;
 
   @Value("${khatm.issuer-did:did:web:khatm.sy:demo}")
   private String issuerDid;
@@ -99,7 +118,8 @@ public class CredentialService {
       StatusListAllocator statusLists,
       ConsumingPartyRegistry consumingParties,
       StringRedisTemplate redis,
-      CredentialMapper mapper) {
+      CredentialMapper mapper,
+      ClaimsEncryptionService claimsEncryption) {
     this.credentials = credentials;
     this.events = events;
     this.claimCodes = claimCodes;
@@ -111,6 +131,7 @@ public class CredentialService {
     this.consumingParties = consumingParties;
     this.redis = redis;
     this.mapper = mapper;
+    this.claimsEncryption = claimsEncryption;
   }
 
   // ── Issue ────────────────────────────────────────────────────────────────
@@ -124,30 +145,48 @@ public class CredentialService {
     String schemaCode = req.schemaCode() == null ? "GenericDocument/v1" : req.schemaCode();
     String holderPseudoRef = req.holderRef() == null ? "holder-demo" : req.holderRef();
     Map<String, Object> claims = req.claims() == null ? Map.of() : req.claims();
+    List<String> sdFields = req.sdFields() == null ? List.copyOf(claims.keySet()) : req.sdFields();
 
     SchemaRef schemaRef =
-        schemas.ensurePublished(buildSchemaDefinition(schemaCode, claims, maxUses));
+        schemas.ensurePublished(buildSchemaDefinition(schemaCode, claims, sdFields, maxUses));
     HolderRef holderRef = holders.ensureHolder(holderPseudoRef);
     StatusAllocation allocation = statusLists.allocate(DEFAULT_STATUS_LIST_CODE);
 
     Instant now = Instant.now();
     Instant exp = now.plus(Duration.ofMinutes(validMinutes));
     String ref = buildRef(schemaCode);
+    String vct = schemaRef.code() + ":" + schemaRef.version();
 
-    JWTClaimsSet.Builder claimsBuilder =
-        new JWTClaimsSet.Builder()
-            .issuer(issuerDid)
-            .subject(holderPseudoRef)
-            .claim("ref", ref)
-            .claim("vct", schemaCode)
-            .issueTime(Date.from(now))
-            .expirationTime(Date.from(exp))
-            .claim("use", Map.of("max", maxUses))
-            .claim("status", Map.of("idx", allocation.idx()));
-    claims.forEach(claimsBuilder::claim);
+    // D1: every claim becomes a salted disclosure — no business claim ever appears explicitly
+    // in the payload we sign, so P1 is a property of the token's structure, not just policy.
+    SDObjectBuilder sdBuilder = new SDObjectBuilder();
+    List<Disclosure> disclosures = new ArrayList<>();
+    for (Map.Entry<String, Object> entry : claims.entrySet()) {
+      disclosures.add(sdBuilder.putSDClaim(entry.getKey(), entry.getValue()));
+    }
+    // D3: the only claims that ever appear explicitly.
+    sdBuilder.putClaim("iss", issuerDid);
+    sdBuilder.putClaim("vct", vct);
+    sdBuilder.putClaim("ref", ref);
+    sdBuilder.putClaim("status", statusClaim(allocation));
+    sdBuilder.putClaim("iat", now.getEpochSecond());
+    sdBuilder.putClaim("nbf", now.getEpochSecond());
+    sdBuilder.putClaim("exp", exp.getEpochSecond());
+    Map<String, Object> payload = sdBuilder.build(/* hashAlgorithmIncluded= */ true);
 
-    SignResult signed = keys.sign(claimsBuilder.build());
-    String jwt = signed.jws();
+    JWTClaimsSet claimsSet;
+    try {
+      claimsSet = JWTClaimsSet.parse(payload);
+    } catch (ParseException e) {
+      // The map above is entirely our own construction — a parse failure here means an
+      // internal invariant broke, not bad caller input.
+      throw new IllegalStateException("Failed to build the SD-JWT claims set.", e);
+    }
+
+    SignResult signed = keys.sign(claimsSet);
+    String compactJwt = signed.jws();
+    // D6: standard tilde-separated presentation format.
+    String presentation = new SDJWT(compactJwt, disclosures).toString();
 
     Credential c = new Credential();
     c.setId(id);
@@ -155,8 +194,9 @@ public class CredentialService {
     c.setSchemaId(schemaRef.id());
     c.setHolderId(holderRef.id());
     c.setRef(ref);
-    c.setSignedPayload(jwt);
-    c.setPayloadHash(sha256(jwt));
+    // D6: signed_payload stores the compact JWT only — digests, never disclosed values.
+    c.setSignedPayload(compactJwt);
+    c.setPayloadHash(sha256(compactJwt));
     c.setStatusListId(allocation.statusListId());
     c.setStatusIdx(allocation.idx());
     c.setValidFrom(now);
@@ -167,31 +207,41 @@ public class CredentialService {
     c.setCreatedAt(now);
     credentials.save(c);
 
-    return new IssueResponse(id.toString(), ref, jwt);
+    return new IssueResponse(id.toString(), ref, presentation);
   }
 
   /**
    * Issue a one-time wallet claim code for an already-issued credential (spec FS-0.2 §3.7).
    *
-   * <p>Encrypting real disclosure values into {@code disclosures_enc} is KH-1.2.1; this method
-   * leaves that column {@code null} so the row shape is exercised ahead of that work.
+   * <p>The disclosures are extracted from {@code sdJwtPresentation} — the exact string {@link
+   * #issue} returned — and AES-256-GCM encrypted before being persisted (spec FS-0.4 D7). This is
+   * why a claim code can only be created from the presentation the issuer holds right after issuing
+   * (or a caller-supplied one from elsewhere); the platform never stores disclosures in plaintext
+   * anywhere, even transiently, so there is no other place to source them from later.
    *
    * @param credentialId the credential to generate a claim code for
+   * @param sdJwtPresentation the full SD-JWT presentation returned by {@link #issue} for this
+   *     credential (or an equivalent one covering the same disclosures)
    * @param ttl how long the code remains claimable
    * @return the raw one-time code (shown to the caller exactly once) and its expiry
    */
   @Transactional
-  public ClaimCodeIssued issueClaimCode(UUID credentialId, Duration ttl) {
+  public ClaimCodeIssued issueClaimCode(UUID credentialId, String sdJwtPresentation, Duration ttl) {
     byte[] codeBytes = new byte[16];
     SECURE_RANDOM.nextBytes(codeBytes);
     String code = HexFormat.of().formatHex(codeBytes);
     Instant expiresAt = Instant.now().plus(ttl);
+
+    String joinedDisclosures = joinDisclosures(sdJwtPresentation);
+    byte[] disclosuresEnc =
+        claimsEncryption.encrypt(joinedDisclosures.getBytes(StandardCharsets.UTF_8));
 
     ClaimCode claimCode = new ClaimCode();
     claimCode.setId(Uuidv7.generate());
     claimCode.setTenantId(TenantContext.current());
     claimCode.setCredentialId(credentialId);
     claimCode.setCodeHash(sha256(code));
+    claimCode.setDisclosuresEnc(disclosuresEnc);
     claimCode.setExpiresAt(expiresAt);
     claimCode.setCreatedAt(Instant.now());
     claimCodes.save(claimCode);
@@ -202,11 +252,34 @@ public class CredentialService {
   // ── Verify (online: signature + status) ──────────────────────────────────
 
   @Transactional(readOnly = true)
-  public VerifyResponse verify(String token) {
+  public VerifyResponse verify(String presentation) {
+    if (presentation == null) {
+      return new VerifyResponse(false, "malformed_token", null, null, false);
+    }
+
+    String compactJwt;
+    List<Disclosure> disclosures;
+    if (presentation.contains("~")) {
+      SDJWT sdJwt;
+      try {
+        sdJwt = SDJWT.parse(presentation);
+      } catch (RuntimeException e) {
+        return new VerifyResponse(false, "malformed_token", null, null, false);
+      }
+      compactJwt = sdJwt.getCredentialJwt();
+      disclosures = sdJwt.getDisclosures();
+    } else {
+      // spec FS-0.4 §5: a bare compact JWT with no disclosures at all is a valid
+      // zero-disclosure presentation, not a malformed request — it will typically (and
+      // correctly) fail the mandatory-disclosure check below instead.
+      compactJwt = presentation;
+      disclosures = List.of();
+    }
+
     SignedJWT parsed;
     JWTClaimsSet claimsSet;
     try {
-      parsed = SignedJWT.parse(token);
+      parsed = SignedJWT.parse(compactJwt);
       claimsSet = parsed.getJWTClaimsSet();
     } catch (ParseException e) {
       return new VerifyResponse(false, "malformed_token", null, null, false);
@@ -216,24 +289,63 @@ public class CredentialService {
       return new VerifyResponse(false, "bad_signature", null, null, false);
     }
 
-    Map<String, Object> claims = claimsSet.getClaims();
+    Map<String, Object> rawClaims = claimsSet.getClaims();
+    Map<String, Object> structural = structuralClaims(rawClaims);
 
     Date exp = claimsSet.getExpirationTime();
     if (exp != null && exp.toInstant().isBefore(Instant.now())) {
-      return new VerifyResponse(false, "expired", claims, null, false);
+      return new VerifyResponse(false, "expired", structural, null, false);
     }
 
-    String ref = (String) claims.get("ref");
+    String ref = (String) rawClaims.get("ref");
     Optional<Credential> maybe = ref == null ? Optional.empty() : credentials.findByRef(ref);
     if (maybe.isEmpty()) {
-      // Signature valid but we have no local record — still authentic offline.
-      return new VerifyResponse(true, "valid_signature_unknown_ref", claims, null, false);
+      // Signature valid but we have no local record — still authentic offline. The
+      // mandatory-disclosure check (D2) needs the issuing schema, which we only know via this
+      // DB row, so an unknown ref skips straight to this existing early-exit (spec FS-0.4 §4
+      // step 2 reuses this path unchanged).
+      return new VerifyResponse(true, "valid_signature_unknown_ref", structural, null, false);
     }
     Credential c = maybe.get();
     if (c.isRevoked()) {
-      return new VerifyResponse(false, "revoked", claims, c.getUsesRemaining(), true);
+      return new VerifyResponse(false, "revoked", structural, c.getUsesRemaining(), true);
     }
-    return new VerifyResponse(true, "valid", claims, c.getUsesRemaining(), false);
+
+    // D8: _sd_alg must be sha-256.
+    if (!SD_ALG.equals(rawClaims.get("_sd_alg"))) {
+      return new VerifyResponse(false, "bad_sd_alg", structural, c.getUsesRemaining(), false);
+    }
+    List<?> sdDigests = rawClaims.get("_sd") instanceof List<?> list ? list : List.of();
+
+    // D8: every presented disclosure's digest must be in _sd, and no duplicate claim names.
+    Map<String, Object> disclosed = new LinkedHashMap<>();
+    for (Disclosure d : disclosures) {
+      String claimName = d.getClaimName();
+      if (claimName == null || !sdDigests.contains(d.digest())) {
+        return new VerifyResponse(
+            false, "forged_disclosure", structural, c.getUsesRemaining(), false);
+      }
+      if (disclosed.containsKey(claimName)) {
+        return new VerifyResponse(
+            false, "duplicate_disclosure", structural, c.getUsesRemaining(), false);
+      }
+      disclosed.put(claimName, d.getClaimValue());
+    }
+
+    // D2: every claims_def field NOT in schema.sd_fields is mandatory to disclose.
+    Optional<SchemaRef> schemaRef = schemas.findById(c.getSchemaId());
+    if (schemaRef.isPresent()) {
+      for (String mandatoryField : mandatoryFields(schemaRef.get())) {
+        if (!disclosed.containsKey(mandatoryField)) {
+          return new VerifyResponse(
+              false, "withheld_mandatory_claim", structural, c.getUsesRemaining(), false);
+        }
+      }
+    }
+
+    Map<String, Object> verifiedClaims = new LinkedHashMap<>(structural);
+    verifiedClaims.putAll(disclosed);
+    return new VerifyResponse(true, "valid", verifiedClaims, c.getUsesRemaining(), false);
   }
 
   // ── Consume (atomic — the double-spend guard) ─────────────────────────────
@@ -311,19 +423,36 @@ public class CredentialService {
   }
 
   /**
+   * Build the {@code status} claim's value (spec FS-0.4 D3): the IETF Token Status List shape
+   * ({@code status.status_list.{idx,uri}}). {@code uri} is a provisional placeholder — the raw
+   * status list id, not yet a resolvable URL — until KH-1.3 publishes the real signed bitstring
+   * artifact endpoint. This method fixes the claim's *shape* now, per spec FS-0.4 §7.
+   */
+  private static Map<String, Object> statusClaim(StatusAllocation allocation) {
+    Map<String, Object> statusList = new LinkedHashMap<>();
+    statusList.put("idx", allocation.idx());
+    statusList.put("uri", allocation.statusListId().toString());
+    Map<String, Object> status = new LinkedHashMap<>();
+    status.put("status_list", statusList);
+    return status;
+  }
+
+  /**
    * Build a minimal claims-field definition from the claim keys supplied at issue time.
    *
    * <p>Real schema authoring with a typed claims editor is KH-1.x; this exists only so that {@link
    * SchemaCatalog#ensurePublished} has a non-null {@code claims_def} to persist for schemas created
-   * on the fly (e.g. by the demo seeder).
+   * on the fly (e.g. by the demo seeder). {@code required} reflects spec FS-0.4 D2's redefined
+   * {@code sd_fields} semantics: a field is {@code required} (mandatory to disclose) exactly when
+   * it is <em>not</em> in {@code sdFields}.
    */
   private static SchemaDefinition buildSchemaDefinition(
-      String schemaCode, Map<String, Object> claims, int maxUses) {
+      String schemaCode, Map<String, Object> claims, List<String> sdFields, int maxUses) {
     ObjectNode claimsDef = JSON.createObjectNode();
     for (String field : claims.keySet()) {
       ObjectNode fieldDef = claimsDef.putObject(field);
       fieldDef.put("type", "string");
-      fieldDef.put("required", false);
+      fieldDef.put("required", !sdFields.contains(field));
       ObjectNode label = fieldDef.putObject("label_i18n");
       label.put("en", field);
       label.put("ar", field);
@@ -333,7 +462,7 @@ public class CredentialService {
         1,
         new LocalizedText(schemaCode, schemaCode),
         claimsDef.toString(),
-        List.copyOf(claims.keySet()),
+        sdFields,
         maxUses);
   }
 
@@ -357,6 +486,45 @@ public class CredentialService {
     } catch (JOSEException e) {
       return false;
     }
+  }
+
+  /** Strip the SD-JWT digest machinery ({@code _sd}, {@code _sd_alg}) from a raw claims map. */
+  private static Map<String, Object> structuralClaims(Map<String, Object> rawClaims) {
+    Map<String, Object> copy = new LinkedHashMap<>(rawClaims);
+    copy.remove("_sd");
+    copy.remove("_sd_alg");
+    return copy;
+  }
+
+  /**
+   * Resolve the set of {@code claims_def} field names a presentation of this schema must always
+   * disclose (spec FS-0.4 D2): every field name in {@code claims_def} that is not listed in {@code
+   * sd_fields}.
+   */
+  private static Set<String> mandatoryFields(SchemaRef schema) {
+    JsonNode claimsDef;
+    try {
+      claimsDef = JSON.readTree(schema.claimsDefJson());
+    } catch (JsonProcessingException e) {
+      throw new IllegalStateException(
+          "Stored claims_def is not valid JSON for schema " + schema.id(), e);
+    }
+    Set<String> mandatory = new LinkedHashSet<>();
+    claimsDef.fieldNames().forEachRemaining(mandatory::add);
+    mandatory.removeAll(schema.sdFields());
+    return mandatory;
+  }
+
+  /**
+   * Extract the disclosures from an SD-JWT presentation and join them with {@code ~}, the exact
+   * plaintext {@link ClaimsEncryptionService#encrypt} encrypts for {@code disclosures_enc} (spec
+   * FS-0.4 D7).
+   */
+  private static String joinDisclosures(String sdJwtPresentation) {
+    SDJWT parsed = SDJWT.parse(sdJwtPresentation);
+    return parsed.getDisclosures().stream()
+        .map(Disclosure::getDisclosure)
+        .collect(Collectors.joining("~"));
   }
 
   private static byte[] sha256(String value) {

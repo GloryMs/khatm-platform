@@ -1,20 +1,32 @@
 package sy.khatm.platform.credential.api;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+import java.util.List;
 import java.util.Map;
 
 /**
  * Request to issue a new verifiable credential.
+ *
+ * <p>Every entry in {@code claims} becomes a salted SD-JWT disclosure (spec FS-0.4 D1) — none of
+ * them ever appears as a plaintext value in the stored, signed payload.
  *
  * @param schemaCode credential type code (e.g. {@code CriminalRecordExtract/v1}); defaults to
  *     {@code GenericDocument/v1} if null
  * @param holderRef pseudonymous holder identifier; never a real name or national ID
  * @param maxUses maximum number of times this credential may be consumed; defaults to 1
  * @param validMinutes validity window in minutes from issuance; defaults to 60
- * @param claims optional additional JWT claims (document-specific metadata; no PII per P1 rule)
+ * @param claims claim name/value pairs to disclose selectively (document-specific metadata; no PII
+ *     per P1 rule) — every one becomes an SD-JWT disclosure, no exceptions (D1)
+ * @param sdFields names from {@code claims} the holder is permitted to withhold at presentation
+ *     time (spec FS-0.4 D2); any {@code claims} key not listed here is mandatory to disclose in
+ *     every presentation. {@code null} means every claim is withholdable (used when the caller has
+ *     no mandatory/optional distinction to express yet)
  */
+@Schema(name = "IssueRequest", description = "Request to issue a new SD-JWT verifiable credential")
 public record IssueRequest(
     String schemaCode,
     String holderRef,
     Integer maxUses,
     Integer validMinutes,
-    Map<String, Object> claims) {}
+    Map<String, Object> claims,
+    List<String> sdFields) {}

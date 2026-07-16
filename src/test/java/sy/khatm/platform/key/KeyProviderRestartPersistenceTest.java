@@ -80,7 +80,11 @@ class KeyProviderRestartPersistenceTest {
             "--spring.datasource.username=" + POSTGRES.getUsername(),
             "--spring.datasource.password=" + POSTGRES.getPassword(),
             "--khatm.keys.soft.keystore-path=" + keystorePath,
-            "--khatm.keys.soft.passphrase=" + passphrase);
+            "--khatm.keys.soft.passphrase=" + passphrase,
+            // KH-0.4: ClaimsEncryptionService also fails startup without this outside 'local'
+            // (spec FS-0.4 D7) — a full context now needs both secrets, same as any real
+            // deployment would.
+            "--khatm.claims.enc-key=a2hhdG0tdGVzdC1jbGFpbXMtZW5jLWtleS0zMmJ5dGU=");
   }
 
   private static JWTClaimsSet sampleClaims() {
