@@ -6,8 +6,8 @@
 - Current task: **ADR-09-WORKER** — async worker skeleton (Spring Modulith externalized events →
   transactional outbox → Redis Streams) + first real worker (claim_code `disclosures_enc`
   expiry-zeroing, closing the remaining half of that blocker per FS-0.2 §3.7). DONE, `mvn verify`
-  green (62/62 tests, Spotless/Checkstyle/Modulith boundaries clean). PR open against `main`
-  (`feat/ADR-09-worker-skeleton`) — **NOT merged** (session ended before merge by instruction).
+  green (62/62 tests, Spotless/Checkstyle/Modulith boundaries clean). DONE & MERGED via PR #12
+  (2026-07-16, merge commit `cad404e`); branch `feat/ADR-09-worker-skeleton` deleted.
   **ADR-09's worker architecture is now REAL, not aspirational**; the `disclosures_enc` blocker
   is reduced to on-claim zeroing only (folds into KH-1.2.1). See "Decisions made" → Session
   ADR-09-worker.
@@ -20,6 +20,8 @@
   `MessageBundleParityTest` stayed green.
 - KH-0.6b (auth/API-key filter + full audit write path) is the second half — NOT this session,
   needs its own spec.
+- PR #12 (`feat/ADR-09-worker-skeleton` → `main`) merged 2026-07-16 (merge commit `cad404e`);
+  branch deleted.
 - PR #10 (`feat/KH-0.6a-errors-i18n` → `main`) merged 2026-07-16 (merge commit `ec20f95`);
   branch deleted.
 - PR #8 (`feat/KH-0.4-sdjwt-upgrade` → `main`) merged 2026-07-16; branch deleted.
