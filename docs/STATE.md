@@ -4,13 +4,13 @@
 ## Current phase / task
 - Phase 0 — Production Foundation
 - Last task: KH-0.4.1 + KH-0.4.2 + KH-0.4.3 (SD-JWT signing upgrade) — DONE, `mvn verify`
-  green locally (37/37 tests, Spotless/Checkstyle/Modulith boundaries clean). KH-0.4.4 (wallet
-  UI) is out of scope — different repo.
-- PR open (`feat/KH-0.4-sdjwt-upgrade` → `main`) — see PR number/URL in the commit that adds
-  it, or `gh pr list`. Not merged — session ended by request before merge.
+  green (37/37 tests, Spotless/Checkstyle/Modulith boundaries clean), CI green. KH-0.4.4
+  (wallet UI) is out of scope — different repo.
+- PR #8 (`feat/KH-0.4-sdjwt-upgrade` → `main`) merged 2026-07-16; branch deleted.
 - PR #6/#7 (docs ratifications + STATE.md follow-up) merged 2026-07-15; branches deleted.
 - PR #5 (`feat/KH-0.5-key-provider-spi` → `main`) merged 2026-07-15; branch deleted.
 - PR #4 (KH-0.3.1, CI pipeline) merged 2026-07-14 (commit `4a65a39`); branch deleted.
+- `main` is current HEAD for the next session to branch from.
 - Branch protection is enabled on this repo — all changes (including docs-only housekeeping)
   go through a PR, never a direct push to `main`.
 
