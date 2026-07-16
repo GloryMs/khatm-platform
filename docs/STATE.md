@@ -3,18 +3,97 @@
 
 ## Current phase / task
 - Phase 0 — Production Foundation
-- Last task: KH-0.4.1 + KH-0.4.2 + KH-0.4.3 (SD-JWT signing upgrade) — DONE, `mvn verify`
-  green (37/37 tests, Spotless/Checkstyle/Modulith boundaries clean), CI green. KH-0.4.4
-  (wallet UI) is out of scope — different repo.
+- Last task: KH-0.6a (error handling hierarchy & bilingual messages — work rules 2 & 3, first
+  half of KH-0.6 as split) — DONE, `mvn verify` green (54/54 tests, Spotless/Checkstyle/
+  Modulith boundaries clean). **CLAUDE.md work rules 2 & 3 are now LIVE** — see "Decisions
+  made" below for what that obligates future sessions to do.
+- PR open (`feat/KH-0.6a-errors-i18n` → `main`) — see PR number/URL in the commit that adds it,
+  or `gh pr list`. Not merged — session ended by request before merge. **The Arabic bundle
+  (`messages_ar.properties`) needs the human Arabic-speaker review gate (spec FS-0.6a §4)
+  before this PR merges** — flagged explicitly in the PR body.
+- KH-0.6b (auth/API-key filter + full audit write path) is the second half — NOT this session,
+  needs its own spec.
 - PR #8 (`feat/KH-0.4-sdjwt-upgrade` → `main`) merged 2026-07-16; branch deleted.
 - PR #6/#7 (docs ratifications + STATE.md follow-up) merged 2026-07-15; branches deleted.
 - PR #5 (`feat/KH-0.5-key-provider-spi` → `main`) merged 2026-07-15; branch deleted.
 - PR #4 (KH-0.3.1, CI pipeline) merged 2026-07-14 (commit `4a65a39`); branch deleted.
-- `main` is current HEAD for the next session to branch from.
 - Branch protection is enabled on this repo — all changes (including docs-only housekeeping)
   go through a PR, never a direct push to `main`.
 
 ## Last completed
+- 2026-07-16: KH-0.6a — Error hierarchy, envelope & EN/AR bundles (spec FS-0.6a, all eight
+  pre-approved design decisions D1–D8 implemented as given; CLAUDE.md work rules 2 & 3 now LIVE).
+  - **`shared/error/`** (new `@NamedInterface("error")`): `KhatmException` (abstract;
+    constructor `(ErrorCode, messageKey, Object... args)` exactly as CLAUDE.md specifies) +
+    six subtypes (`NotFoundException`, `ConflictException`, `ValidationException`,
+    `IntegrityException` thrown today; `AuthenticationException`/`AuthorizationException`
+    exist but stay unthrown until KH-0.6b, per spec §6). `ErrorCode` registry (D3:
+    `KH-<MOD>-<NNNN>`, last 3 digits = HTTP status, leading digit = per-module-per-status
+    sequence) — a deliberately **lean first batch**: `KH-CRD-0404`, `KH-KEY-0500`,
+    `KH-SYS-0400` (generic Bean Validation failure), `KH-SYS-0500`. Omitted on purpose (task
+    said "no speculative codes"): a schema-not-found code (nothing in the codebase can
+    currently fail that lookup), a credential-conflict code (atomic-consume already returns
+    its outcome as a 200 domain result). `VerifyReason` (D2): the separate, non-exception
+    vocabulary for `/verify` domain results — migrated every KH-0.4 raw reason string, and
+    split `unknown_kid` out from the old generic `bad_signature` (spec's own D2 vocabulary
+    lists them separately; a missing/unresolvable `kid` is a materially different situation
+    from a resolved key whose signature bytes don't verify). `grep` confirmed zero raw reason
+    string literals remain outside `VerifyReason.java` itself.
+  - **`shared/web/`** (new `@NamedInterface("web")`, exposing only `ErrorEnvelope`):
+    `GlobalExceptionHandler` (`@RestControllerAdvice`) is the sole envelope producer —
+    `KhatmException` family (WARN for 4xx, ERROR + full stack trace for 5xx),
+    `MethodArgumentNotValidException` → `details[]` with `validation.<constraint>` keys,
+    catch-all `Exception` → `KH-SYS-0500` generic message + full stack trace logged, nothing
+    internal reaches the client. `TraceIdFilter` (`HIGHEST_PRECEDENCE`): accepts inbound
+    `X-Request-Id` else generates a UUID, MDC + response header, removed in a `finally` (pooled
+    threads). `docs/error-codes.md` generated from `ErrorCode` by `ErrorCodesDocGenerationTest`
+    (D7) — same self-serve, fails-with-exact-fix-content philosophy as
+    `MigrationImmutabilityTest`; a second test proves the comparison actually catches drift.
+  - **i18n** (`shared/config/LocaleConfig`): `AcceptHeaderLocaleResolver`, `en` default,
+    `en`/`ar` supported, anything else silently → `en` (D5 — Spring's built-in
+    `setSupportedLocales` + `Locale.lookup` behavior does this with zero custom code).
+    `MessageSource` explicit UTF-8 (`ReloadableResourceBundleMessageSource`). Bundles at
+    `src/main/resources/i18n/messages_{en,ar}.properties` cover every `ErrorCode`/
+    `VerifyReason` key plus `validation.NotBlank`. **`messages_ar.properties` needs the human
+    Arabic-speaker review gate (spec §4) before this PR merges** — flagged in the PR body, not
+    yet done as of this session ending.
+  - **`MessageBundleParityTest`** (root test package, mirrors `ModulithBoundariesTest`'s
+    location): bidirectional key parity, no blank values, every `ErrorCode`/`VerifyReason` key
+    present, plus a direct assertion that `messages_ar.properties` values actually contain
+    Arabic Unicode-block characters (catches silent mojibake, not just missing keys).
+  - **Logging (D6)**: `logstash-logback-encoder:8.0` (not the newer 9.0 — its declared
+    `logback-classic` baseline, 1.5.6, sits safely under Spring Boot 3.3.4's managed 1.5.8;
+    9.0 wants 1.5.20, which isn't available). `logback-spring.xml`: JSON in every profile
+    except `local` (confirmed empirically — the `test` profile's actual console output during
+    this session's own `mvn verify` run was real JSON, not just asserted by a test).
+    `NoDisclosureContentInLogsTest` (KH-0.4) stays green over the new encoder untouched, since
+    it captures `ILoggingEvent` objects via `ListAppender`, upstream of any encoder.
+  - **`CredentialService`**: `#issue` wraps a `KeySigner` `JOSEException` as
+    `IntegrityException(KH-KEY-0500)` instead of propagating a checked exception — drops
+    `throws JOSEException` entirely, letting `CredentialController.issue` drop `throws
+    Exception` too (the specific offender the task named). `#verify`'s `checkSignature` helper
+    (renamed from `hasValidSignature`) now returns `VerifyReason` instead of `boolean`, doing
+    the `unknown_kid`/`bad_signature` split. `VerifyResponse` gained `reasonMessage` — resolved
+    in `CredentialController` (not the domain service, which stays i18n-free) via
+    `MessageSource` + `LocaleContextHolder.getLocale()`. `CredentialController#get`/`#revoke`
+    throw `NotFoundException` instead of hand-building `ResponseEntity.notFound()`.
+    `IssueRequest.holderRef` and `VerifyRequest.sdJwt` gained `@NotBlank` (+ `@Valid` on the
+    controller params) — the concrete Bean Validation path DoD #3 exercises.
+  - **`schema :: api`**: unchanged from KH-0.4 — no new dependency needed for any of this.
+  - **OpenAPI**: `ErrorEnvelope`/`ErrorDetail` referenced as the shared error-response schema
+    from `/issue` and `/verify`'s existing annotations only (task scope) — full coverage of
+    every endpoint + CI-published `openapi.json` stay KH-1.6.
+  - **Tests**: `ErrorEnvelopeAndI18nTest` (new, own `RANDOM_PORT` + Testcontainers base —
+    `IntegrationTestSupport` deliberately pins `WebEnvironment.NONE`) covers DoD #1 (404 +
+    synthetic 500 via a test-only, `@Profile("test")`-gated `TestBoomController` — never
+    shipped, lives under `src/test/java`) with identical envelope shape, #2 (Arabic assertion +
+    unsupported-language silent fallback), #3 (Bean Validation `details[]`), #4 (`/verify` on a
+    tampered disclosure in both languages), #5 (same traceId across response header, envelope
+    body, and captured log lines for one request, plus UUID generation when no header sent).
+    `JsonLogEncodingTest` (DoD #8) encodes a real captured log event with the actual
+    `LogstashEncoder` class the logback config uses and parses the result as JSON.
+  - Fixed `CredentialSigningAndVerificationTest` (KH-0.5): its "outside-registry key" scenario
+    now correctly asserts `unknown_kid`, not the old generic `bad_signature`.
 - 2026-07-16: KH-0.4.1 + KH-0.4.2 + KH-0.4.3 — SD-JWT signing upgrade (spec FS-0.4, all eight
   pre-approved design decisions D1–D8 implemented as given).
   - **Library confirmed before adopting (D4 gate)**: `com.authlete:sd-jwt:1.9` — read its
@@ -405,6 +484,58 @@
   creep beyond what was asked, and full coverage + CI publishing is explicitly KH-1.6 per
   spec FS-0.4 §7.
 
+### Session KH-0.6a (2026-07-16)
+- **ErrorCode first batch is 4 codes, not the spec's tentatively-listed 6**: spec §3 names
+  `KH_CRD_0404`, `KH_SCH_0404`, `KH_CRD_0400`, `KH_CRD_0409`, `KH_KEY_0500`, `KH_SYS_0500` as
+  "تقديرياً" (tentative/estimated) — but the task instruction is explicit: "first batch covering
+  existing paths only... do not invent speculative codes." Audited every candidate against
+  actual current behavior: schema lookups always find-or-create (never fail), the
+  atomic-consume 409-shaped conflict already returns as a 200 domain result unchanged (task
+  explicitly forbids touching consume behavior), and a bare Bean-Validation-failure code
+  wasn't in the spec's list at all despite being clearly necessary — added `KH_SYS_0400` for
+  it instead. Net: `KH_CRD_0404`, `KH_KEY_0500`, `KH_SYS_0400`, `KH_SYS_0500`. Documented the
+  omissions directly in `ErrorCode`'s Javadoc so a future session doesn't wonder if they were
+  forgotten.
+- **`unknown_kid` split from `bad_signature`**: not explicitly one of D1–D8's numbered
+  decisions, but the spec's own D2 vocabulary example line lists `unknown_kid` separately from
+  `bad_signature` — so implementing the split (missing/unresolvable `kid` → `unknown_kid`;
+  resolved key, bad signature bytes → `bad_signature`) is following the spec literally, not
+  re-litigating it. Required updating one KH-0.5 test
+  (`CredentialSigningAndVerificationTest`) whose "key outside the registry" scenario now
+  correctly reports `unknown_kid`.
+- **`reasonMessage` resolved in `CredentialController`, not `CredentialService`**: keeps the
+  domain service i18n-free (`MessageSource`/`LocaleContextHolder` are web-layer concerns);
+  the service returns `VerifyResponse` with `reasonMessage=null`, the controller re-wraps with
+  the resolved value before returning. A `VerifyResponse` "with null reasonMessage" only ever
+  exists transiently inside `CredentialService`, never crosses the module boundary or reaches
+  a client.
+- **`shared.error` and `shared.web` made `@NamedInterface`s, not folded into `shared`'s open
+  root package**: the task instructions pin their locations explicitly (`shared/error/`,
+  `shared/web/`), and `shared`'s own package-info already documents that non-root subpackages
+  default to module-private under Spring Modulith's convention — so `credential` throwing
+  `KhatmException` subtypes or referencing `ErrorEnvelope` in OpenAPI annotations needed
+  explicit named-interface exposure + an `allowedDependencies` update, not just relying on the
+  existing bare `"shared"` entry (which only ever meant "the root package").
+- **`TestBoomController` (test-only, `@Profile("test")`-gated, lives under `src/test/java`)
+  for the DoD #1 "synthetic 500" comparison**: needed a deterministic, real HTTP-level trigger
+  for `GlobalExceptionHandler`'s catch-all path to assert its envelope shape matches the 404
+  case; no existing endpoint can be made to throw an unexpected exception on demand. Never
+  reaches the production classpath regardless of the profile guard (test-sourceset only) — the
+  guard just keeps it out of `IntegrationTestSupport`-based contexts that don't want it either
+  (harmless there anyway, since that suite pins `WebEnvironment.NONE`).
+- **`JsonLogEncodingTest` encodes a captured event directly with `LogstashEncoder`, rather than
+  asserting against `logback-spring.xml`'s actual profile-switched console output**: spinning
+  up a fresh `LoggerContext` from the XML config to test `<springProfile>` branching adds
+  real complexity for marginal extra confidence; encoding a real captured `ILoggingEvent` with
+  the exact encoder class the XML configures for every non-`local` profile directly proves the
+  encoder does what D6 requires, independent of which profile the test JVM happens to run
+  under. (The full pipeline was also verified empirically this session anyway — the `test`
+  profile's actual `mvn verify` console output was inspected and is real JSON.)
+- **`logstash-logback-encoder:8.0`, not the newer `9.0`**: `9.0`'s own POM declares a
+  `logback-classic` baseline of `1.5.20`; Spring Boot 3.3.4 manages `1.5.8`. `8.0` declares
+  `1.5.6`, safely under what we actually resolve. Picked by checking each candidate version's
+  POM directly rather than assuming "newest is fine."
+
 > Durable conventions formerly logged here (entity visibility, the Checkstyle
 > logger/MethodName exceptions) now live in `docs/CONVENTIONS.md` §2/§5 — this file only
 > keeps session-scoped decisions. The stale "`ddl-auto: update` kept" note has been removed
@@ -441,16 +572,28 @@
   exists on `ClaimsEncryptionService` now (tested), ready for that worker to call.
 
 ## Next up (ordered)
-1. KH-0.6 Console auth + API-key filter + `rbac`/`shared.audit_log` write path (a fuller
-   version than KH-0.5's minimal direct-insert audit rows) + the `KhatmException`/`ErrorCode`
-   hierarchy (CLAUDE.md work rule 3 — still not started) + the message bundles
-   (`messages_en.properties`/`messages_ar.properties` don't exist yet — CLAUDE.md work rule 2)
-2. KH-0.3.3 — staging auto-deploy (explicitly out of scope for KH-0.3.1's CI pipeline)
-3. KH-1.2.1 — claim-delivery worker + `disclosures_enc` expiry-zeroing (needs the ADR-09
+1. **Merge gate for this session's own PR**: `messages_ar.properties` needs the human
+   Arabic-speaker review pass (spec FS-0.6a §4) before `feat/KH-0.6a-errors-i18n` merges.
+2. KH-0.6b — session/API-key auth filter + RBAC + the full `shared.audit_log` write path
+   (KH-0.5's minimal direct-insert audit rows were explicitly a stopgap) + fills in
+   `AuthenticationException`/`AuthorizationException` and adds `KH-RBC-*` `ErrorCode`s. Needs
+   its own spec (KH-0.6a's spec explicitly scoped this out — FS-0.6a §1 "خارج النطاق").
+3. KH-0.3.3 — staging auto-deploy (explicitly out of scope for KH-0.3.1's CI pipeline)
+4. KH-1.2.1 — claim-delivery worker + `disclosures_enc` expiry-zeroing (needs the ADR-09
    worker skeleton; the encryption half it depends on landed in KH-0.4)
-4. KH-1.3 — Status List: publish the real signed bitstring artifact endpoint (the `status`
+5. KH-1.3 — Status List: publish the real signed bitstring artifact endpoint (the `status`
    claim's `uri` is a placeholder until then, KH-0.4 D3)
-5. KH-1.6 — published OpenAPI contract: full endpoint annotation coverage (KH-0.4 only
+6. KH-1.6 — published OpenAPI contract: full endpoint annotation coverage (KH-0.4/KH-0.6a only
    annotated `/issue`/`/verify`) + CI-published `openapi.json`
-6. KH-2.2 — RBAC, needed before `KeyLifecycleService.rotate()` can get a REST endpoint
-7. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM
+7. KH-2.2 — RBAC-gated REST endpoint for `KeyLifecycleService.rotate()`
+8. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM
+
+## Immediate note for future sessions (CLAUDE.md work rules 2 & 3 are now LIVE)
+Adding a new user-facing string or throw site from here on means, in the **same commit**:
+- a new/existing `ErrorCode` (never renumbered) or `VerifyReason` with a real, exercised path;
+- a matching key in **both** `messages_en.properties` and `messages_ar.properties` —
+  `MessageBundleParityTest` fails the build otherwise;
+- if `ErrorCode` changed, `docs/error-codes.md` regenerated — `ErrorCodesDocGenerationTest`
+  fails the build otherwise (see its assertion message for the exact content to paste in);
+- no ad-hoc `ResponseEntity.status(...)`/`.notFound()`/etc. anywhere outside
+  `shared.web.GlobalExceptionHandler` — throw a `KhatmException` subtype instead.

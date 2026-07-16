@@ -57,6 +57,9 @@ import sy.khatm.platform.schema.api.SchemaRef;
 import sy.khatm.platform.shared.LocalizedText;
 import sy.khatm.platform.shared.TenantContext;
 import sy.khatm.platform.shared.Uuidv7;
+import sy.khatm.platform.shared.error.ErrorCode;
+import sy.khatm.platform.shared.error.IntegrityException;
+import sy.khatm.platform.shared.error.VerifyReason;
 import sy.khatm.platform.status.api.StatusAllocation;
 import sy.khatm.platform.status.api.StatusListAllocator;
 
@@ -137,7 +140,7 @@ public class CredentialService {
   // ── Issue ────────────────────────────────────────────────────────────────
 
   @Transactional
-  public IssueResponse issue(IssueRequest req) throws JOSEException {
+  public IssueResponse issue(IssueRequest req) {
     UUID tenantId = TenantContext.current();
     UUID id = Uuidv7.generate();
     int maxUses = req.maxUses() == null ? 1 : req.maxUses();
@@ -183,7 +186,20 @@ public class CredentialService {
       throw new IllegalStateException("Failed to build the SD-JWT claims set.", e);
     }
 
-    SignResult signed = keys.sign(claimsSet);
+    SignResult signed;
+    try {
+      signed = keys.sign(claimsSet);
+    } catch (JOSEException e) {
+      // Signing is the one truly "our fault, not the caller's" failure in this path — an
+      // internal integrity problem (key module unreachable/misconfigured), not bad input.
+      // initCause (not the KhatmException constructor, which CLAUDE.md fixes to
+      // (ErrorCode, messageKey, args...)) so GlobalExceptionHandler's 5xx path still logs the
+      // original signing failure's full stack trace, not just this wrapper's.
+      IntegrityException wrapped =
+          new IntegrityException(ErrorCode.KH_KEY_0500, "key.signing-failed");
+      wrapped.initCause(e);
+      throw wrapped;
+    }
     String compactJwt = signed.jws();
     // D6: standard tilde-separated presentation format.
     String presentation = new SDJWT(compactJwt, disclosures).toString();
@@ -254,7 +270,7 @@ public class CredentialService {
   @Transactional(readOnly = true)
   public VerifyResponse verify(String presentation) {
     if (presentation == null) {
-      return new VerifyResponse(false, "malformed_token", null, null, false);
+      return result(false, VerifyReason.MALFORMED, null, null, false);
     }
 
     String compactJwt;
@@ -264,7 +280,7 @@ public class CredentialService {
       try {
         sdJwt = SDJWT.parse(presentation);
       } catch (RuntimeException e) {
-        return new VerifyResponse(false, "malformed_token", null, null, false);
+        return result(false, VerifyReason.MALFORMED, null, null, false);
       }
       compactJwt = sdJwt.getCredentialJwt();
       disclosures = sdJwt.getDisclosures();
@@ -282,11 +298,12 @@ public class CredentialService {
       parsed = SignedJWT.parse(compactJwt);
       claimsSet = parsed.getJWTClaimsSet();
     } catch (ParseException e) {
-      return new VerifyResponse(false, "malformed_token", null, null, false);
+      return result(false, VerifyReason.MALFORMED, null, null, false);
     }
 
-    if (!hasValidSignature(parsed)) {
-      return new VerifyResponse(false, "bad_signature", null, null, false);
+    VerifyReason signatureResult = checkSignature(parsed);
+    if (signatureResult != VerifyReason.VALID) {
+      return result(false, signatureResult, null, null, false);
     }
 
     Map<String, Object> rawClaims = claimsSet.getClaims();
@@ -294,7 +311,7 @@ public class CredentialService {
 
     Date exp = claimsSet.getExpirationTime();
     if (exp != null && exp.toInstant().isBefore(Instant.now())) {
-      return new VerifyResponse(false, "expired", structural, null, false);
+      return result(false, VerifyReason.EXPIRED, structural, null, false);
     }
 
     String ref = (String) rawClaims.get("ref");
@@ -304,16 +321,16 @@ public class CredentialService {
       // mandatory-disclosure check (D2) needs the issuing schema, which we only know via this
       // DB row, so an unknown ref skips straight to this existing early-exit (spec FS-0.4 §4
       // step 2 reuses this path unchanged).
-      return new VerifyResponse(true, "valid_signature_unknown_ref", structural, null, false);
+      return result(true, VerifyReason.VALID_SIGNATURE_UNKNOWN_REF, structural, null, false);
     }
     Credential c = maybe.get();
     if (c.isRevoked()) {
-      return new VerifyResponse(false, "revoked", structural, c.getUsesRemaining(), true);
+      return result(false, VerifyReason.REVOKED, structural, c.getUsesRemaining(), true);
     }
 
     // D8: _sd_alg must be sha-256.
     if (!SD_ALG.equals(rawClaims.get("_sd_alg"))) {
-      return new VerifyResponse(false, "bad_sd_alg", structural, c.getUsesRemaining(), false);
+      return result(false, VerifyReason.BAD_SD_ALG, structural, c.getUsesRemaining(), false);
     }
     List<?> sdDigests = rawClaims.get("_sd") instanceof List<?> list ? list : List.of();
 
@@ -322,12 +339,12 @@ public class CredentialService {
     for (Disclosure d : disclosures) {
       String claimName = d.getClaimName();
       if (claimName == null || !sdDigests.contains(d.digest())) {
-        return new VerifyResponse(
-            false, "forged_disclosure", structural, c.getUsesRemaining(), false);
+        return result(
+            false, VerifyReason.FORGED_DISCLOSURE, structural, c.getUsesRemaining(), false);
       }
       if (disclosed.containsKey(claimName)) {
-        return new VerifyResponse(
-            false, "duplicate_disclosure", structural, c.getUsesRemaining(), false);
+        return result(
+            false, VerifyReason.DUPLICATE_DISCLOSURE, structural, c.getUsesRemaining(), false);
       }
       disclosed.put(claimName, d.getClaimValue());
     }
@@ -337,15 +354,33 @@ public class CredentialService {
     if (schemaRef.isPresent()) {
       for (String mandatoryField : mandatoryFields(schemaRef.get())) {
         if (!disclosed.containsKey(mandatoryField)) {
-          return new VerifyResponse(
-              false, "withheld_mandatory_claim", structural, c.getUsesRemaining(), false);
+          return result(
+              false,
+              VerifyReason.WITHHELD_MANDATORY_CLAIM,
+              structural,
+              c.getUsesRemaining(),
+              false);
         }
       }
     }
 
     Map<String, Object> verifiedClaims = new LinkedHashMap<>(structural);
     verifiedClaims.putAll(disclosed);
-    return new VerifyResponse(true, "valid", verifiedClaims, c.getUsesRemaining(), false);
+    return result(true, VerifyReason.VALID, verifiedClaims, c.getUsesRemaining(), false);
+  }
+
+  /**
+   * Build a {@link VerifyResponse} carrying {@code reason}'s wire code. {@code reasonMessage} is
+   * left {@code null} — localizing it needs the request locale, which is a web-layer concern; the
+   * controller resolves and fills it in via {@code MessageSource} (spec FS-0.6a §3).
+   */
+  private static VerifyResponse result(
+      boolean valid,
+      VerifyReason reason,
+      Map<String, Object> claims,
+      Integer usesRemaining,
+      boolean revoked) {
+    return new VerifyResponse(valid, reason.code(), null, claims, usesRemaining, revoked);
   }
 
   // ── Consume (atomic — the double-spend guard) ─────────────────────────────
@@ -467,24 +502,31 @@ public class CredentialService {
   }
 
   /**
-   * Verify a JWT's signature by resolving its {@code kid} header strictly through {@link
+   * Check a JWT's signature by resolving its {@code kid} header strictly through {@link
    * KeyVerifier} — an unknown or {@code RETIRED} {@code kid} means {@link
    * KeyVerifier#resolvePublicKey} returns empty, and there is no fallback to any other key (spec
-   * FS-0.5 §4).
+   * FS-0.5 §4). {@link VerifyReason#UNKNOWN_KID} covers a missing/unresolvable {@code kid}; {@link
+   * VerifyReason#BAD_SIGNATURE} covers a resolved key whose signature bytes don't verify (spec
+   * FS-0.6a D2 splits these two — they were one generic outcome before this session).
+   *
+   * @return {@link VerifyReason#VALID} if the signature checks out; otherwise the specific
+   *     rejection reason
    */
-  private boolean hasValidSignature(SignedJWT jwt) {
+  private VerifyReason checkSignature(SignedJWT jwt) {
     String kid = jwt.getHeader().getKeyID();
     if (kid == null) {
-      return false;
+      return VerifyReason.UNKNOWN_KID;
     }
     Optional<PublicKeyHandle> handle = keyVerifier.resolvePublicKey(kid);
     if (handle.isEmpty()) {
-      return false;
+      return VerifyReason.UNKNOWN_KID;
     }
     try {
-      return jwt.verify(new ECDSAVerifier(handle.get().publicKey()));
+      return jwt.verify(new ECDSAVerifier(handle.get().publicKey()))
+          ? VerifyReason.VALID
+          : VerifyReason.BAD_SIGNATURE;
     } catch (JOSEException e) {
-      return false;
+      return VerifyReason.BAD_SIGNATURE;
     }
   }
 

@@ -1,6 +1,7 @@
 package sy.khatm.platform.credential.api;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.NotBlank;
 import java.util.List;
 import java.util.Map;
 
@@ -12,7 +13,9 @@ import java.util.Map;
  *
  * @param schemaCode credential type code (e.g. {@code CriminalRecordExtract/v1}); defaults to
  *     {@code GenericDocument/v1} if null
- * @param holderRef pseudonymous holder identifier; never a real name or national ID
+ * @param holderRef pseudonymous holder identifier; never a real name or national ID. Mandatory
+ *     (spec FS-0.6a §5 DoD #3 exercises this field's Bean Validation) — a credential must always
+ *     name who it was issued to, even pseudonymously.
  * @param maxUses maximum number of times this credential may be consumed; defaults to 1
  * @param validMinutes validity window in minutes from issuance; defaults to 60
  * @param claims claim name/value pairs to disclose selectively (document-specific metadata; no PII
@@ -25,7 +28,7 @@ import java.util.Map;
 @Schema(name = "IssueRequest", description = "Request to issue a new SD-JWT verifiable credential")
 public record IssueRequest(
     String schemaCode,
-    String holderRef,
+    @NotBlank String holderRef,
     Integer maxUses,
     Integer validMinutes,
     Map<String, Object> claims,
