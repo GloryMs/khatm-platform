@@ -2,12 +2,17 @@
 > Updated at the end of EVERY Claude Code session. This file is the session anchor.
 
 ## Current phase / task
-- Phase 0 — Production Foundation
+- Phase 0 — Production Foundation. **Phase 0 is now fully closed** (application half completed by
+  KH-0.6b; DevOps half completed by KH-0.3 Phase-0 closure below) except KH-0.3.3's deploy
+  *activation*, which is explicitly a config task (set the staging secrets listed in
+  `docs/deploy-staging.md`), not a code task.
 - Current task: **KH-0.3 Phase-0 closure** — DevOps gates + one docs promotion, **no application
-  code**. Branch `chore/KH-0.3-phase0-closure`, PR #16 against `main` (**NOT merged** by instruction).
-  Closes every Phase-0 exit criterion except KH-0.3.3's deploy activation, which is explicitly a
-  config task (set the staging secrets listed in `docs/deploy-staging.md`), not a code task. See
-  "Last completed" → Session KH-0.3-closure for the five parts and the build-infra fix it forced.
+  code** (the only `pom.xml` edits are Trivy-driven patch-level dependency bumps). DONE & MERGED
+  via PR #16 (2026-07-18, merge commit `b7b5342`, fast-forward — `main` had not diverged); branch
+  `chore/KH-0.3-phase0-closure` deleted. **PR #16's CI was fully green** (`verify`/`trivy`/
+  `gitleaks`/`compose-smoke` all passed) before merge, per user confirmation. See "Last completed"
+  → Session KH-0.3-closure for the five parts, the build-infra fix it forced, and the three
+  CI-config bugs found and fixed via the PR's own CI runs.
 - Prev task: **KH-0.6b** — console auth, API keys, RBAC-lite & the full `audit_log` write path
   (spec FS-0.6b, D1–D10 as given; `mvn verify` green, 81/81 tests). DONE & MERGED via PR #14
   (2026-07-17, merge commit `e05008c`); branch `feat/KH-0.6b-auth` deleted. **Completes the
@@ -26,6 +31,8 @@
 - Arabic-speaker review gate (FS-0.6a §4): ran for KH-0.6a (one wording refinement on
   `verify.reason.bad_sd_alg`) and again for KH-0.6b's new `error.rbc.*` keys in the PR #14 merge
   session — no concerns, wording kept as written, `MessageBundleParityTest` stayed green.
+- PR #16 (`chore/KH-0.3-phase0-closure` → `main`) merged 2026-07-18 (merge commit `b7b5342`,
+  fast-forward); branch deleted.
 - PR #14 (`feat/KH-0.6b-auth` → `main`) merged 2026-07-17 (merge commit `e05008c`); branch deleted.
 - PR #10 (`feat/KH-0.6a-errors-i18n` → `main`) merged 2026-07-16 (merge commit `ec20f95`);
   branch deleted.
@@ -37,16 +44,18 @@
   go through a PR, never a direct push to `main`.
 
 ## Last completed
-- 2026-07-17: KH-0.3 Phase-0 closure — DevOps gates + one docs promotion (**no application code**;
-  the only `pom.xml` edits are the Trivy-driven patch-level dependency bumps, Part 1). Branch
-  `chore/KH-0.3-phase0-closure`, PR #16 — **NOT merged** by instruction. `mvn verify` green, 81/81
-  tests. **PR #16's CI is fully green**: all four jobs pass (`verify`, `trivy`, `gitleaks`,
-  `compose-smoke`) — three real CI-config bugs were found and fixed via the PR's own CI runs, not
-  assumed correct: `gitleaks` needed `pull-requests: read` to list PR commits (403 without it);
-  `trivy-action`'s `version:` input needs the git-tag `v` prefix (`v0.72.0`, not `0.72.0`); `trivy
-  fs`'s independent pom.xml resolver needed a pre-warmed `~/.m2` (via `dependency:go-offline`
-  before the scan) to avoid tripping Maven Central's rate limit on a cold runner. Closes every
-  Phase-0 exit criterion except KH-0.3.3 deploy activation, which is explicitly a config task.
+- 2026-07-18: KH-0.3 Phase-0 closure — DevOps gates + one docs promotion (**no application code**;
+  the only `pom.xml` edits are the Trivy-driven patch-level dependency bumps, Part 1). DONE &
+  MERGED via PR #16 (2026-07-18, merge commit `b7b5342`, fast-forward — `main` had not diverged
+  since the branch was cut); branch `chore/KH-0.3-phase0-closure` deleted. `mvn verify` green,
+  81/81 tests. **PR #16's CI was fully green before merge**: all four jobs passed (`verify`,
+  `trivy`, `gitleaks`, `compose-smoke`) — three real CI-config bugs were found and fixed via the
+  PR's own CI runs, not assumed correct: `gitleaks` needed `pull-requests: read` to list PR commits
+  (403 without it); `trivy-action`'s `version:` input needs the git-tag `v` prefix (`v0.72.0`, not
+  `0.72.0`); `trivy fs`'s independent pom.xml resolver needed a pre-warmed `~/.m2` (via
+  `dependency:go-offline` before the scan) to avoid tripping Maven Central's rate limit on a cold
+  runner. **Closes every Phase-0 exit criterion** except KH-0.3.3 deploy activation, which is
+  explicitly a config task.
   Five parts + one forced build-infra fix:
   - **Build-infra fix (forced by Part 1/3/4, not part of the brief's code scope)**: the `Dockerfile`
     built on Temurin 17 while `pom.xml` is `--release 21`, so `docker build` failed at `mvn package`
