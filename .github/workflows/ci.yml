@@ -60,6 +60,21 @@ jobs:
           key: trivy-db-${{ steps.date.outputs.date }}
           restore-keys: trivy-db-
 
+      # trivy fs's pom.xml scanner resolves the full dependency tree itself and hits Maven Central
+      # directly for anything not already cached — on a cold runner this can trip Central's rate
+      # limit (429, confirmed on this job's own first CI run) since setup-java's cache only helps
+      # `mvn`, not trivy. Populating ~/.m2 here first (and caching it) makes trivy resolve from
+      # disk instead of the network.
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Populate local Maven repo (so trivy fs doesn't hit Maven Central cold)
+        run: mvn -B -q -DskipTests dependency:go-offline
+
       # Build the image once, locally, so trivy image has something to scan. This also doubles
       # as a "the Dockerfile actually builds" gate.
       - name: Build image
