@@ -54,9 +54,30 @@
     (runtime image), fail on CRITICAL/HIGH, `--ignore-unfixed`, DB cached daily. `aquasecurity/
     trivy-action` is **SHA-pinned to v0.36.0** — aquasecurity/trivy-action was the target of a
     2026-03-19 supply-chain attack (force-pushed tags + malicious v0.69.4) and has a command-injection
-    CVE in ≤0.33.1; the Trivy binary is also pinned to `0.72.0`. Empty `.trivyignore` (dated-comment
-    template; first scan clean, no dep bumps needed). Other third-party actions stay tag-pinned
-    (this repo's style); trivy gets SHA pinning because it is the one with a documented compromise.
+    CVE in ≤0.33.1; the Trivy binary is also pinned to `0.72.0`. Other third-party actions stay
+    tag-pinned (this repo's style); trivy gets SHA pinning because it is the one with a documented
+    compromise. **First local run found real findings, triaged in full** (both `trivy fs` and
+    `trivy image` now clean, verified locally against the actual built image): `trivy fs` started
+    at 34 CRITICAL/HIGH, all in `spring-boot-starter-parent`-managed transitive deps — cleared to 6
+    via patch-level bumps (`spring-boot-starter-parent` 3.3.4→3.3.13, plus explicit
+    `postgresql.version`/`tomcat.version`/`netty.version` overrides to 42.7.11/10.1.55/
+    4.1.135.Final — all same minor line, `mvn verify` re-confirmed green, 81/81 tests, after each
+    bump). The remaining 6 (2 CRITICAL, 4 HIGH) all need a minor/major bump, outside this
+    session's patch-level-only mandate — allowlisted in `.trivyignore` after checking THIS
+    codebase's actual usage (not assumed): BouncyCastle GOST-cipher bug (unused, app only does
+    ECDSA/Argon2), Spring Boot temp-dir session hijack (needs `session.persistent=true`, never set
+    — sessions are Redis-backed), 2× Jackson PolymorphicTypeValidator bypass (no polymorphic
+    typing configured anywhere), Spring-core `@EnableMethodSecurity` annotation gap (this app
+    authorizes by route, not method annotations) — **except CVE-2026-22732** (Spring Security,
+    CRITICAL, CVSS 9.1, header-writing bypass under the default lazy-write mode this app actually
+    uses), whose reachability could NOT be ruled out; allowlisted but explicitly flagged for a
+    dedicated follow-up (needs `spring-security-web` 6.5.9+ alone, a targeted minor bump — user
+    decision, not silently deferred). `trivy image` additionally found 5 HIGH `golang.org/x/net`
+    CVEs in `/usr/bin/pebble` — Canonical's container-init tool baked into the official
+    `eclipse-temurin:*-jre` base image, confirmed via `docker inspect` to never run in this
+    container (`ENTRYPOINT ["java","-jar","app.jar"]` only) — allowlisted as unreachable/
+    unfixable-from-this-repo. See `docs/STATE.md` "Open decisions / blockers" for the
+    CVE-2026-22732 follow-up flag, and `.trivyignore` for every entry's full justification.
   - **Part 2 — KH-0.3.4 (secrets)**: `gitleaks` CI gate (per-PR diff via `gitleaks-action@v2`,
     `fetch-depth: 0`). Full-history scan run locally: **0 real findings** — the 12 raw hits were one
     synthetic TEST fixture (`khatm-test-claims-enc-key-32byte`, base64) in two `src/test/java`
@@ -890,6 +911,40 @@
   `docker compose up` still needs zero setup.
 
 ## Open decisions / blockers
+- **NEW (KH-0.3-closure, 2026-07-17): CVE-2026-22732 (spring-security-web 6.3.10, CRITICAL, CVSS
+  9.1) allowlisted but flagged, not silently deferred.** "Security policy bypass and information
+  disclosure due to unwritten HTTP headers" under Spring Security's default LAZY header-writing
+  mode — this app uses no `HeaderWriter` customization, so the vulnerable default is actually in
+  effect; reachability could NOT be ruled out the way every other KH-0.3.2 allowlist entry was.
+  Fix needs `spring-security-web` 6.5.9+ / 7.0.4+ — a targeted MINOR bump of that one artifact
+  (not the whole Boot BOM), outside this session's patch-level-only mandate. User decision
+  (2026-07-17): allowlist now with a flagged note, track as a dedicated follow-up rather than
+  bump immediately. **Next session touching `rbac.security` or doing a dependency pass should
+  either bump `spring-security-web` alone to 6.5.9+/7.0.4+ (verify no API break against this
+  codebase's two-filter-chain setup first) or re-triage if a 3.3.x/3.4.x Spring Boot line ships a
+  BOM that manages a fixed version.** See `.trivyignore` for the full CVE writeup.
+- **NEW (discovered KH-0.3-closure, 2026-07-17): `KeyBootstrap` is not role-gated — concurrent
+  `api`+`worker` first boot has a real race.** Both roles share one `khatm_keys` PKCS#12 volume and
+  both run `key.domain.KeyBootstrap` as a plain `ApplicationRunner` (no `khatm.web.enabled`/
+  `khatm.worker.enabled` guard, unlike the ADR-09-gated business beans). On a genuinely concurrent
+  `docker compose up -d` (both containers starting together), whichever process's `KeyBootstrap`
+  loses the race sees the `issuer_key` DB row already `ACTIVE` (created by the winner) and skips
+  its own bootstrap — but that process's `SoftKeyProvider` had already loaded its in-memory
+  `KeyStore` from the (still-empty, or not-yet-written) keystore file at ITS OWN startup, before the
+  winner's write was visible. Result: the loser signs/verifies against a `kid` its own JVM never
+  actually holds, and `/issue` fails with `com.nimbusds.jose.JOSEException: No such key in
+  keystore: providerRef=...` (`KH-KEY-0500`). Reproduced locally via `scripts/smoke.sh`'s first,
+  unsequenced draft (both services started by one `docker compose up -d --build`); confirmed via
+  `khatm-worker` logs showing `SoftKeyProvider: created a new empty PKCS#12 keystore` +
+  `KeyBootstrap: Bootstrapped issuer key kid=...` while `khatm-api` logged `Active issuer key
+  already present — bootstrap skipped` in the same window. **Worked around, not fixed**, at the
+  compose-sequencing level in `scripts/smoke.sh` (`boot_stack` brings `khatm-api` up alone first,
+  waits for a real JWKS key, then starts `khatm-worker`) — this is a script-only workaround,
+  legitimate because KH-0.3 was scoped to no application code. The real fix (gate `KeyBootstrap`
+  behind `khatm.web.enabled=true` the same way `CredentialController`/`JwksController` already are,
+  so only the `api` role ever bootstraps) is a one-line, low-risk application change — flagged here
+  for the next session that touches `key.domain`, not filed as its own WBS task since it's small
+  enough to fold into whatever touches that package next.
 - **`claim_code.disclosures_enc` — expiry-zeroing half CLOSED (ADR-09-worker, 2026-07-16). Only
   the on-claim half remains.** Full picture across sessions:
   - Encryption: CLOSED (KH-0.4) — `issueClaimCode` AES-256-GCM encrypts disclosures before
