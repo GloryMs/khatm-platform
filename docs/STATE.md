@@ -854,26 +854,6 @@
    `KeyLifecycleService.rotate()`
 7. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM
 
-## Immediate note for future sessions (CLAUDE.md work rules 2 & 3 are now LIVE)
-Adding a new user-facing string or throw site from here on means, in the **same commit**:
-- a new/existing `ErrorCode` (never renumbered) or `VerifyReason` with a real, exercised path;
-- a matching key in **both** `messages_en.properties` and `messages_ar.properties` —
-  `MessageBundleParityTest` fails the build otherwise;
-- if `ErrorCode` changed, `docs/error-codes.md` regenerated — `ErrorCodesDocGenerationTest`
-  fails the build otherwise (see its assertion message for the exact content to paste in);
-- no ad-hoc `ResponseEntity.status(...)`/`.notFound()`/etc. anywhere outside
-  `shared.web.GlobalExceptionHandler` — throw a `KhatmException` subtype instead.
-
-## Immediate note for future sessions (KH-0.6b — Spring Security is now LIVE)
-Every endpoint except `POST /api/v1/credentials/verify` and `GET /.well-known/jwks.json` (D9) now
-requires a valid session or API key — enforced in `rbac.security.SecurityConfig`. Adding a new
-endpoint from here on means, in the **same commit**:
-- decide its scope/actor-kind requirement explicitly (`ScopeGuard`'s per-route rules) — the
-  default (no explicit rule) is merely "authenticated, any scope," which is rarely what you want;
-- if any existing test hits the new/changed endpoint over real HTTP (not a direct service call,
-  which bypasses the filter chain entirely), it needs a seeded test user or API key — see
-  `rbac.RbacHttpTestSupport`/`SessionTestSupport` for the established pattern, and
-  `shared.web.ErrorEnvelopeAndI18nTest` for the API-key-only variant;
-- never weaken `SecurityConfig` to make a test pass — adapt the test with real credentials
-  instead (this was an explicit instruction this session and is worth keeping as a standing
-  rule).
+## Standing conventions (promoted to docs/CONVENTIONS.md §7)
+- **Work rules 2 & 3 (error handling & i18n)** → `docs/CONVENTIONS.md §7.1`.
+- **Spring Security per-endpoint discipline (KH-0.6b)** → `docs/CONVENTIONS.md §7.2`.

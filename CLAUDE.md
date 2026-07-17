@@ -85,6 +85,11 @@ bcpkix (PKCS#12 certificate-chain requirement only — never used in verificatio
 - Enforced automatically: Spotless (google-java-format), Checkstyle, `.editorconfig` —
   build fails on violation. If you meet an older style, migrate the file you touch.
 
+> **Standing security & error-handling obligations** — the same-commit mechanics of work rules 2 & 3
+> (ErrorCode/message-bundle/error-codes discipline, no ad-hoc `ResponseEntity`) and KH-0.6b's Spring
+> Security per-endpoint discipline (explicit scope decision, seeded-credential test pattern, never
+> weaken `SecurityConfig` for a test) — are spelled out in `docs/CONVENTIONS.md §7`.
+
 ## Security constants
 - Every JWS header carries `kid`; signing only via `KeyProvider` SPI (KH-0.5) —
   never touch key material outside the `key` module.
@@ -96,5 +101,8 @@ DB paths) + Modulith verification green + Spotless/Checkstyle green + OpenAPI up
 + `docs/STATE.md` updated.
 
 ## Reference documents (in khatm-docs repo)
+
+`docs/specs/` are read-only mirrors of khatm-docs; never edit them — flag discrepancies to the
+docs repo instead (CONVENTIONS §10).
 `20-solution-architecture.md` (SAD) · `21-security-architecture.md` (SEC) ·
 `31-work-breakdown-structure.md` (WBS) · `41-feature-specs-phase0-1.md` · ADR-08/09.
