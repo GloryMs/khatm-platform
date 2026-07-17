@@ -98,10 +98,16 @@ jobs:
 
   # KH-0.3.4 — secrets hygiene gate. gitleaks scans the commits new to this PR (and the pushed
   # commits on push to main). A one-time full-history scan was run locally at session close and
-  # was clean (see docs/STATE.md). Default gitleaks rules apply (no bespoke .gitleaks.toml).
+  # was clean, with a small set of triaged false positives allowlisted in .gitleaks.toml (see
+  # docs/STATE.md). gitleaks-action needs pull-requests: read to list a PR's commits via the
+  # GitHub API (the top-level `permissions: contents: read` alone gets a 403 "Resource not
+  # accessible by integration") — confirmed by this gate's own first CI run.
   gitleaks:
     name: gitleaks (secrets)
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - name: Checkout (full history)
         uses: actions/checkout@v4
