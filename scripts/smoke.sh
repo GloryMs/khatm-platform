@@ -38,17 +38,20 @@ ensure_network() {
 
 wait_for_api() {
   bold "Waiting for API at $BASE_URL (cold boot: Flyway V1+V2 + KeyBootstrap + AdminBootstrap)..."
-  local i
+  # The web server accepts connections BEFORE the ApplicationRunners finish, so /.well-known/jwks.json
+  # returns 200 with {"keys":[]} for a moment until KeyBootstrap creates the ACTIVE key. Poll for a
+  # NON-EMPTY key set, not merely a 200 — otherwise we race the bootstrap and see no keys.
+  local i body
   for i in $(seq 1 150); do
-    if curl -sf "$BASE_URL/.well-known/jwks.json" >/dev/null 2>&1; then
-      printf '  API healthy after ~%ss\n' "$i"
+    body="$(curl -s "$BASE_URL/.well-known/jwks.json" 2>/dev/null || true)"
+    if printf '%s' "$body" | grep -q '"kty"'; then
+      printf '  API ready (JWKS has a key) after ~%ss\n' "$i"
       return 0
     fi
     sleep 1
   done
-  fail "API did not become healthy within 150s. Last logs:" 2>/dev/null || true
   docker compose -f "$COMPOSE_FILE" logs --tail=40 khatm-api 2>/dev/null || true
-  fail "API did not become healthy within 150s"
+  fail "API did not publish a JWKS key within 150s"
 }
 
 check_jwks() {
@@ -117,20 +120,35 @@ check_e2e() {
 
 # ----------------------------------------------------------------------------
 
+# khatm-api and khatm-worker share one keystore volume + DB, and KeyBootstrap is not role-gated
+# (it runs as a plain ApplicationRunner in both). Starting them concurrently is a genuine race:
+# whichever loses (sees the ACTIVE issuer_key DB row already created by the other) skips its own
+# bootstrap, but that process's SoftKeyProvider already loaded its in-memory KeyStore at ITS OWN
+# startup — before the winner's file write was visible — so the loser is left signing against a
+# kid its own JVM never actually has. Bringing khatm-api up ALONE first (compose still starts
+# postgres/redis for it via their health-gated depends_on) and waiting for it to publish a real
+# JWKS key before starting khatm-worker makes bootstrap strictly sequential, so the second starter
+# always reads an already-complete keystore file. This is a real pre-existing concurrency bug
+# (see docs/STATE.md "Open decisions / blockers") — worked around here at the compose-sequencing
+# level since fixing KeyBootstrap itself is application code, out of scope for KH-0.3.
+boot_stack() {
+  bold "docker compose up -d --build khatm-api (+ its postgres/redis dependencies)"
+  docker compose -f "$COMPOSE_FILE" up -d --build khatm-api
+  wait_for_api
+  bold "docker compose up -d --build khatm-worker (api already holds the bootstrapped key)"
+  docker compose -f "$COMPOSE_FILE" up -d --build khatm-worker
+}
+
 bold "=== Phase 1: clean boot ==="
 ensure_network
-bold "docker compose up -d --build"
-docker compose -f "$COMPOSE_FILE" up -d --build
-wait_for_api
+boot_stack
 check_jwks
 check_e2e
 
 bold "=== Phase 2: restore-from-zero (down -v, then up on the SAME image) ==="
 docker compose -f "$COMPOSE_FILE" down -v >/dev/null
 ensure_network   # external network survives `down`; re-check is harmless
-bold "docker compose up -d (image cached, volumes recreated)"
-docker compose -f "$COMPOSE_FILE" up -d
-wait_for_api
+boot_stack
 check_jwks
 check_e2e
 

@@ -1,0 +1,15 @@
+# .dockerignore — keep the Docker build context lean so the image-building CI jobs
+# (trivy image, compose-smoke, GHCR push in .github/workflows/) send only what the Dockerfile
+# needs (pom.xml + src/). Everything below is either reproducible inside the image or irrelevant
+# to it.
+target/
+build/
+.git/
+.idea/
+.vscode/
+*.iml
+.classpath
+.project
+.settings/
+*.log
+*.tmp
