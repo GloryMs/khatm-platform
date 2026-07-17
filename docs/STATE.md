@@ -3,14 +3,17 @@
 
 ## Current phase / task
 - Phase 0 — Production Foundation
-- Current task: **KH-0.6b** — console auth, API keys, RBAC-lite & the full `audit_log` write
-  path (spec FS-0.6b, all ten pre-approved design decisions D1–D10 implemented as given).
-  **Completes Phase 0.** `mvn verify` green (81/81 tests, Spotless/Checkstyle/Modulith
-  boundaries clean). PR open against `main` (`feat/KH-0.6b-auth`) — **NOT merged** (session
-  ended before merge by instruction, per protocol). See "Decisions made" → Session KH-0.6b for
-  the implementation-level interpretations code reality forced (none change the spec's stated
-  functional behavior — every DoD 1–11 item is met and tested).
-- Prev task: ADR-09-WORKER — async worker skeleton (Spring Modulith externalized events →
+- Current task: **KH-0.3 Phase-0 closure** — DevOps gates + one docs promotion, **no application
+  code**. Branch `chore/KH-0.3-phase0-closure`, PR against `main` (**NOT merged** by instruction).
+  Closes every Phase-0 exit criterion except KH-0.3.3's deploy activation, which is explicitly a
+  config task (set the staging secrets listed in `docs/deploy-staging.md`), not a code task. See
+  "Last completed" → Session KH-0.3-closure for the five parts and the build-infra fix it forced.
+- Prev task: **KH-0.6b** — console auth, API keys, RBAC-lite & the full `audit_log` write path
+  (spec FS-0.6b, D1–D10 as given; `mvn verify` green, 81/81 tests). DONE & MERGED via PR #14
+  (2026-07-17, merge commit `e05008c`); branch `feat/KH-0.6b-auth` deleted. **Completes the
+  application half of Phase 0** — no endpoint ships without authentication behind it from here.
+  See "Decisions made" → Session KH-0.6b.
+- Before that: ADR-09-WORKER — async worker skeleton (Spring Modulith externalized events →
   transactional outbox → Redis Streams) + first real worker (claim_code `disclosures_enc`
   expiry-zeroing, closing the remaining half of that blocker per FS-0.2 §3.7). DONE & MERGED via
   PR #12 (2026-07-16, merge commit `cad404e`); branch `feat/ADR-09-worker-skeleton` deleted.
@@ -18,14 +21,12 @@
   was reduced to on-claim zeroing only (folds into KH-1.2.1). See "Decisions made" → Session
   ADR-09-worker.
 - Before that: KH-0.6a (error hierarchy & bilingual messages — CLAUDE.md work rules 2 & 3) —
-  DONE & MERGED via PR #10 (2026-07-16). **Work rules 2 & 3 are now LIVE** — see "Decisions
-  made" below for what that obligates future sessions to do.
-- The FS-0.6a §4 Arabic-speaker review gate ran in that merge session itself: one wording
-  refinement on `verify.reason.bad_sd_alg` (dropped the redundant "digest"/هضم qualifier); the
-  rest of `messages_ar.properties` confirmed natural MSA as written. Keys untouched, so
-  `MessageBundleParityTest` stayed green. **KH-0.6b's new `messages_ar.properties` keys
-  (`error.rbc.*`) have NOT yet had this same native-speaker review gate — flag in the KH-0.6b PR
-  body, same pattern KH-0.6a used before its own merge session ran the gate.**
+  DONE & MERGED via PR #10 (2026-07-16). **Work rules 2 & 3 are now LIVE** — standing obligations
+  promoted to `docs/CONVENTIONS.md §7` (the in-file "Immediate note" blocks were retired).
+- Arabic-speaker review gate (FS-0.6a §4): ran for KH-0.6a (one wording refinement on
+  `verify.reason.bad_sd_alg`) and again for KH-0.6b's new `error.rbc.*` keys in the PR #14 merge
+  session — no concerns, wording kept as written, `MessageBundleParityTest` stayed green.
+- PR #14 (`feat/KH-0.6b-auth` → `main`) merged 2026-07-17 (merge commit `e05008c`); branch deleted.
 - PR #10 (`feat/KH-0.6a-errors-i18n` → `main`) merged 2026-07-16 (merge commit `ec20f95`);
   branch deleted.
 - PR #8 (`feat/KH-0.4-sdjwt-upgrade` → `main`) merged 2026-07-16; branch deleted.
@@ -36,6 +37,46 @@
   go through a PR, never a direct push to `main`.
 
 ## Last completed
+- 2026-07-17: KH-0.3 Phase-0 closure — DevOps gates + one docs promotion (**no application code**).
+  Branch `chore/KH-0.3-phase0-closure`; PR **NOT merged** by instruction. `mvn verify` unchanged
+  (no app code touched). Closes every Phase-0 exit criterion except KH-0.3.3 deploy activation,
+  which is explicitly a config task. Five parts + one forced build-infra fix:
+  - **Build-infra fix (forced by Part 1/3/4, not part of the brief's code scope)**: the `Dockerfile`
+    built on Temurin 17 while `pom.xml` is `--release 21`, so `docker build` failed at `mvn package`
+    — making every image-dependent job impossible. Bumped both stages to `eclipse-temurin:21`. No
+    app / migration / pom change.
+  - **Part 0 (docs promotion)**: the two "Immediate note for future sessions" blocks (work-rules 2&3
+    same-commit discipline; KH-0.6b Spring Security per-endpoint discipline) promoted into a new
+    `docs/CONVENTIONS.md §7` (Security & error-handling conventions); old §7–10 renumbered §8–11
+    (one internal §8→§9 cross-ref fixed). STATE.md holds one-line pointers; CLAUDE.md gained a §7
+    pointer line and a `docs/specs/` read-only-mirror rule. No fifth work rule added.
+  - **Part 1 — KH-0.3.2 (Trivy gate)**: new `trivy` CI job — `trivy fs` (deps) + `trivy image`
+    (runtime image), fail on CRITICAL/HIGH, `--ignore-unfixed`, DB cached daily. `aquasecurity/
+    trivy-action` is **SHA-pinned to v0.36.0** — aquasecurity/trivy-action was the target of a
+    2026-03-19 supply-chain attack (force-pushed tags + malicious v0.69.4) and has a command-injection
+    CVE in ≤0.33.1; the Trivy binary is also pinned to `0.72.0`. Empty `.trivyignore` (dated-comment
+    template; first scan clean, no dep bumps needed). Other third-party actions stay tag-pinned
+    (this repo's style); trivy gets SHA pinning because it is the one with a documented compromise.
+  - **Part 2 — KH-0.3.4 (secrets)**: `gitleaks` CI gate (per-PR diff via `gitleaks-action@v2`,
+    `fetch-depth: 0`). Full-history scan run locally: **0 real findings** — the 12 raw hits were one
+    synthetic TEST fixture (`khatm-test-claims-enc-key-32byte`, base64) in two `src/test/java`
+    files; allowlisted precisely in a new `.gitleaks.toml` (`useDefault = true` + regex allowlist
+    for both the base64 and the decoded form). `.env.example` = the complete runtime env-var
+    contract (required-outside-`local` vs local-default marked); `.gitignore` already covers
+    `.env` / `*.p12` / secret paths (verified, no change).
+  - **Part 3 — restore-from-zero proof (Phase-0 exit criterion 3)**: new `compose-smoke` CI job
+    runs `scripts/smoke.sh`, the single "one command" — clean boot (api+worker+pg+redis), assert
+    JWKS ≥1 key, login → issue → verify `valid:true` end-to-end (AdminBootstrap + session auth +
+    SD-JWT signing/verify), `down -v`, boot again on the same image, re-assert. jq-free (sed/grep)
+    for Git-Bash ↔ CI portability; CSRF handled (login → GET `/api/auth/me` forces the XSRF-TOKEN
+    cookie → echoed as `X-XSRF-TOKEN` on `/issue`).
+  - **Part 4 — KH-0.3.3 prep (inert until a host exists)**: new `release.yml` (push to `main`)
+    builds + pushes the image to GHCR `ghcr.io/gloryms/khatm-platform` (`latest` + short SHA). The
+    `deploy-staging` job SSHes + runs `docker compose pull && up -d`, gated on `STAGING_SSH_HOST`
+    existing — it skips cleanly with a notice job when the secret is absent (no failure).
+    `docs/deploy-staging.md` is the runbook (one-time host prep, exact secret names, activation =
+    fill the secrets). Activation is explicitly a config task, not code.
+  - See "Decisions made" → Session KH-0.3-closure.
 - 2026-07-17: KH-0.6b — console auth, API keys, RBAC-lite & the full `audit_log` write path
   (spec FS-0.6b, D1–D10 as given; `mvn verify` green, 81/81 tests). **Completes Phase 0** — no
   endpoint ships without authentication behind it from here.
@@ -780,6 +821,41 @@
   no such codepath. Every DoD test in `rbac/` deliberately provokes `401`s on POST endpoints, so
   this was not optional for this suite.
 
+### Session KH-0.3-closure (2026-07-17)
+- **SHA-pin `trivy-action` only, not every action**: aquasecurity/trivy-action has a concrete,
+  documented compromise (2026-03-19 force-pushed tags + malicious v0.69.4) and a command-injection
+  CVE in ≤0.33.1, so it gets pinned to the v0.36.0 commit SHA (post-incident) and its Trivy binary
+  pinned to `0.72.0`. The other third-party actions (`gitleaks-action@v2`, `docker/*@v3/v5/v6`,
+  `appleboy/ssh-action@v1`) stay tag-pinned — that matches this repo's existing `ci.yml` style
+  (`actions/*@v4`) and there's no specific threat against them. Applying the stronger control where
+  there's a concrete reason, rather than uniformly, keeps CI-correctness risk (a wrong SHA breaks
+  the job and can't be locally tested) low while protecting the one real exposure.
+- **gitleaks false positive is one test fixture, allowlisted by exact value (both forms)**: the 12
+  raw history hits were all the same synthetic `khatm.claims.enc-key` test value
+  (`a2hhdG0tdGVzdC1jbGFpbXMtZW5jLWtleS0zMmJ5dGU=`, decoding to the literal `khatm-test-claims-enc-
+  key-32byte`) in two `src/test/java` files — a non-secret fixture, not a leak, so the brief's
+  "STOP if real" trigger did not fire. `.gitleaks.toml` allowlists that exact value AND its decoded
+  literal (gitleaks base64-decodes and re-scans, so the decoded form trips the rule independently —
+  a single allowlist entry was insufficient; re-verified clean). `useDefault = true` keeps the full
+  built-in rule set; no rules were weakened. Test files deliberately untouched (a scanner-driven
+  rename would be worse than a precise, justified allowlist).
+- **CSRF in the smoke flow is handled by a GET, not a token-extraction guess**: after `login`
+  (CSRF-exempt), the smoke script does a `GET /api/auth/me` before `/issue`. That GET proves the
+  session AND forces `CsrfCookieFilter` to actually write the `XSRF-TOKEN` cookie (Spring Security 6
+  resolves the token lazily; a pure-JSON API never triggers it otherwise). The cookie is then read
+  from the curl jar and echoed as `X-XSRF-TOKEN` on `/issue`. `/issue` needs `issue` scope, which
+  the bootstrap admin's PLATFORM_ADMIN role carries — so the full session-authenticated issue path
+  is exercisable, not just the public endpoints.
+- **`release.yml` is separate from `ci.yml` and trusts branch protection**: publish/deploy run only
+  on push to `main`; there's no cross-workflow `needs: ci.verify` gate because `main` is branch-
+  protected (a PR's CI was already green before merge). The deploy half is gated on the
+  `STAGING_SSH_HOST` secret existing (`if:` at job level) with a sibling notice job for the skipped
+  case — "skipped cleanly, not failed," exactly as the brief required, with no made-up host.
+- **`compose-smoke` is one script, not a job full of steps**: `scripts/smoke.sh` owns the whole
+  restore-from-zero proof (network create, build, health-wait on JWKS, the e2e cycle, `down -v`,
+  re-boot, re-assert) so the same command is the exit criterion locally and in CI. jq was
+  deliberately avoided (sed/grep JSON parsing) so Git-Bash and a CI runner are the same environment.
+
 > Durable conventions formerly logged here
 
 > Durable conventions formerly logged here (entity visibility, the Checkstyle
@@ -833,26 +909,24 @@
   Whoever merges/reviews the KH-0.6b PR should run the same check before or shortly after merge.
 
 ## Next up (ordered)
-1. KH-0.3.3 — staging auto-deploy (explicitly out of scope for KH-0.3.1's CI pipeline; KH-0.6b's
-   session/API-key auth landing makes external deployment safe to pursue now — spec FS-0.6b §9's
-   own stated intent).
-2. KH-1.2.1 — claim-delivery endpoint: a wallet claims a code → `ClaimsEncryptionService.decrypt`
-   → deliver disclosures → **on-claim zero** `disclosures_enc` to NULL. Authenticates by
-   possessing the claim code itself (spec FS-0.6b §9) — needs its own spec to fix that contract,
-   not session/API-key auth. The ADR-09 worker skeleton and now the audit write path it depends
-   on are both real; only the on-claim half + delivery path remain.
-3. KH-1.3 — Status List: publish the real signed bitstring artifact endpoint (the `status`
-   claim's `uri` is a placeholder until then, KH-0.4 D3)
-4. KH-1.4.3 — `allowed_schemas` enforcement for consuming parties, building on the
-   `CONSUMING_PARTY` API-key principal `rbac.security.ApiKeyAuthFilter` now provides (spec
-   FS-0.6b §9 — explicitly no filter changes needed, the principal is already there)
-5. KH-1.6 — published OpenAPI contract: full endpoint annotation coverage (KH-0.4/KH-0.6a/
-   KH-0.6b only annotated `/issue`/`/verify`/the new `rbac` endpoints) + CI-published
-   `openapi.json`
-6. KH-2.2 — full RBAC (replaces D5's lean `role.scopes text[]` with real Permission tables,
-   admin console for user/role management) + RBAC-gated REST endpoint for
-   `KeyLifecycleService.rotate()`
-7. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM
+1. KH-1.2.1 — claim-delivery endpoint: a wallet claims a code → `ClaimsEncryptionService.decrypt`
+   → deliver disclosures → **on-claim zero** `disclosures_enc` to NULL. Authenticates by possessing
+   the claim code itself (spec FS-0.6b §9) — needs its own spec (from the advisory session) to fix
+   that contract, not session/API-key auth. The ADR-09 worker skeleton and the audit write path it
+   depends on are both real; only the on-claim half + delivery path remain.
+2. KH-1.3 — Status List: publish the real signed bitstring artifact endpoint (the `status` claim's
+   `uri` is a placeholder until then, KH-0.4 D3).
+3. KH-1.4.3 — `allowed_schemas` enforcement for consuming parties, building on the
+   `CONSUMING_PARTY` API-key principal `rbac.security.ApiKeyAuthFilter` now provides (spec FS-0.6b
+   §9 — explicitly no filter changes needed, the principal is already there).
+4. KH-1.6 — published OpenAPI contract: full endpoint annotation coverage (KH-0.4/KH-0.6a/KH-0.6b
+   only annotated `/issue`/`/verify`/the new `rbac` endpoints) + CI-published `openapi.json`.
+5. KH-0.3.3 activation — **config, not code**: set the staging secrets in `docs/deploy-staging.md`
+   and the `release.yml` deploy job runs on the next push to `main`. (The publish half is already
+   live; only the gated deploy half waits on a host.)
+6. KH-2.2 — full RBAC (replaces D5's lean `role.scopes text[]` with real Permission tables, admin
+   console for user/role management) + RBAC-gated REST endpoint for `KeyLifecycleService.rotate()`.
+7. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM.
 
 ## Standing conventions (promoted to docs/CONVENTIONS.md §7)
 - **Work rules 2 & 3 (error handling & i18n)** → `docs/CONVENTIONS.md §7.1`.

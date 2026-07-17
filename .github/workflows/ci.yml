@@ -1,5 +1,8 @@
 name: CI
 
+# KH-0.3.1: build/quality gate on every PR into main and every push to main.
+# KH-0.3 Phase-0 closure: added three gates — trivy (vuln scan), gitleaks (secrets),
+# compose-smoke (restore-from-zero proof). Each job runs independently and in parallel.
 on:
   pull_request:
     branches: [main]
@@ -33,3 +36,90 @@ jobs:
       # Testcontainers needs Docker, which ubuntu-latest runners have preinstalled.
       - name: Build and test (mvn verify)
         run: mvn -B verify
+
+  # KH-0.3.2 — vulnerability scanning gate. Trivy is the single tool for both surfaces:
+  # `trivy fs` over the repo (dependency/lockfile surface) and `trivy image` over the built
+  # runtime image (OS/package surface). Gate fails on CRITICAL or HIGH; --ignore-unfixed keeps
+  # noise down (only vulnerabilities the upstream has actually published a fix for count).
+  # Allowlist lives in .trivyignore (every entry needs a dated justification).
+  trivy:
+    name: Trivy vuln scan (fs + image)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Date (Trivy DB cache key — refreshes daily)
+        id: date
+        run: echo "date=$(date -u +%Y-%m-%d)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Trivy DB
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ steps.date.outputs.date }}
+          restore-keys: trivy-db-
+
+      # Build the image once, locally, so trivy image has something to scan. This also doubles
+      # as a "the Dockerfile actually builds" gate.
+      - name: Build image
+        run: docker build -t khatm-platform:scan .
+
+      # trivy-action is pinned to a COMMIT SHA, not a moving tag: aquasecurity/trivy-action was
+      # the target of a 2026-03-19 supply-chain attack (force-pushed 76 of 77 tags + published a
+      # malicious v0.69.4) and carries a command-injection CVE in versions <=0.33.1. This SHA is
+      # v0.36.0 (published 2026-04-22, post-incident). The Trivy BINARY is also pinned via
+      # `version:` so the compromised `latest` is never resolved. Other actions here stay
+      # tag-pinned to match this repo's existing style; trivy gets the stronger control because
+      # it is the one with a concrete, documented compromise.
+      - name: Trivy fs (dependency surface)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          version: '0.72.0'
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+          exit-code: '1'
+          format: 'table'
+
+      - name: Trivy image (runtime image)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          version: '0.72.0'
+          scan-type: 'image'
+          image-ref: 'khatm-platform:scan'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+          exit-code: '1'
+          format: 'table'
+
+  # KH-0.3.4 — secrets hygiene gate. gitleaks scans the commits new to this PR (and the pushed
+  # commits on push to main). A one-time full-history scan was run locally at session close and
+  # was clean (see docs/STATE.md). Default gitleaks rules apply (no bespoke .gitleaks.toml).
+  gitleaks:
+    name: gitleaks (secrets)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Phase-0 exit criterion 3 — restore-from-zero proof. scripts/smoke.sh is the single command:
+  # clean boot (api+worker+postgres+redis), assert JWKS, login->issue->verify end-to-end,
+  # docker compose down -v, boot again on the same image, re-assert. Proves the restore is
+  # repeatable, not a lucky first boot.
+  compose-smoke:
+    name: compose-smoke (restore-from-zero)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Smoke (boot + end-to-end + repeatable restore)
+        run: ./scripts/smoke.sh
