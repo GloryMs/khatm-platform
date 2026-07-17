@@ -4,7 +4,7 @@
 ## Current phase / task
 - Phase 0 — Production Foundation
 - Current task: **KH-0.3 Phase-0 closure** — DevOps gates + one docs promotion, **no application
-  code**. Branch `chore/KH-0.3-phase0-closure`, PR against `main` (**NOT merged** by instruction).
+  code**. Branch `chore/KH-0.3-phase0-closure`, PR #16 against `main` (**NOT merged** by instruction).
   Closes every Phase-0 exit criterion except KH-0.3.3's deploy activation, which is explicitly a
   config task (set the staging secrets listed in `docs/deploy-staging.md`), not a code task. See
   "Last completed" → Session KH-0.3-closure for the five parts and the build-infra fix it forced.
@@ -37,10 +37,17 @@
   go through a PR, never a direct push to `main`.
 
 ## Last completed
-- 2026-07-17: KH-0.3 Phase-0 closure — DevOps gates + one docs promotion (**no application code**).
-  Branch `chore/KH-0.3-phase0-closure`; PR **NOT merged** by instruction. `mvn verify` unchanged
-  (no app code touched). Closes every Phase-0 exit criterion except KH-0.3.3 deploy activation,
-  which is explicitly a config task. Five parts + one forced build-infra fix:
+- 2026-07-17: KH-0.3 Phase-0 closure — DevOps gates + one docs promotion (**no application code**;
+  the only `pom.xml` edits are the Trivy-driven patch-level dependency bumps, Part 1). Branch
+  `chore/KH-0.3-phase0-closure`, PR #16 — **NOT merged** by instruction. `mvn verify` green, 81/81
+  tests. **PR #16's CI is fully green**: all four jobs pass (`verify`, `trivy`, `gitleaks`,
+  `compose-smoke`) — three real CI-config bugs were found and fixed via the PR's own CI runs, not
+  assumed correct: `gitleaks` needed `pull-requests: read` to list PR commits (403 without it);
+  `trivy-action`'s `version:` input needs the git-tag `v` prefix (`v0.72.0`, not `0.72.0`); `trivy
+  fs`'s independent pom.xml resolver needed a pre-warmed `~/.m2` (via `dependency:go-offline`
+  before the scan) to avoid tripping Maven Central's rate limit on a cold runner. Closes every
+  Phase-0 exit criterion except KH-0.3.3 deploy activation, which is explicitly a config task.
+  Five parts + one forced build-infra fix:
   - **Build-infra fix (forced by Part 1/3/4, not part of the brief's code scope)**: the `Dockerfile`
     built on Temurin 17 while `pom.xml` is `--release 21`, so `docker build` failed at `mvn package`
     — making every image-dependent job impossible. Bumped both stages to `eclipse-temurin:21`. No
