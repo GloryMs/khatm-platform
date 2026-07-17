@@ -6,9 +6,9 @@
 - Current task: **KH-0.6b** — console auth, API keys, RBAC-lite & the full `audit_log` write
   path (spec FS-0.6b, all ten pre-approved design decisions D1–D10 implemented as given).
   **Completes Phase 0.** `mvn verify` green (81/81 tests, Spotless/Checkstyle/Modulith
-  boundaries clean). PR open against `main` (`feat/KH-0.6b-auth`) — **NOT merged** (session
-  ended before merge by instruction, per protocol). See "Decisions made" → Session KH-0.6b for
-  the implementation-level interpretations code reality forced (none change the spec's stated
+  boundaries clean). DONE & MERGED via PR #14 (2026-07-17, merge commit `e05008c`); branch
+  `feat/KH-0.6b-auth` deleted. See "Decisions made" → Session KH-0.6b for the
+  implementation-level interpretations code reality forced (none change the spec's stated
   functional behavior — every DoD 1–11 item is met and tested).
 - Prev task: ADR-09-WORKER — async worker skeleton (Spring Modulith externalized events →
   transactional outbox → Redis Streams) + first real worker (claim_code `disclosures_enc`
@@ -24,8 +24,10 @@
   refinement on `verify.reason.bad_sd_alg` (dropped the redundant "digest"/هضم qualifier); the
   rest of `messages_ar.properties` confirmed natural MSA as written. Keys untouched, so
   `MessageBundleParityTest` stayed green. **KH-0.6b's new `messages_ar.properties` keys
-  (`error.rbc.*`) have NOT yet had this same native-speaker review gate — flag in the KH-0.6b PR
-  body, same pattern KH-0.6a used before its own merge session ran the gate.**
+  (`error.rbc.*`) had the same gate applied in the PR #14 merge session — native-speaker review
+  (Majd) found no concerns; wording kept as written, no follow-up commit needed.**
+- PR #14 (`feat/KH-0.6b-auth` → `main`) merged 2026-07-17 (merge commit `e05008c`); branch
+  deleted.
 - PR #10 (`feat/KH-0.6a-errors-i18n` → `main`) merged 2026-07-16 (merge commit `ec20f95`);
   branch deleted.
 - PR #8 (`feat/KH-0.4-sdjwt-upgrade` → `main`) merged 2026-07-16; branch deleted.
@@ -827,11 +829,6 @@
     (spec §9 explicitly notes it authenticates by *possessing the claim code*, not a session or
     API key, and is not closed off by KH-0.6b's `SecurityConfig`). `decrypt()` exists on
     `ClaimsEncryptionService` (tested), ready for the claim endpoint to call.
-- **KH-0.6b's `messages_ar.properties` additions (`error.rbc.*`) have not yet had the FS-0.6a §4
-  native-speaker Arabic review gate** — same situation KH-0.6a itself was in at its own
-  session-end; the gate ran in that feature's *merge* session, not its implementation session.
-  Whoever merges/reviews the KH-0.6b PR should run the same check before or shortly after merge.
-
 ## Next up (ordered)
 1. KH-0.3.3 — staging auto-deploy (explicitly out of scope for KH-0.3.1's CI pipeline; KH-0.6b's
    session/API-key auth landing makes external deployment safe to pursue now — spec FS-0.6b §9's
