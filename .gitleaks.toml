@@ -1,0 +1,27 @@
+# .gitleaks.toml — khatm-platform (KH-0.3.4)
+#
+# Extends gitleaks' built-in rule set (useDefault = true) and adds allowlist entries for known,
+# triaged FALSE POSITIVES only. Do not use this to suppress a real finding — if a real secret is
+# committed, rotate it; never allowlist it.
+#
+# Triage log:
+#  * a2hhdG0tdGVzdC1jbGFpbXMtZW5jLWtleS0zMmJ5dGU= (base64 of the literal string
+#    "khatm-test-claims-enc-key-32byte") — a synthetic test fixture under src/test/java that
+#    satisfies ClaimsEncryptionService's non-blank-key requirement during full Spring-context
+#    test boots (KH-0.4 D7). Its 32-byte entropy is what trips the generic-api-key rule. Not a
+#    production key; verified at KH-0.3 Phase-0 closure.
+
+title = "khatm-platform"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Triaged false positives — synthetic test fixtures, not real secrets."
+regexes = [
+  # base64 form
+  '''a2hhdG0tdGVzdC1jbGFpbXMtZW5jLWtleS0zMmJ5dGU=''',
+  # decoded literal — gitleaks base64-decodes the value above and re-scans, so this form trips
+  # the rule independently and must be allowlisted too.
+  '''khatm-test-claims-enc-key-32byte''',
+]

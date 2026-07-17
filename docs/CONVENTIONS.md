@@ -28,7 +28,7 @@ src/main/resources/
   rule permits `log`/`logger` in addition to `UPPER_SNAKE_CASE` (logger fields are mutable
   state, not true constants — Google Java Style Guide §5.2.4); the `MethodName` rule permits
   underscore-separated segments after the initial lowerCamelCase start, so the test naming
-  convention in §8 (`methodName_condition_expectedResult`) is actually enforceable.
+  convention in §9 (`methodName_condition_expectedResult`) is actually enforceable.
 
 ## 3. The i18n pattern (rule 2) — exactly this, everywhere
 - **Stored display names** → JSONB column `name_i18n` mapped to `LocalizedText` record
@@ -95,7 +95,35 @@ migration — append a new one."* KH-0.2.2 makes this build-enforced, not just a
   "same" file, which would make the checksum check fail spuriously on the first CI run for
   reasons that have nothing to do with an actual edit.
 
-## 7. Async pattern (ADR-09) — exactly this
+## 7. Security & error-handling conventions
+
+Promoted from `docs/STATE.md` at Phase-0 closure (KH-0.3). CLAUDE.md work rules 2 & 3 and
+KH-0.6b's Spring Security layer are now LIVE — these are the standing, same-commit
+obligations every new endpoint / user-facing string / throw site carries from here on.
+
+### 7.1 Error handling & i18n (work rules 2 & 3)
+Adding a new user-facing string or throw site means, in the **same commit**:
+- a new/existing `ErrorCode` (never renumbered) or `VerifyReason` with a real, exercised path;
+- a matching key in **both** `messages_en.properties` and `messages_ar.properties` —
+  `MessageBundleParityTest` fails the build otherwise;
+- if `ErrorCode` changed, `docs/error-codes.md` regenerated — `ErrorCodesDocGenerationTest`
+  fails the build otherwise (its assertion message prints the exact content to paste in);
+- no ad-hoc `ResponseEntity.status(...)` / `.notFound()` / etc. anywhere outside
+  `shared.web.GlobalExceptionHandler` — throw a `KhatmException` subtype instead.
+
+### 7.2 Spring Security (KH-0.6b)
+Every endpoint except `POST /api/v1/credentials/verify` and `GET /.well-known/jwks.json`
+(D9) requires a valid session or API key, enforced in `rbac.security.SecurityConfig`.
+Adding a new endpoint means, in the **same commit**:
+- decide its scope/actor-kind requirement explicitly (`ScopeGuard`'s per-route rules) — the
+  default (no explicit rule) is merely "authenticated, any scope," which is rarely what you want;
+- if any existing test hits the new/changed endpoint over real HTTP (not a direct service call,
+  which bypasses the filter chain entirely), it needs a seeded test user or API key — see
+  `rbac.RbacHttpTestSupport` / `SessionTestSupport` for the established pattern, and
+  `shared.web.ErrorEnvelopeAndI18nTest` for the API-key-only variant;
+- never weaken `SecurityConfig` to make a test pass — adapt the test with real credentials instead.
+
+## 8. Async pattern (ADR-09) — exactly this
 - Publish Modulith application event (record) inside the transaction; externalization →
   Redis Streams via outbox. Workers consume with consumer groups; handlers idempotent
   (keyed on event id). No `@Async` for anything that must survive a crash.
@@ -104,7 +132,7 @@ migration — append a new one."* KH-0.2.2 makes this build-enforced, not just a
   requires diffing the library's official `schema-postgresql.sql` for that version against
   our migration — never hand-edit the table to "keep up."
 
-## 8. Tests
+## 9. Tests
 - Unit: JUnit 5 + Mockito, no Spring context where avoidable.
 - Integration: `@SpringBootTest` + Testcontainers (Postgres+Redis) per module slice.
 - Mandatory named tests: `ModulithBoundariesTest`, `MessageBundleParityTest`,
@@ -112,7 +140,7 @@ migration — append a new one."* KH-0.2.2 makes this build-enforced, not just a
   `MigrationImmutabilityTest` (checksum-locks every applied migration — KH-0.2.2, §6).
 - Naming: `methodName_condition_expectedResult`.
 
-## 9. Documentation (rule 1)
+## 10. Documentation (rule 1)
 - `package-info.java`: module purpose, exposed API, events published/consumed, tables owned.
 - Javadoc on exposed API: first sentence = what; body = why/invariants; `@throws` for
   every KhatmException subtype.
@@ -121,7 +149,7 @@ migration — append a new one."* KH-0.2.2 makes this build-enforced, not just a
 - Approved specs live in `docs/specs/` only — copied there from khatm-docs at implementation
   start. No other spec locations.
 
-## 10. Commits & PRs
+## 11. Commits & PRs
 - Conventional commits: `feat(credential): KH-1.4.1 persistent idempotency`.
 - One WBS task per PR; PR description links spec + lists DoD checklist.
 - A PR introducing or modifying core invariant logic (atomic consume, idempotency, key

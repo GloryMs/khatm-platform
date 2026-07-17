@@ -7,5 +7,52 @@ Spring Modulith on Java 21 / Spring Boot / PostgreSQL, it stores cryptographic p
 and audit ledgers for issued credentials — never document content or PII. See `CLAUDE.md` for
 the full architecture rules and `docs/STATE.md` for current project status.
 
-> This is a minimal placeholder README (KH-0.3.1). A full one (setup, running locally, API
-> docs) is future work.
+## Running locally
+
+```bash
+docker network create khatm-net          # once
+docker compose up -d --build             # api + worker + postgres + redis
+```
+
+The `local` profile supplies every required secret with a documented default, so the stack boots
+with zero setup: a bootstrap console admin (`admin` / the password logged at startup) and a demo
+credential are seeded automatically. API on http://localhost:8080.
+
+### Restore-from-zero smoke test (Phase-0 exit criterion)
+
+```bash
+./scripts/smoke.sh
+```
+
+One command — works on Windows Git-Bash and in CI. Boots the stack from clean, asserts the JWKS
+endpoint and a full login → issue → verify cycle, tears it down to zero (`docker compose down -v`),
+boots again on the same image, and re-asserts. This is the single command behind the `compose-smoke`
+CI job.
+
+## Secrets & configuration
+
+`.env.example` is the complete contract of every runtime environment variable (which are required
+outside `local`, which have local defaults). Copy it to `.env` (gitignored) for local overrides, or
+use it as the input the `khatm-deploy` repo encrypts with SOPS for real environments (SOPS wiring
+happens in `khatm-deploy`, not here). Keystores (`*.p12`), `.env`, and local secret paths are
+gitignored.
+
+## CI
+
+`.github/workflows/ci.yml` runs on every PR into `main` and every push to `main`:
+
+- **Build and verify** — migration checksum guard + `mvn verify` (Spotless, Checkstyle, Modulith
+  boundaries, all tests).
+- **Trivy vuln scan (KH-0.3.2)** — `trivy fs` (dependencies) + `trivy image` (runtime image),
+  failing on CRITICAL/HIGH that have a fix available (`--ignore-unfixed`). Allowlist: `.trivyignore`.
+- **gitleaks (KH-0.3.4)** — secret scanning of the PR's commits; triaged exceptions in
+  `.gitleaks.toml`.
+- **compose-smoke** — the restore-from-zero proof above.
+
+## Release & deploy (KH-0.3.3)
+
+`.github/workflows/release.yml` runs on push to `main`: it builds and pushes the image to the GitHub
+Container Registry (`ghcr.io/gloryms/khatm-platform`, tagged `latest` + short SHA). The staging
+deploy job is **inert** until a host is configured — gated on a secret, it skips cleanly when that
+secret is absent. Activation (one-time host prep + the exact secret names) is documented in
+`docs/deploy-staging.md`.

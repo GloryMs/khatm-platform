@@ -7,7 +7,10 @@
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
-    <version>3.3.4</version>
+    <!-- KH-0.3.2: patch-level bump 3.3.4 -> 3.3.13 (still the frozen 3.x line, CLAUDE.md "Stack")
+         to clear the CRITICAL/HIGH CVEs the Trivy fs gate found in this BOM's managed versions
+         of spring-security-web, spring-core, spring-webmvc et al. See docs/STATE.md for the list. -->
+    <version>3.3.13</version>
     <relativePath/>
   </parent>
 
@@ -25,6 +28,13 @@
     <google-java-format.version>1.22.0</google-java-format.version>
     <checkstyle.version>3.3.1</checkstyle.version>
     <checkstyle-tool.version>10.12.4</checkstyle-tool.version>
+    <!-- KH-0.3.2: patch-level overrides of spring-boot-starter-parent's managed versions, to clear
+         CRITICAL/HIGH CVEs the Trivy fs gate found with a fixed version in the SAME minor line
+         (a true "bump the patch," not a minor/major upgrade). See docs/STATE.md for the full list
+         and which CVEs could NOT be cleared this way. -->
+    <postgresql.version>42.7.11</postgresql.version>
+    <tomcat.version>10.1.55</tomcat.version>
+    <netty.version>4.1.135.Final</netty.version>
   </properties>
 
   <dependencyManagement>

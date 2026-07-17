@@ -7,6 +7,15 @@
 *.sql text eol=lf
 *.sh text eol=lf
 *.lock text eol=lf
+# KH-0.3 Phase-0 closure: pin Java sources to LF too. Git already stores them as LF blobs, but a
+# Windows clone with core.autocrlf=true checks them out as CRLF; `docker build` then COPYs that
+# CRLF into the container, where Spotless (google-java-format) rejects every file. Same class of
+# OS-independence problem the lines above solve — and a prerequisite for scripts/smoke.sh to "work
+# locally on Windows Git-Bash and in CI" (KH-0.3 Part 3). No-op on Linux CI (already LF).
+*.java text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
+# KH-0.3.2: a trailing \r on a Vuln ID would silently break .trivyignore matching on a
+# Windows CRLF checkout — pin it the same way the SQL/checksum/shell files are pinned.
+.trivyignore text eol=lf
 docs/error-codes.md text eol=lf
