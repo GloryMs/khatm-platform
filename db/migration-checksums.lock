@@ -10,3 +10,4 @@
 # remove an existing line; per CLAUDE.md "Never edit an applied migration — append a new one",
 # doing so is exactly the mistake this file exists to catch.
 V1__baseline.sql	c4564f068594890783d2a4d278d313325887cea0b574f88dbade768d4d75e09f
+V2__auth_api_keys.sql	09636da738573d2aa1109bced9eaf2d0a2bbcc6f5fcf630391a2ee404fcd9367

@@ -1,14 +1,15 @@
 package sy.khatm.platform.credential.worker;
 
+import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 import sy.khatm.platform.credential.persistence.ClaimCodeRepository;
-import sy.khatm.platform.shared.TenantContext;
+import sy.khatm.platform.shared.audit.AuditAction;
+import sy.khatm.platform.shared.audit.AuditService;
 
 /**
  * Periodically zeros {@code claim_code.disclosures_enc} for codes whose TTL has elapsed — the
@@ -21,10 +22,11 @@ import sy.khatm.platform.shared.TenantContext;
  * image, never in {@code api} (ADR-09). The sweep interval is configurable via {@code
  * khatm.worker.claim-code.expiry-sweep-ms} (default 300000 = 5 minutes).
  *
- * <p>The audit row uses the same minimal direct-insert form {@code KeyLifecycleService} uses — the
- * full {@code KhatmException}-aware audit write path is KH-0.6b. It is written only when the sweep
- * actually changed rows, and carries only the count as non-sensitive metadata: no codes, no refs,
- * no disclosure material (SEC §9).
+ * <p>The audit row is written via {@code shared :: audit}'s {@code AuditService} (KH-0.6b —
+ * migrated off the ADR-09 direct-{@code JdbcTemplate}-insert stopgap) only when the sweep actually
+ * changed rows, and carries only the count as non-sensitive metadata: no codes, no refs, no
+ * disclosure material (SEC §9). The actor is always {@code SYSTEM} — this runs on a scheduler
+ * thread with no {@code SecurityContext}.
  */
 @Component
 @ConditionalOnProperty(name = "khatm.worker.enabled", havingValue = "true")
@@ -33,11 +35,11 @@ public class ClaimCodeExpiryWorker {
   private static final Logger log = LoggerFactory.getLogger(ClaimCodeExpiryWorker.class);
 
   private final ClaimCodeRepository claimCodes;
-  private final JdbcTemplate jdbcTemplate;
+  private final AuditService audit;
 
-  public ClaimCodeExpiryWorker(ClaimCodeRepository claimCodes, JdbcTemplate jdbcTemplate) {
+  public ClaimCodeExpiryWorker(ClaimCodeRepository claimCodes, AuditService audit) {
     this.claimCodes = claimCodes;
-    this.jdbcTemplate = jdbcTemplate;
+    this.audit = audit;
   }
 
   /**
@@ -56,19 +58,10 @@ public class ClaimCodeExpiryWorker {
     int zeroed = claimCodes.zeroExpiredUnclaimed();
     if (zeroed > 0) {
       log.info("claim_code expiry sweep zeroed {} expired unclaimed code(s)", zeroed);
-      writeAudit(zeroed);
+      audit.record(AuditAction.CLAIM_CODES_EXPIRED, "claim_code", null, Map.of("count", zeroed));
     } else {
       log.debug("claim_code expiry sweep: nothing to zero");
     }
     return zeroed;
-  }
-
-  private void writeAudit(int count) {
-    // count is an int from our own query — safe to interpolate into the JSON literal.
-    jdbcTemplate.update(
-        "INSERT INTO audit_log (tenant_id, actor_type, action, entity_type, detail) "
-            + "VALUES (?, 'SYSTEM', 'CLAIM_CODES_EXPIRED', 'claim_code', ?::jsonb)",
-        TenantContext.current(),
-        "{\"count\":" + count + "}");
   }
 }

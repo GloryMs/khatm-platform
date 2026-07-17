@@ -62,7 +62,11 @@ class ClaimsEncryptionKeyFailureTest {
                 "--spring.datasource.password=" + POSTGRES.getPassword(),
                 // Kept valid so these tests isolate the claims-key failure specifically.
                 "--khatm.keys.soft.keystore-path=" + keystorePath,
-                "--khatm.keys.soft.passphrase=claims-key-failure-test-passphrase"));
+                "--khatm.keys.soft.passphrase=claims-key-failure-test-passphrase",
+                // KH-0.6b: AdminBootstrap also fails startup without these outside 'local' (spec
+                // FS-0.6b D10) — kept valid for the same isolation reason as the two above.
+                "--khatm.auth.bootstrap.admin-username=test-admin",
+                "--khatm.auth.bootstrap.admin-password=test-admin-password-change-me"));
     if (encKeyBase64 != null) {
       args.add("--khatm.claims.enc-key=" + encKeyBase64);
     }

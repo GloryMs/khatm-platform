@@ -59,6 +59,8 @@ import sy.khatm.platform.schema.api.SchemaRef;
 import sy.khatm.platform.shared.LocalizedText;
 import sy.khatm.platform.shared.TenantContext;
 import sy.khatm.platform.shared.Uuidv7;
+import sy.khatm.platform.shared.audit.AuditAction;
+import sy.khatm.platform.shared.audit.AuditService;
 import sy.khatm.platform.shared.error.ErrorCode;
 import sy.khatm.platform.shared.error.IntegrityException;
 import sy.khatm.platform.shared.error.VerifyReason;
@@ -109,6 +111,7 @@ public class CredentialService {
   private final CredentialMapper mapper;
   private final ClaimsEncryptionService claimsEncryption;
   private final ApplicationEventPublisher eventPublisher;
+  private final AuditService audit;
 
   @Value("${khatm.issuer-did:did:web:khatm.sy:demo}")
   private String issuerDid;
@@ -126,7 +129,8 @@ public class CredentialService {
       StringRedisTemplate redis,
       CredentialMapper mapper,
       ClaimsEncryptionService claimsEncryption,
-      ApplicationEventPublisher eventPublisher) {
+      ApplicationEventPublisher eventPublisher,
+      AuditService audit) {
     this.credentials = credentials;
     this.events = events;
     this.claimCodes = claimCodes;
@@ -140,6 +144,7 @@ public class CredentialService {
     this.mapper = mapper;
     this.claimsEncryption = claimsEncryption;
     this.eventPublisher = eventPublisher;
+    this.audit = audit;
   }
 
   // ── Issue ────────────────────────────────────────────────────────────────
@@ -233,6 +238,7 @@ public class CredentialService {
     // Redis Stream after commit. Proof-shaped payload only — ref + timestamps, never claims or
     // disclosures (SEC §9 applies to the stream exactly as to logs).
     eventPublisher.publishEvent(new CredentialIssued(ref, null, now));
+    audit.record(AuditAction.CREDENTIAL_ISSUED, "credential", ref, null);
 
     return new IssueResponse(id.toString(), ref, presentation);
   }
@@ -426,6 +432,7 @@ public class CredentialService {
       String eventIdemKey = callerWantsIdempotency ? callerIdemKey : Uuidv7.generate().toString();
       events.save(
           new ConsumptionEvent(TenantContext.current(), id, party.id(), eventIdemKey, "ONLINE"));
+      audit.record(AuditAction.CREDENTIAL_CONSUMED, "credential", id.toString(), null);
     }
 
     if (callerWantsIdempotency) {
@@ -452,6 +459,7 @@ public class CredentialService {
     c.setRevoked(true);
     c.setRevokedAt(Instant.now());
     credentials.save(c);
+    audit.record(AuditAction.CREDENTIAL_REVOKED, "credential", id.toString(), null);
     return true;
   }
 

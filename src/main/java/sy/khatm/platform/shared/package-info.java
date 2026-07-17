@@ -16,14 +16,17 @@
  * framework libraries.
  *
  * <p><b>Exposed API:</b> all public types directly in this package (the implicit unnamed
- * interface), plus three deliberate {@code @NamedInterface}s: {@code error} (other modules throw
+ * interface), plus four deliberate {@code @NamedInterface}s: {@code error} (other modules throw
  * {@code KhatmException} subtypes and use {@code VerifyReason} directly), {@code web} (other
  * modules' OpenAPI annotations reference {@code ErrorEnvelope} as the shared error-response
- * schema), and {@code events} (the ADR-09 async backbone — other modules implement {@code
- * StreamEventHandler} to consume externalized events from Redis Streams). Sub-packages such as
- * {@code config/} remain module-private.
+ * schema), {@code events} (the ADR-09 async backbone — other modules implement {@code
+ * StreamEventHandler} to consume externalized events from Redis Streams), and {@code audit} (spec
+ * FS-0.6b — the single {@code audit_log} write path, {@link
+ * sy.khatm.platform.shared.audit.AuditService}). Sub-packages such as {@code config/} remain
+ * module-private.
  *
- * <p><b>Tables owned:</b> {@code audit_log} (append-only; the write path is KH-0.6b).
+ * <p><b>Tables owned:</b> {@code audit_log} (append-only; the write path is {@code shared ::
+ * audit}, KH-0.6b).
  */
 @org.springframework.modulith.ApplicationModule
 package sy.khatm.platform.shared;

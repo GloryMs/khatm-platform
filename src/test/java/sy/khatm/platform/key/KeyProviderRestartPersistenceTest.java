@@ -84,7 +84,11 @@ class KeyProviderRestartPersistenceTest {
             // KH-0.4: ClaimsEncryptionService also fails startup without this outside 'local'
             // (spec FS-0.4 D7) — a full context now needs both secrets, same as any real
             // deployment would.
-            "--khatm.claims.enc-key=a2hhdG0tdGVzdC1jbGFpbXMtZW5jLWtleS0zMmJ5dGU=");
+            "--khatm.claims.enc-key=a2hhdG0tdGVzdC1jbGFpbXMtZW5jLWtleS0zMmJ5dGU=",
+            // KH-0.6b: AdminBootstrap also fails startup without these outside 'local' (spec
+            // FS-0.6b D10).
+            "--khatm.auth.bootstrap.admin-username=test-admin",
+            "--khatm.auth.bootstrap.admin-password=test-admin-password-change-me");
   }
 
   private static JWTClaimsSet sampleClaims() {

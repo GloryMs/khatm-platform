@@ -9,8 +9,10 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.web.client.TestRestTemplate;
@@ -23,6 +25,8 @@ import sy.khatm.platform.credential.api.IssueRequest;
 import sy.khatm.platform.credential.api.IssueResponse;
 import sy.khatm.platform.credential.api.VerifyRequest;
 import sy.khatm.platform.credential.api.VerifyResponse;
+import sy.khatm.platform.rbac.domain.ApiKeyOwnerType;
+import sy.khatm.platform.rbac.domain.ApiKeyService;
 
 /**
  * FS-0.6a §5 DoD criteria 1 (404/500 envelope shape), 2 (Arabic vs. unsupported-language fallback),
@@ -33,6 +37,13 @@ import sy.khatm.platform.credential.api.VerifyResponse;
  * IntegrationTestSupport} because it needs a real embedded servlet container ({@code
  * WebEnvironment.RANDOM_PORT}), which {@code IntegrationTestSupport} deliberately does not provide
  * (it pins {@code NONE} for its shared-context, no-HTTP test suite).
+ *
+ * <p><b>KH-0.6b:</b> every endpoint here except {@code /verify} is now behind Spring Security (spec
+ * FS-0.6b D9) — a fresh {@code TENANT}-owned API key with the {@code issue} scope is minted per
+ * test and sent as {@code Authorization: Bearer ...} on every other call, per the session's "adapt
+ * with a seeded test user/key, never weaken the security config" instruction. This test's own
+ * subject (error envelope shape / i18n) is otherwise unrelated to auth — the key is purely a
+ * credential to get past the gate.
  */
 class ErrorEnvelopeAndI18nTest extends ErrorEnvelopeTestSupport {
 
@@ -41,13 +52,20 @@ class ErrorEnvelopeAndI18nTest extends ErrorEnvelopeTestSupport {
       Pattern.compile("^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$");
 
   @Autowired private TestRestTemplate rest;
+  @Autowired private ApiKeyService apiKeyService;
+
+  private String rawApiKey;
+
+  @BeforeEach
+  void createApiKey() {
+    rawApiKey = apiKeyService.create(ApiKeyOwnerType.TENANT, null, Set.of("issue")).rawKey();
+  }
 
   // ── DoD #1: 404 envelope, and a synthetic 500 with the same shape ──────────────────────────
 
   @Test
   void get_nonexistentCredential_returns404WithFullEnvelope_noStackTrace() throws Exception {
-    ResponseEntity<String> response =
-        rest.getForEntity("/api/v1/credentials/" + UUID.randomUUID(), String.class);
+    ResponseEntity<String> response = authedGet("/api/v1/credentials/" + UUID.randomUUID());
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
     JsonNode body = JSON.readTree(response.getBody());
@@ -65,9 +83,8 @@ class ErrorEnvelopeAndI18nTest extends ErrorEnvelopeTestSupport {
   @Test
   void get_syntheticInternalFailure_returns500WithSameEnvelopeShape_genericMessage()
       throws Exception {
-    ResponseEntity<String> notFound =
-        rest.getForEntity("/api/v1/credentials/" + UUID.randomUUID(), String.class);
-    ResponseEntity<String> boom = rest.getForEntity("/api/v1/_test/boom", String.class);
+    ResponseEntity<String> notFound = authedGet("/api/v1/credentials/" + UUID.randomUUID());
+    ResponseEntity<String> boom = authedGet("/api/v1/_test/boom");
 
     assertThat(boom.getStatusCode()).isEqualTo(HttpStatus.INTERNAL_SERVER_ERROR);
     JsonNode body = JSON.readTree(boom.getBody());
@@ -85,7 +102,7 @@ class ErrorEnvelopeAndI18nTest extends ErrorEnvelopeTestSupport {
 
   @Test
   void get_nonexistentCredential_withArabicAcceptLanguage_returnsArabicMessage() throws Exception {
-    HttpHeaders headers = new HttpHeaders();
+    HttpHeaders headers = authHeaders();
     headers.set(HttpHeaders.ACCEPT_LANGUAGE, "ar");
     ResponseEntity<String> response =
         rest.exchange(
@@ -104,7 +121,7 @@ class ErrorEnvelopeAndI18nTest extends ErrorEnvelopeTestSupport {
   @Test
   void get_nonexistentCredential_withUnsupportedLanguage_fallsBackToEnglish_noError()
       throws Exception {
-    HttpHeaders headers = new HttpHeaders();
+    HttpHeaders headers = authHeaders();
     headers.set(HttpHeaders.ACCEPT_LANGUAGE, "de");
     ResponseEntity<String> response =
         rest.exchange(
@@ -122,8 +139,7 @@ class ErrorEnvelopeAndI18nTest extends ErrorEnvelopeTestSupport {
 
   @Test
   void get_nonexistentCredential_withNoAcceptLanguageHeader_defaultsToEnglish() throws Exception {
-    ResponseEntity<String> response =
-        rest.getForEntity("/api/v1/credentials/" + UUID.randomUUID(), String.class);
+    ResponseEntity<String> response = authedGet("/api/v1/credentials/" + UUID.randomUUID());
 
     JsonNode body = JSON.readTree(response.getBody());
     assertThat(body.get("message").asText()).isEqualTo("Credential not found.");
@@ -136,7 +152,11 @@ class ErrorEnvelopeAndI18nTest extends ErrorEnvelopeTestSupport {
     Map<String, Object> requestBody =
         Map.of("schemaCode", "ValidationProbe/v1", "claims", Map.of());
     ResponseEntity<String> response =
-        rest.postForEntity("/api/v1/credentials/issue", requestBody, String.class);
+        rest.exchange(
+            "/api/v1/credentials/issue",
+            HttpMethod.POST,
+            new HttpEntity<>(requestBody, authHeaders()),
+            String.class);
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
     JsonNode body = JSON.readTree(response.getBody());
@@ -174,7 +194,7 @@ class ErrorEnvelopeAndI18nTest extends ErrorEnvelopeTestSupport {
   @Test
   void request_withXRequestIdHeader_sameTraceIdInHeaderEnvelopeAndLogs() throws Exception {
     String suppliedTraceId = "test-trace-" + UUID.randomUUID();
-    HttpHeaders headers = new HttpHeaders();
+    HttpHeaders headers = authHeaders();
     headers.set("X-Request-Id", suppliedTraceId);
 
     withCapturedLogs(
@@ -206,8 +226,7 @@ class ErrorEnvelopeAndI18nTest extends ErrorEnvelopeTestSupport {
 
   @Test
   void request_withNoXRequestIdHeader_generatesAUuid() {
-    ResponseEntity<String> response =
-        rest.getForEntity("/api/v1/credentials/" + UUID.randomUUID(), String.class);
+    ResponseEntity<String> response = authedGet("/api/v1/credentials/" + UUID.randomUUID());
 
     String traceId = response.getHeaders().getFirst("X-Request-Id");
     assertThat(traceId).isNotBlank();
@@ -217,6 +236,16 @@ class ErrorEnvelopeAndI18nTest extends ErrorEnvelopeTestSupport {
   }
 
   // ── Helpers ──────────────────────────────────────────────────────────────────────────────────
+
+  private HttpHeaders authHeaders() {
+    HttpHeaders headers = new HttpHeaders();
+    headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + rawApiKey);
+    return headers;
+  }
+
+  private ResponseEntity<String> authedGet(String url) {
+    return rest.exchange(url, HttpMethod.GET, new HttpEntity<>(authHeaders()), String.class);
+  }
 
   private VerifyResponse postVerify(String sdJwt, String acceptLanguage) {
     HttpHeaders headers = new HttpHeaders();
@@ -237,7 +266,11 @@ class ErrorEnvelopeAndI18nTest extends ErrorEnvelopeTestSupport {
             Map.of("field1", "value1", "field2", "value2"),
             List.of("field2"));
     ResponseEntity<IssueResponse> issued =
-        rest.postForEntity("/api/v1/credentials/issue", issueRequest, IssueResponse.class);
+        rest.exchange(
+            "/api/v1/credentials/issue",
+            HttpMethod.POST,
+            new HttpEntity<>(issueRequest, authHeaders()),
+            IssueResponse.class);
     String presentation = issued.getBody().sdJwt();
 
     SDJWT parsed = SDJWT.parse(presentation);

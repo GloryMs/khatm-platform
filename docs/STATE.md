@@ -3,23 +3,29 @@
 
 ## Current phase / task
 - Phase 0 — Production Foundation
-- Current task: **ADR-09-WORKER** — async worker skeleton (Spring Modulith externalized events →
+- Current task: **KH-0.6b** — console auth, API keys, RBAC-lite & the full `audit_log` write
+  path (spec FS-0.6b, all ten pre-approved design decisions D1–D10 implemented as given).
+  **Completes Phase 0.** `mvn verify` green (81/81 tests, Spotless/Checkstyle/Modulith
+  boundaries clean). PR open against `main` (`feat/KH-0.6b-auth`) — **NOT merged** (session
+  ended before merge by instruction, per protocol). See "Decisions made" → Session KH-0.6b for
+  the implementation-level interpretations code reality forced (none change the spec's stated
+  functional behavior — every DoD 1–11 item is met and tested).
+- Prev task: ADR-09-WORKER — async worker skeleton (Spring Modulith externalized events →
   transactional outbox → Redis Streams) + first real worker (claim_code `disclosures_enc`
-  expiry-zeroing, closing the remaining half of that blocker per FS-0.2 §3.7). DONE, `mvn verify`
-  green (62/62 tests, Spotless/Checkstyle/Modulith boundaries clean). PR open against `main`
-  (`feat/ADR-09-worker-skeleton`) — **NOT merged** (session ended before merge by instruction).
+  expiry-zeroing, closing the remaining half of that blocker per FS-0.2 §3.7). DONE & MERGED via
+  PR #12 (2026-07-16, merge commit `cad404e`); branch `feat/ADR-09-worker-skeleton` deleted.
   **ADR-09's worker architecture is now REAL, not aspirational**; the `disclosures_enc` blocker
-  is reduced to on-claim zeroing only (folds into KH-1.2.1). See "Decisions made" → Session
+  was reduced to on-claim zeroing only (folds into KH-1.2.1). See "Decisions made" → Session
   ADR-09-worker.
-- Prev task: KH-0.6a (error hierarchy & bilingual messages — CLAUDE.md work rules 2 & 3) — DONE
-  & MERGED via PR #10 (2026-07-16). **Work rules 2 & 3 are now LIVE** — see "Decisions made"
-  below for what that obligates future sessions to do.
-- The FS-0.6a §4 Arabic-speaker review gate ran in the merge session itself: one wording
+- Before that: KH-0.6a (error hierarchy & bilingual messages — CLAUDE.md work rules 2 & 3) —
+  DONE & MERGED via PR #10 (2026-07-16). **Work rules 2 & 3 are now LIVE** — see "Decisions
+  made" below for what that obligates future sessions to do.
+- The FS-0.6a §4 Arabic-speaker review gate ran in that merge session itself: one wording
   refinement on `verify.reason.bad_sd_alg` (dropped the redundant "digest"/هضم qualifier); the
   rest of `messages_ar.properties` confirmed natural MSA as written. Keys untouched, so
-  `MessageBundleParityTest` stayed green.
-- KH-0.6b (auth/API-key filter + full audit write path) is the second half — NOT this session,
-  needs its own spec.
+  `MessageBundleParityTest` stayed green. **KH-0.6b's new `messages_ar.properties` keys
+  (`error.rbc.*`) have NOT yet had this same native-speaker review gate — flag in the KH-0.6b PR
+  body, same pattern KH-0.6a used before its own merge session ran the gate.**
 - PR #10 (`feat/KH-0.6a-errors-i18n` → `main`) merged 2026-07-16 (merge commit `ec20f95`);
   branch deleted.
 - PR #8 (`feat/KH-0.4-sdjwt-upgrade` → `main`) merged 2026-07-16; branch deleted.
@@ -30,6 +36,56 @@
   go through a PR, never a direct push to `main`.
 
 ## Last completed
+- 2026-07-17: KH-0.6b — console auth, API keys, RBAC-lite & the full `audit_log` write path
+  (spec FS-0.6b, D1–D10 as given; `mvn verify` green, 81/81 tests). **Completes Phase 0** — no
+  endpoint ships without authentication behind it from here.
+  - **New `rbac` module** (was a stub since KH-0.1.1): `api/` — `CurrentActor` +
+    `CurrentActorResolver` (forward-looking; KH-1.4.3 is the first real consumer). `domain/` —
+    `AppUser`/`Role`/`ApiKey` entities; `AuthService` (login, D6 Redis-TTL lockout, D7 one
+    generic failure message for every reason); `ApiKeyService` (create/revoke/verify,
+    `khk_<env>_<prefix>.<secret>`, SHA-256 of the secret per D4); `AdminBootstrap` (D10, same
+    idempotent-`ApplicationRunner` shape as `key.domain.KeyBootstrap`). `security/` —
+    `SecurityConfig`, `ApiKeyAuthFilter`, `ScopeGuard`, `KhatmAuthenticationEntryPoint`/
+    `KhatmAccessDeniedHandler`, `SessionAuthenticator`, `CsrfCookieFilter`. `web/` —
+    `AuthController` (login/logout/me + admin api-key create/revoke). `seed/` —
+    `DemoApiKeySeeder` (local/dev only).
+  - **New `shared/audit`** (`@NamedInterface("audit")`): `AuditService#record` is now the *only*
+    way any module writes `audit_log` (D8) — enforced by a new architectural test,
+    `NoDirectAuditLogInsertTest` (source-text scan, not ArchUnit — see below). `key.domain
+    .KeyLifecycleService` (`KEY_CREATED`/`KEY_ROTATED`) and `credential.worker
+    .ClaimCodeExpiryWorker` (`CLAIM_CODES_EXPIRED`) migrated off their KH-0.5/ADR-09
+    direct-`JdbcTemplate`-insert stopgaps; `credential.domain.CredentialService` gained new
+    `CREDENTIAL_ISSUED`/`CREDENTIAL_CONSUMED`/`CREDENTIAL_REVOKED` audit calls it never had
+    before. Actor attribution crosses the `shared`→`rbac` boundary via a small SPI
+    (`AuditPrincipal`), the same inversion `shared.events.StreamEventHandler` already uses.
+  - **`V2__auth_api_keys.sql`** — the first post-baseline migration, exactly per spec §4: new
+    `api_key` table (`owner_type ∈ {TENANT, CONSUMING_PARTY}`) + drops
+    `consuming_party.api_key_hash`. `V1__baseline.sql` untouched; `MigrationImmutabilityTest`
+    and the checksum lock file both green.
+  - **`ErrorCode` gained `KH-RBC-0401`/`KH-RBC-1401`/`KH-RBC-0403`** — `AuthenticationException`/
+    `AuthorizationException` (defined since KH-0.6a, unthrown until now) are finally exercised.
+    `messages_en`/`messages_ar` + `docs/error-codes.md` updated in the same commit per the
+    KH-0.6a work-rule-2/3 obligation.
+  - **pom additions**: exactly the four approved — `spring-boot-starter-security`,
+    `spring-session-data-redis`, `spring-security-test`, `bcprov-jdk18on` (Argon2's actual
+    BouncyCastle dependency; `bcpkix-jdk18on` already pulled it transitively, pinned explicitly
+    for clarity per D4).
+  - **`application.yml`**: `khatm.auth.*` (session timeout, lockout, bootstrap admin — local
+    profile document supplies the only permitted default, same no-silent-default pattern as
+    `khatm.keys.soft.*`); `server.servlet.session.cookie.*` (name `KHATM_SESSION`, `http-only`,
+    `same-site: lax`, `secure` true outside `local`); `spring.session.store-type: redis`.
+  - **Tests** (new, beyond the ones already counted in 81/81): `rbac/` package — login/me/logout
+    cycle, lockout + TTL recovery, `/issue` scope gate (401/403/200), `/consume` API-key gate
+    (200 + audit / 401 revoked / 401 malformed / 403 session), admin api-key create/revoke,
+    public-endpoints-zero-credentials, secrets-never-logged. `shared/audit/` —
+    `NoDirectAuditLogInsertTest` (DoD-7), `AuditServiceTransactionalTest` (DoD-8, rollback +
+    commit). `shared/events/WorkerProfileSecurityBootTest` (DoD-9 second half — worker profile
+    boots with Security on the classpath; extends `WorkerRoleGuardTest`'s guard with a real
+    full-context boot).
+  - See "Decisions made" → Session KH-0.6b for the implementation-level interpretations code
+    reality forced along the way (session ran long specifically because several of these only
+    surfaced by actually running the test suite, not from reading the spec or framework docs
+    alone) — none change the spec's stated functional behavior.
 - 2026-07-16: ADR-09-WORKER — async worker skeleton + claim_code expiry zeroing (spec ADR-09 +
   FS-0.2 §3.7; `mvn verify` green, 62/62 tests).
   - **Externalizer decision (custom, not official)**: there is **no `spring-modulith-events-redis`
@@ -632,6 +688,98 @@
   and removes cross-context contention. The idempotency test uses a valid-format synthetic stream
   id (`XACK` of a non-existent id is a no-op) rather than a real entry, for determinism.
 
+### Session KH-0.6b (2026-07-17)
+- **`consuming_party.api_key_hash` removal forced a real find-or-create redesign, not just a
+  column drop**: V2 drops that KH-0.2.1 stand-in column outright (D3 — real API-key auth for a
+  consuming party now lives in `rbac.api_key`), but `ConsumingPartyRegistryService#ensure`
+  depended on it as its lookup key. Fixed by deriving the row's `id` deterministically from
+  `(tenant, code)` via `UUID.nameUUIDFromBytes` (not `Uuidv7` — this one specifically needs to be
+  *reproducible* from the same inputs every call, which a time-ordered id can never be) and
+  finding-or-creating by that id instead. Internal to `consumer.domain`; no cross-module API
+  change.
+- **Two `SecurityFilterChain`s, not one — discovered empirically, not from reading docs**: a
+  single chain with `SessionCreationPolicy.IF_REQUIRED` still runs Spring Security's default
+  `SessionManagementFilter`, whose session-fixation protection treats *any* freshly-set,
+  non-anonymous `Authentication` as "just logged in" and eagerly creates an `HttpSession` —
+  including the one `ApiKeyAuthFilter` sets fresh on every single request. That directly broke
+  spec §3's "API key paths are stateless" and made every API-key call try to persist a session.
+  Only `SessionCreationPolicy.STATELESS` disables that filter outright, and `STATELESS` can't be
+  scoped to "just these routes" within one chain — hence `apiKeySecurityFilterChain` (matched by
+  `Authorization: Bearer khk_...` header presence, `@Order(1)`, stateless, CSRF fully disabled)
+  and `sessionSecurityFilterChain` (`@Order(2)`, everything else, `IF_REQUIRED`, CSRF as spec §3
+  describes). The same endpoint (e.g. `/issue`) can legitimately be called through either.
+- **`KhatmPrincipal` must implement `Serializable`**: Spring Session (Redis, JDK serialization by
+  default, D1) persists the whole `SecurityContext` — a non-serializable principal broke *every*
+  session-writing request with `NotSerializableException`, not just ones an author would expect
+  to touch a session (this is what first exposed the `SessionManagementFilter` issue above: it
+  surfaced as `PublicEndpointsNoCredentialsTest`'s anonymous, session-free-looking calls
+  mysteriously 500ing).
+- **CSRF must be skipped when no session cookie is present, not just on `/verify`+`/login`**:
+  `CsrfFilter` runs *before* authentication is resolved. Without this, a fully credential-less
+  POST to `/issue` was rejected by CSRF first with a bare `403`, masking spec D9/DoD #3's
+  required `401` behind an unrelated failure. Since CSRF exists specifically to stop a forged
+  cross-site request riding on an *ambient cookie*, a request carrying no session cookie at all
+  has nothing CSRF could be protecting — added a `hasNoSessionCookie` matcher to
+  `ignoringRequestMatchers`. Also switched to the plain `CsrfTokenRequestAttributeHandler`
+  (not Spring Security's default Xor/BREACH-protected one) so the SPA's "read the `XSRF-TOKEN`
+  cookie, send the same value back as `X-XSRF-TOKEN`" pattern needs no encode/decode step — and
+  added `CsrfCookieFilter` to force that cookie to actually be *written* at all, since Spring
+  Security 6 resolves `CsrfToken` lazily and nothing in a pure JSON API triggers that resolution
+  by default.
+- **`api_key.env` (`live`/`test`, D2) is derived from the active Spring profile, not a new config
+  key**: spec §7's config table is captioned "config surface كامل" (the *complete* surface) and
+  does not list one — adding `khatm.auth.api-key.env` would have been exactly the kind of
+  undocumented/invented config surface CLAUDE.md's spirit warns against. `ApiKeyService` reads
+  `Environment.acceptsProfiles("local","dev","test")` instead.
+- **`AdminBootstrap`'s `@Transactional` lives on `run()`, not the `bootstrapIfNeeded()` helper it
+  calls**: the classic Spring AOP self-invocation pitfall — `run()` calling
+  `this.bootstrapIfNeeded()` internally bypasses the proxy entirely, so a `@Transactional` on the
+  callee alone silently ran with *no* transaction, breaking every context boot with
+  `TransactionRequiredException` the first time `RoleRepository#assignRole` (a `@Modifying`
+  query) ran. `run()` itself is invoked externally by `SpringApplication`'s runner machinery, so
+  annotating it directly does go through the proxy correctly. The same pitfall recurred in test
+  helper methods (`ScopeGateTest#createUser`) that call `assignRole`; fixed there with an
+  explicit `TransactionTemplate` instead, since a test class isn't proxied the way a `@Component`
+  is.
+- **`AuthService#login` needs `@Transactional(noRollbackFor = AuthenticationException.class)`**:
+  every failure path deliberately records an `AUTH_LOGIN_FAILED`/`AUTH_LOCKOUT_TRIGGERED` audit
+  row *before* throwing — that `AuthenticationException` is an expected business outcome (D7's
+  whole point), not an infrastructure failure, but Spring's default rollback-on-any-
+  `RuntimeException` rule was discarding the very audit row the method had just written,
+  silently defeating D7's "the real reason lives in the audit log" guarantee. Confirmed by
+  `AuthLockoutTest` asserting the audit rows directly.
+- **`NoDirectAuditLogInsertTest` (DoD-7's "architectural test") is a pure source-text scan, not
+  ArchUnit**: ArchUnit was not one of the four approved new dependencies this session (`pom.xml`
+  additions were capped explicitly). A scan for the literal SQL fragment `INSERT INTO audit_log`
+  outside `shared/audit/` gives the same "the build catches it, not a manual review" guarantee,
+  matching the same pure-file-I/O philosophy `MigrationImmutabilityTest`/
+  `ErrorCodesDocGenerationTest` already use in this codebase.
+- **`DemoApiKeySeeder` is a new file in `rbac/seed/`, not an addition to
+  `credential.seed.DemoSeeder`**: `ApiKeyService` is module-private to `rbac.domain` — Modulith's
+  module-ownership boundary means only code inside `rbac` can create an `api_key` row at all, so
+  the demo seeder for it has to live there too, regardless of which module's `local`/`dev` seed
+  a reader might instinctively look for it in. `AdminBootstrap` (D10) already covers the "demo
+  admin user" half of spec §4's `DemoSeeder` note in every profile including `local`, so nothing
+  parallel was added for that half.
+- **`RbacHttpTestSupport` needed `IntegrationTestSupport`'s manual-`static`-block Testcontainers
+  pattern, not `@Testcontainers`/`@Container`**: those JUnit5 annotations bind a container's
+  `start()`/`stop()` to the *owning test class's* `beforeAll`/`afterAll` — including for a
+  `static` field merely *inherited* from an abstract base. Since every `rbac` HTTP test class
+  shares one cached Spring context (identical `@DynamicPropertySource` values), the first
+  concrete test class to finish was calling `stop()` on the Postgres/Redis containers out from
+  under every subsequent class, which surfaced as HikariCP pool exhaustion (`total=0`) in
+  whichever test class happened to run next — not as a container-lifecycle error, which made it
+  the least obvious of this session's infra bugs to trace.
+- **`TestRestTemplate` needed `JdkClientHttpRequestFactory` (`java.net.http.HttpClient`), not the
+  JDK's default `HttpURLConnection`-based client**: the legacy client cannot handle a `401`
+  response to a POST it streamed with a known `Content-Length` — it throws `HttpRetryException:
+  cannot retry due to server authentication, in streaming mode` internally, surfacing as an
+  opaque `ResourceAccessException` with no hint it was ever a `401`. Confirmed empirically that
+  disabling `SimpleClientHttpRequestFactory`'s output-streaming mode does *not* avoid this (the
+  legacy client's `Authenticator`-retry codepath still triggers); `java.net.http.HttpClient` has
+  no such codepath. Every DoD test in `rbac/` deliberately provokes `401`s on POST endpoints, so
+  this was not optional for this suite.
+
 > Durable conventions formerly logged here
 
 > Durable conventions formerly logged here (entity visibility, the Checkstyle
@@ -658,36 +806,52 @@
   launched manually (or via `"/c/Program Files/Docker/Docker/Docker Desktop.exe" &`, then
   polled until `docker info` succeeds, ~10–30s). Needed before any Testcontainers-backed
   `mvn verify` run.
+- **KH-0.6b: `KHATM_BOOTSTRAP_ADMIN_USERNAME`/`KHATM_BOOTSTRAP_ADMIN_PASSWORD` are now required
+  outside `local`** — same no-silent-default pattern as `KHATM_KEYS_PASSPHRASE`/
+  `KHATM_CLAIMS_ENC_KEY`. `AdminBootstrap` fails startup immediately if either is blank and no
+  `app_user` row exists yet for the default tenant. The `local` profile document in
+  `application.yml` supplies a documented default (`admin` / a printed placeholder password) so
+  `docker compose up` still needs zero setup.
 
 ## Open decisions / blockers
-- **`claim_code.disclosures_enc` — expiry-zeroing half now CLOSED (ADR-09-worker, 2026-07-16).
-  Only the on-claim half remains.** Full picture across sessions:
+- **`claim_code.disclosures_enc` — expiry-zeroing half CLOSED (ADR-09-worker, 2026-07-16). Only
+  the on-claim half remains.** Full picture across sessions:
   - Encryption: CLOSED (KH-0.4) — `issueClaimCode` AES-256-GCM encrypts disclosures before
     persisting (key from `khatm.claims.enc-key`, fails startup outside `local` if missing).
-  - **Expiry-zeroing: CLOSED (ADR-09-worker, this session)** — `ClaimCodeExpiryWorker` sweeps
-    expired+unclaimed codes and NULLs `disclosures_enc`, writing a `CLAIM_CODES_EXPIRED` audit
-    row only when something changed (FS-0.2 §3.7's expiry case).
+  - **Expiry-zeroing: CLOSED (ADR-09-worker)** — `ClaimCodeExpiryWorker` sweeps expired+unclaimed
+    codes and NULLs `disclosures_enc`, writing a `CLAIM_CODES_EXPIRED` audit row (now via
+    `shared.audit.AuditService`, migrated off the direct-insert stopgap in KH-0.6b) only when
+    something changed (FS-0.2 §3.7's expiry case).
   - **What remains open**: the **on-claim zeroing** (NULL `disclosures_enc` the instant a wallet
-    successfully claims a code) and the actual **claim-delivery path** to a wallet. Both are
-    KH-1.2.1 — which no longer has an unsatisfied dependency (the ADR-09 worker skeleton it was
-    waiting on is now real). `decrypt()` exists on `ClaimsEncryptionService` (tested), ready for
-    the claim endpoint to call.
+    successfully claims a code) and the actual **claim-delivery path** to a wallet — both KH-1.2.1
+    (spec §9 explicitly notes it authenticates by *possessing the claim code*, not a session or
+    API key, and is not closed off by KH-0.6b's `SecurityConfig`). `decrypt()` exists on
+    `ClaimsEncryptionService` (tested), ready for the claim endpoint to call.
+- **KH-0.6b's `messages_ar.properties` additions (`error.rbc.*`) have not yet had the FS-0.6a §4
+  native-speaker Arabic review gate** — same situation KH-0.6a itself was in at its own
+  session-end; the gate ran in that feature's *merge* session, not its implementation session.
+  Whoever merges/reviews the KH-0.6b PR should run the same check before or shortly after merge.
 
 ## Next up (ordered)
-1. KH-0.6b — session/API-key auth filter + RBAC + the full `shared.audit_log` write path
-   (KH-0.5's minimal direct-insert audit rows were explicitly a stopgap) + fills in
-   `AuthenticationException`/`AuthorizationException` and adds `KH-RBC-*` `ErrorCode`s. Needs
-   its own spec (KH-0.6a's spec explicitly scoped this out — FS-0.6a §1 "خارج النطاق").
-2. KH-0.3.3 — staging auto-deploy (explicitly out of scope for KH-0.3.1's CI pipeline)
-3. KH-1.2.1 — claim-delivery endpoint: a wallet claims a code → `ClaimsEncryptionService.decrypt`
-   → deliver disclosures → **on-claim zero** `disclosures_enc` to NULL. The ADR-09 worker skeleton
-   it was blocked on is now real, and the **expiry-zeroing** half of FS-0.2 §3.7 landed this
-   session (ADR-09-worker); only the on-claim half + delivery path remain.
-4. KH-1.3 — Status List: publish the real signed bitstring artifact endpoint (the `status`
+1. KH-0.3.3 — staging auto-deploy (explicitly out of scope for KH-0.3.1's CI pipeline; KH-0.6b's
+   session/API-key auth landing makes external deployment safe to pursue now — spec FS-0.6b §9's
+   own stated intent).
+2. KH-1.2.1 — claim-delivery endpoint: a wallet claims a code → `ClaimsEncryptionService.decrypt`
+   → deliver disclosures → **on-claim zero** `disclosures_enc` to NULL. Authenticates by
+   possessing the claim code itself (spec FS-0.6b §9) — needs its own spec to fix that contract,
+   not session/API-key auth. The ADR-09 worker skeleton and now the audit write path it depends
+   on are both real; only the on-claim half + delivery path remain.
+3. KH-1.3 — Status List: publish the real signed bitstring artifact endpoint (the `status`
    claim's `uri` is a placeholder until then, KH-0.4 D3)
-5. KH-1.6 — published OpenAPI contract: full endpoint annotation coverage (KH-0.4/KH-0.6a only
-   annotated `/issue`/`/verify`) + CI-published `openapi.json`
-6. KH-2.2 — RBAC-gated REST endpoint for `KeyLifecycleService.rotate()`
+4. KH-1.4.3 — `allowed_schemas` enforcement for consuming parties, building on the
+   `CONSUMING_PARTY` API-key principal `rbac.security.ApiKeyAuthFilter` now provides (spec
+   FS-0.6b §9 — explicitly no filter changes needed, the principal is already there)
+5. KH-1.6 — published OpenAPI contract: full endpoint annotation coverage (KH-0.4/KH-0.6a/
+   KH-0.6b only annotated `/issue`/`/verify`/the new `rbac` endpoints) + CI-published
+   `openapi.json`
+6. KH-2.2 — full RBAC (replaces D5's lean `role.scopes text[]` with real Permission tables,
+   admin console for user/role management) + RBAC-gated REST endpoint for
+   `KeyLifecycleService.rotate()`
 7. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM
 
 ## Immediate note for future sessions (CLAUDE.md work rules 2 & 3 are now LIVE)
@@ -699,3 +863,17 @@ Adding a new user-facing string or throw site from here on means, in the **same 
   fails the build otherwise (see its assertion message for the exact content to paste in);
 - no ad-hoc `ResponseEntity.status(...)`/`.notFound()`/etc. anywhere outside
   `shared.web.GlobalExceptionHandler` — throw a `KhatmException` subtype instead.
+
+## Immediate note for future sessions (KH-0.6b — Spring Security is now LIVE)
+Every endpoint except `POST /api/v1/credentials/verify` and `GET /.well-known/jwks.json` (D9) now
+requires a valid session or API key — enforced in `rbac.security.SecurityConfig`. Adding a new
+endpoint from here on means, in the **same commit**:
+- decide its scope/actor-kind requirement explicitly (`ScopeGuard`'s per-route rules) — the
+  default (no explicit rule) is merely "authenticated, any scope," which is rarely what you want;
+- if any existing test hits the new/changed endpoint over real HTTP (not a direct service call,
+  which bypasses the filter chain entirely), it needs a seeded test user or API key — see
+  `rbac.RbacHttpTestSupport`/`SessionTestSupport` for the established pattern, and
+  `shared.web.ErrorEnvelopeAndI18nTest` for the API-key-only variant;
+- never weaken `SecurityConfig` to make a test pass — adapt the test with real credentials
+  instead (this was an explicit instruction this session and is worth keeping as a standing
+  rule).
