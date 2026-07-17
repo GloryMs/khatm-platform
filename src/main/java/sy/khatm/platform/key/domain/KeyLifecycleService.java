@@ -7,13 +7,14 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import sy.khatm.platform.key.api.PublicKeyHandle;
 import sy.khatm.platform.key.api.SignResult;
 import sy.khatm.platform.key.persistence.IssuerKeyRepository;
 import sy.khatm.platform.shared.Uuidv7;
+import sy.khatm.platform.shared.audit.AuditAction;
+import sy.khatm.platform.shared.audit.AuditService;
 
 /**
  * Owns the {@code issuer_key} lifecycle: state transitions, the one-{@code ACTIVE}-per-tenant
@@ -40,17 +41,17 @@ public class KeyLifecycleService {
 
   private final IssuerKeyRepository repository;
   private final KeyProvider provider;
-  private final JdbcTemplate jdbcTemplate;
+  private final AuditService audit;
   private final String providerName;
 
   KeyLifecycleService(
       IssuerKeyRepository repository,
       KeyProvider provider,
-      JdbcTemplate jdbcTemplate,
+      AuditService audit,
       @Value("${khatm.keys.provider:SOFT}") String providerName) {
     this.repository = repository;
     this.provider = provider;
-    this.jdbcTemplate = jdbcTemplate;
+    this.audit = audit;
     this.providerName = providerName;
   }
 
@@ -71,7 +72,7 @@ public class KeyLifecycleService {
       return Optional.empty();
     }
     IssuerKey created = createActiveKey(tenantId, tenantSlug);
-    writeAudit(tenantId, "KEY_CREATED", created.getKid());
+    audit.record(AuditAction.KEY_CREATED, "issuer_key", created.getKid(), null);
     return Optional.of(toSummary(created));
   }
 
@@ -92,7 +93,7 @@ public class KeyLifecycleService {
   IssuerKeySummary rotate(UUID tenantId, String tenantSlug) {
     repository.retireActive(tenantId, Instant.now());
     IssuerKey created = createActiveKey(tenantId, tenantSlug);
-    writeAudit(tenantId, "KEY_ROTATED", created.getKid());
+    audit.record(AuditAction.KEY_ROTATED, "issuer_key", created.getKid(), null);
     return toSummary(created);
   }
 
@@ -165,18 +166,6 @@ public class KeyLifecycleService {
     key.setValidFrom(now);
     key.setCreatedAt(now);
     return repository.save(key);
-  }
-
-  private void writeAudit(UUID tenantId, String action, String kid) {
-    // Minimal direct insert — the full audit write path (KhatmException-aware, structured
-    // detail payloads) is KH-0.6. This is intentionally the simplest correct form: one row per
-    // event, no PII/key material in `entity_ref` (just the kid, which is not a secret).
-    jdbcTemplate.update(
-        "INSERT INTO audit_log (tenant_id, actor_type, action, entity_type, entity_ref) "
-            + "VALUES (?, 'SYSTEM', ?, 'issuer_key', ?)",
-        tenantId,
-        action,
-        kid);
   }
 
   private static IssuerKeySummary toSummary(IssuerKey key) {

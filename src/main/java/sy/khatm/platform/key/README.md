@@ -24,9 +24,9 @@ keystore alias). Private key material is never written to this table.
   - `KeyLifecycleService` — owns `issuer_key` persistence, the `PENDING → ACTIVE → RETIRING →
     RETIRED` state machine, and the one-`ACTIVE`-per-tenant invariant (`issuer_key_one_active`
     partial index). `rotate()` is fully implemented but has **no REST endpoint** — called by
-    tests only until RBAC-gated admin rotation lands in KH-2.2. Writes `KEY_CREATED` /
-    `KEY_ROTATED` rows directly to `audit_log` (minimal form — the full audit write path is
-    KH-0.6).
+    tests only until RBAC-gated admin rotation lands in KH-2.2. Records `KEY_CREATED` /
+    `KEY_ROTATED` via `shared :: audit`'s `AuditService` (KH-0.6b — migrated off the KH-0.5
+    direct-`JdbcTemplate`-insert stopgap).
   - `KeyBootstrap` — an `ApplicationRunner` that idempotently provisions the default tenant's
     first `ACTIVE` key on startup, in every profile (production included — there is no key
     without it). **This is temporary by design**: Phase 2 replaces auto-provisioning with an

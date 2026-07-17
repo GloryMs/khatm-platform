@@ -65,6 +65,21 @@
       <artifactId>spring-boot-starter-validation</artifactId>
     </dependency>
 
+    <!--
+      KH-0.6b (spec FS-0.6b §7): Spring Security filter chain (session auth, API-key filter,
+      method-security scope gates) + Spring Session's Redis-backed HttpSession store (D1 — server-
+      side console sessions, cookie KHATM_SESSION). Redis is already a runtime dependency (ADR-09
+      Streams); this only adds the session-store integration on top of it.
+    -->
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-security</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.session</groupId>
+      <artifactId>spring-session-data-redis</artifactId>
+    </dependency>
+
     <!-- Spring Modulith — structural enforcement + event infrastructure -->
     <dependency>
       <groupId>org.springframework.modulith</groupId>
@@ -123,6 +138,18 @@
     </dependency>
 
     <!--
+      KH-0.6b (spec FS-0.6b D4): Spring Security's Argon2PasswordEncoder delegates to BouncyCastle's
+      Argon2BytesGenerator (org.bouncycastle.crypto.generators, in bcprov). bcpkix above already
+      pulls in bcprov-jdk18on transitively, but pinning it explicitly at the same version avoids
+      depending on that transitive resolution staying stable.
+    -->
+    <dependency>
+      <groupId>org.bouncycastle</groupId>
+      <artifactId>bcprov-jdk18on</artifactId>
+      <version>1.78.1</version>
+    </dependency>
+
+    <!--
       KH-0.4 (spec FS-0.4 D4): SD-JWT disclosure/digest construction only (SDObjectBuilder,
       Disclosure, SDJWT). Confirmed before adopting: this library never touches signing or key
       material — it hands us the payload Map to sign, and we sign it exclusively through
@@ -170,6 +197,11 @@
     <dependency>
       <groupId>org.springframework.modulith</groupId>
       <artifactId>spring-modulith-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework.security</groupId>
+      <artifactId>spring-security-test</artifactId>
       <scope>test</scope>
     </dependency>
     <dependency>

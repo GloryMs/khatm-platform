@@ -1,7 +1,23 @@
 server:
   port: 8080
+  servlet:
+    session:
+      # KH-0.6b (spec FS-0.6b D1/§7): khatm.auth.session.timeout below is the single source of
+      # truth — this just points Spring Session (spring-session-data-redis, on the classpath) at
+      # it, since Boot's SessionAutoConfiguration falls back to this property when
+      # spring.session.timeout is unset.
+      timeout: ${khatm.auth.session.timeout}
+      cookie:
+        name: KHATM_SESSION
+        http-only: true
+        same-site: lax
+        # Secure outside 'local' (D1) — the 'local' profile document below turns this off so a
+        # plain http://localhost console dev loop still gets the cookie back.
+        secure: true
 
 spring:
+  session:
+    store-type: redis
   datasource:
     url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/khatm}
     username: ${SPRING_DATASOURCE_USERNAME:khatm}
@@ -46,6 +62,19 @@ khatm:
     # base64-encoded. Same no-silent-default pattern as khatm.keys.soft.passphrase above —
     # ClaimsEncryptionService fails startup if this is blank outside the 'local' profile.
     enc-key: ${KHATM_CLAIMS_ENC_KEY:}
+  # KH-0.6b (spec FS-0.6b §7): console auth, API keys, RBAC.
+  auth:
+    session:
+      timeout: 30m
+    lockout:
+      max-attempts: 5
+      window: 15m
+    bootstrap:
+      # No default here on purpose — AdminBootstrap fails startup if either is blank outside the
+      # 'local' profile (spec FS-0.6b D10, same no-silent-default pattern as khatm.keys.soft.*
+      # above). The 'local' profile document below supplies the only permitted default.
+      admin-username: ${KHATM_BOOTSTRAP_ADMIN_USERNAME:}
+      admin-password: ${KHATM_BOOTSTRAP_ADMIN_PASSWORD:}
   # ADR-09: one image, two runtime roles selected by Spring profile. These defaults are api-like
   # (publishes events, exposes REST, runs no stream consumers); the 'worker' profile document below
   # flips them. khatm.role is read by RoleStartupLogger; the flags drive the @ConditionalOnProperty
@@ -118,6 +147,13 @@ spring:
     activate:
       on-profile: local
 
+server:
+  servlet:
+    session:
+      cookie:
+        # Plain http://localhost dev loop — no TLS, so Secure would silently drop the cookie.
+        secure: false
+
 khatm:
   keys:
     soft:
@@ -128,3 +164,10 @@ khatm:
     # Documented local-only default, 32 raw bytes base64-encoded (spec FS-0.4 D7). Never used
     # outside 'local' — ClaimsEncryptionService enforces that.
     enc-key: ${KHATM_CLAIMS_ENC_KEY:a2hhdG0tbG9jYWwtZGV2LWNsYWltcy1lbmMta2V5ISE=}
+  auth:
+    bootstrap:
+      # Documented local-only default (spec FS-0.6b D10) so `docker compose up` / a bare local
+      # run provision a working console admin with zero setup. Never used outside 'local' —
+      # AdminBootstrap enforces that.
+      admin-username: ${KHATM_BOOTSTRAP_ADMIN_USERNAME:admin}
+      admin-password: ${KHATM_BOOTSTRAP_ADMIN_PASSWORD:khatm-local-dev-admin-change-me}

@@ -87,7 +87,11 @@ class SoftKeyProviderPassphraseFailureTest {
                 // KH-0.4: ClaimsEncryptionService also needs a valid key outside 'local' (spec
                 // FS-0.4 D7) — kept valid here so these tests isolate the passphrase failure
                 // specifically, not an unrelated one.
-                "--khatm.claims.enc-key=a2hhdG0tdGVzdC1jbGFpbXMtZW5jLWtleS0zMmJ5dGU="));
+                "--khatm.claims.enc-key=a2hhdG0tdGVzdC1jbGFpbXMtZW5jLWtleS0zMmJ5dGU=",
+                // KH-0.6b: AdminBootstrap also needs valid bootstrap credentials outside 'local'
+                // (spec FS-0.6b D10) — same isolation reasoning as the claims key above.
+                "--khatm.auth.bootstrap.admin-username=test-admin",
+                "--khatm.auth.bootstrap.admin-password=test-admin-password-change-me"));
     if (passphrase != null) {
       args.add("--khatm.keys.soft.passphrase=" + passphrase);
     }

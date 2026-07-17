@@ -1,8 +1,6 @@
 package sy.khatm.platform.consumer.domain;
 
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
@@ -13,7 +11,6 @@ import sy.khatm.platform.consumer.api.ConsumingPartyRegistry;
 import sy.khatm.platform.consumer.persistence.ConsumingPartyRepository;
 import sy.khatm.platform.shared.LocalizedText;
 import sy.khatm.platform.shared.TenantContext;
-import sy.khatm.platform.shared.Uuidv7;
 
 /**
  * Default {@link ConsumingPartyRegistry} implementation.
@@ -34,29 +31,26 @@ class ConsumingPartyRegistryService implements ConsumingPartyRegistry {
   @Transactional
   public ConsumingPartyRef ensure(String code) {
     UUID tenantId = TenantContext.current();
-    byte[] hash = sha256(code);
-    Optional<ConsumingParty> existing =
-        consumingParties.findByTenantIdAndApiKeyHash(tenantId, hash);
+    // Deterministic (not Uuidv7 — this id must be reproducible from the same (tenant, code) pair
+    // every call, which a time-ordered id can never be) so the same caller-supplied code always
+    // resolves to the same row: find-or-create by id, rather than by a lookup column. KH-0.2.1's
+    // original stand-in used a hash of `code` stored in `api_key_hash`; that column is gone as of
+    // V2__auth_api_keys.sql (spec FS-0.6b D3 — real API-key authentication for a consuming party
+    // now lives in rbac's `api_key` table instead), so this is purely an internal id derivation,
+    // unrelated to authentication.
+    UUID id = UUID.nameUUIDFromBytes((tenantId + ":" + code).getBytes(StandardCharsets.UTF_8));
+    Optional<ConsumingParty> existing = consumingParties.findById(id);
     if (existing.isPresent()) {
-      return new ConsumingPartyRef(existing.get().getId(), code);
+      return new ConsumingPartyRef(id, code);
     }
 
     ConsumingParty party = new ConsumingParty();
-    party.setId(Uuidv7.generate());
+    party.setId(id);
     party.setTenantId(tenantId);
     party.setNameI18n(new LocalizedText(code, code));
-    party.setApiKeyHash(hash);
     party.setStatus("ACTIVE");
     party.setCreatedAt(Instant.now());
     consumingParties.save(party);
     return new ConsumingPartyRef(party.getId(), code);
-  }
-
-  private static byte[] sha256(String value) {
-    try {
-      return MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
-    } catch (NoSuchAlgorithmException e) {
-      throw new IllegalStateException("SHA-256 is a JDK-mandatory algorithm", e);
-    }
   }
 }

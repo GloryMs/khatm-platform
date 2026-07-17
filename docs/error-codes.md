@@ -10,3 +10,6 @@
 | `KH-KEY-0500` | 500 | `key.signing-failed` |
 | `KH-SYS-0400` | 400 | `validation.failed` |
 | `KH-SYS-0500` | 500 | `system.unexpected-error` |
+| `KH-RBC-0401` | 401 | `error.rbc.unauthenticated` |
+| `KH-RBC-1401` | 401 | `error.rbc.api_key_invalid` |
+| `KH-RBC-0403` | 403 | `error.rbc.forbidden` |

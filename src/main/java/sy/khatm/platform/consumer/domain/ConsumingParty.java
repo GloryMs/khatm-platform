@@ -14,8 +14,10 @@ import sy.khatm.platform.shared.LocalizedTextConverter;
 /**
  * A verifier/relying party permitted to consume credentials.
  *
- * <p>{@code apiKeyHash} never stores the raw key — only its hash, matching every other credential
- * field in the platform (SEC §9). Real onboarding (issuing an API key, scoping it to specific
+ * <p>API-key authentication for a consuming party is now the {@code rbac} module's {@code api_key}
+ * table (owner_type {@code CONSUMING_PARTY}, spec FS-0.6b D3) — this entity no longer carries a key
+ * hash of its own (KH-0.2.1's {@code api_key_hash} stand-in column was dropped by {@code
+ * V2__auth_api_keys.sql}). Real onboarding (issuing that key, scoping this party to specific
  * schemas via {@code consuming_party_schema}) is KH-1.4.3.
  *
  * <p>This class is module-private; external code must depend on {@code consumer :: api} instead.
@@ -33,9 +35,6 @@ public class ConsumingParty {
   @Column(name = "name_i18n", nullable = false, columnDefinition = "jsonb")
   @ColumnTransformer(write = "?::jsonb")
   private LocalizedText nameI18n;
-
-  @Column(name = "api_key_hash", nullable = false, unique = true)
-  private byte[] apiKeyHash;
 
   @Column(nullable = false)
   private String status;
@@ -65,14 +64,6 @@ public class ConsumingParty {
 
   public void setNameI18n(LocalizedText nameI18n) {
     this.nameI18n = nameI18n;
-  }
-
-  public byte[] getApiKeyHash() {
-    return apiKeyHash;
-  }
-
-  public void setApiKeyHash(byte[] apiKeyHash) {
-    this.apiKeyHash = apiKeyHash;
   }
 
   public String getStatus() {

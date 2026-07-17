@@ -44,7 +44,9 @@
  * sy.khatm.platform.shared.TenantContext}, {@link sy.khatm.platform.shared.Uuidv7}); {@code shared
  * :: error} (spec FS-0.6a — {@code KhatmException} subtypes to throw, {@code VerifyReason} for
  * {@code CredentialService#verify}'s domain results); {@code shared :: web} (spec FS-0.6a — {@code
- * ErrorEnvelope}, referenced only from this module's OpenAPI error-response annotations).
+ * ErrorEnvelope}, referenced only from this module's OpenAPI error-response annotations); {@code
+ * shared :: audit} (spec FS-0.6b — {@code AuditService}; {@code CredentialService} records {@code
+ * CREDENTIAL_ISSUED}/{@code CREDENTIAL_CONSUMED}/{@code CREDENTIAL_REVOKED}).
  */
 @org.springframework.modulith.ApplicationModule(
     allowedDependencies = {
@@ -55,6 +57,7 @@
       "consumer :: api",
       "shared",
       "shared :: error",
-      "shared :: web"
+      "shared :: web",
+      "shared :: audit"
     })
 package sy.khatm.platform.credential;

@@ -73,4 +73,15 @@ public abstract class IntegrationTestSupport {
   static void claimsEncryptionProperties(DynamicPropertyRegistry registry) {
     registry.add("khatm.claims.enc-key", () -> "a2hhdG0tdGVzdC1jbGFpbXMtZW5jLWtleS0zMmJ5dGU=");
   }
+
+  /**
+   * KH-0.6b: same rationale again — {@code AdminBootstrap} fails startup on a blank {@code
+   * khatm.auth.bootstrap.admin-username}/{@code admin-password} outside {@code local} (spec FS-0.6b
+   * D10), and this shared-context suite runs under {@code test}, not {@code local}.
+   */
+  @DynamicPropertySource
+  static void adminBootstrapProperties(DynamicPropertyRegistry registry) {
+    registry.add("khatm.auth.bootstrap.admin-username", () -> "test-admin");
+    registry.add("khatm.auth.bootstrap.admin-password", () -> "test-admin-password-change-me");
+  }
 }
