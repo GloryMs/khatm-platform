@@ -1,0 +1,101 @@
+name: release
+
+# KH-0.3.3 (staging deploy) — publish + deploy. Runs only on push to main (publishing a PR's
+# unmerged image would be noise). main is branch-protected, so anything reaching it already
+# passed CI (ci.yml) on its PR — this workflow does not re-run tests; it builds the image and
+# ships it. The deploy job is INERT until a staging host exists: it is gated on the staging SSH
+# secret being set, and skips cleanly (gray, not red) when that secret is absent. Activation is
+# a config task — fill the secrets in docs/deploy-staging.md, no code change required.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  packages: write  # push the image to GHCR (ghcr.io/<owner>/khatm-platform)
+
+jobs:
+  build-and-push:
+    name: Build & push image to GHCR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # GHCR image names must be lowercase; github.repository_owner is "GloryMs" here.
+      - name: Lowercase owner
+        run: echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image tags (latest + short SHA)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ env.owner }}/khatm-platform
+          tags: |
+            type=raw,value=latest
+            type=sha,prefix=,format=short
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+  # Gate check. The `secrets` context is NOT available in a job-level `if:` (only github, inputs,
+  # needs, vars are), so we read the gating secret into a step's env — where it IS available — and
+  # export a boolean the deploy jobs branch on via `needs.check-secrets.outputs.enabled`.
+  check-secrets:
+    name: Check staging secrets
+    runs-on: ubuntu-latest
+    outputs:
+      enabled: ${{ steps.decide.outputs.enabled }}
+    steps:
+      - id: decide
+        env:
+          HOST: ${{ secrets.STAGING_SSH_HOST }}
+        run: |
+          if [ -n "$HOST" ]; then echo "enabled=true" >> "$GITHUB_OUTPUT"; else echo "enabled=false" >> "$GITHUB_OUTPUT"; fi
+
+  # Runs only when the staging host secret exists. SSHes in and pulls the freshly-published
+  # image, then restarts the stack. The host must already be `docker login`'d to GHCR and hold
+  # a compose file + .env (one-time prep — see docs/deploy-staging.md).
+  deploy-staging:
+    name: Deploy to staging (gated)
+    needs: [build-and-push, check-secrets]
+    if: ${{ needs.check-secrets.outputs.enabled == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH — docker compose pull && up -d
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.STAGING_SSH_HOST }}
+          username: ${{ secrets.STAGING_SSH_USER }}
+          key: ${{ secrets.STAGING_SSH_KEY }}
+          port: ${{ secrets.STAGING_SSH_PORT || 22 }}
+          script_stop: true
+          script: |
+            cd "${{ secrets.STAGING_DEPLOY_DIR || 'khatm-platform' }}"
+            docker compose pull
+            docker compose up -d
+
+  # The complement of the gate: when no host secret is configured, emit an explicit notice so the
+  # run log says WHY deploy was skipped (KH-0.3.3 is config-gated, not broken). Exits 0.
+  deploy-staging-skipped:
+    name: Deploy to staging (skipped — no host secrets configured)
+    needs: [build-and-push, check-secrets]
+    if: ${{ needs.check-secrets.outputs.enabled == 'false' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notice
+        run: |
+          echo "STAGING_SSH_HOST is not set — staging deploy is inert (KH-0.3.3 not yet activated)."
+          echo "To activate: set the secrets in docs/deploy-staging.md; the next push to main deploys."
