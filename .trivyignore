@@ -1,0 +1,76 @@
+# .trivyignore — khatm-platform
+#
+# Vulnerability IDs (CVE-... / GHSA-...) excluded from the CRITICAL+HIGH gate run by the
+# `trivy` job in .github/workflows/ci.yml (KH-0.3.2). Trivy loads this file automatically from
+# the repository root for both `trivy fs` and `trivy image` scans.
+#
+# THIS IS AN ALLOWLIST, NOT A BACKLOG. Every entry MUST be accompanied by a dated, justified
+# comment on the line directly above it, and the preferred resolution is ALWAYS a patch-level
+# dependency bump (permitted in-session) over an allowlist entry. Allowlist ONLY what is
+# genuinely unfixable (no fixed version published) or genuinely unreachable (the vulnerable
+# code path cannot execute in this image). Re-evaluate entries on every dependency bump.
+#
+# Entry template:
+#   # YYYY-MM-DD <author> — <one-line justification: unfixable because X | unreachable because Y | pinned to Z, tracked in <issue>>
+#   CVE-2025-12345
+#
+# Triage log (KH-0.3 Phase-0 closure, 2026-07-17): first `trivy fs` run found 34 findings (34
+# CRITICAL+HIGH). Patch-level bumps (spring-boot-starter-parent 3.3.4->3.3.13, plus explicit
+# postgresql/tomcat/netty version overrides in pom.xml — all same minor line, `mvn verify` green,
+# 81/81 tests) cleared 28 of them. The 6 remaining all require a MINOR/MAJOR version bump, which
+# is outside this session's patch-level-only mandate. Reachability was checked against this
+# codebase's actual usage, not assumed:
+
+# 2026-07-17 KH-0.3-closure — org.bouncycastle:bcprov-jdk18on 1.78.1, CRITICAL. GOST cipher
+# (G3413CTRBlockCipher) implementation bug. Unreachable: this codebase only uses BouncyCastle for
+# ECDSA key generation/self-signed cert chains (key.domain.SoftKeyProvider) and Argon2 password
+# hashing — no GOST algorithm is ever instantiated. Fix needs 1.80.2+ (minor bump).
+CVE-2025-14813
+
+# 2026-07-17 KH-0.3-closure — org.springframework.boot:spring-boot 3.3.13, HIGH. Session hijack /
+# code exec via a predictable ApplicationTemp directory, but ONLY when
+# server.servlet.session.persistent=true. Unreachable: this app never sets that property (sessions
+# are Redis-backed via spring-session-data-redis, application.yml `spring.session.store-type:
+# redis`) — no servlet-container session persistence is in play. Fix needs 3.3.19+ (would still be
+# a legitimate patch bump on THIS artifact alone; not done together with the other overrides above
+# because it was already excluded by reachability — revisit if that changes).
+CVE-2026-40973
+
+# 2026-07-17 KH-0.3-closure — org.springframework.security:spring-security-web 6.3.10, CRITICAL
+# (CVSS 9.1). "Security policy bypass and information disclosure due to unwritten HTTP headers"
+# under Spring Security's default LAZY header-writing mode, which this app uses with no
+# HeaderWriter customization — reachability could NOT be ruled out the way the other entries here
+# were. Fix (6.5.9+) is a MINOR bump of spring-security-web alone (not the whole Boot BOM), outside
+# this session's patch-level-only scope — flagged explicitly for a dedicated follow-up session
+# rather than silently allowlisted; see docs/STATE.md "Open decisions / blockers".
+CVE-2026-22732
+
+# 2026-07-17 KH-0.3-closure — com.fasterxml.jackson.core:jackson-databind 2.17.3, HIGH (two CVEs,
+# same root cause). Both are PolymorphicTypeValidator/BasicPolymorphicTypeValidator allowlist-bypass
+# bugs — require an app to have polymorphic typing enabled (@JsonTypeInfo / activateDefaultTyping /
+# a configured PTV). Unreachable: grepped, none of that configuration exists in this codebase;
+# every DTO is a plain record with no polymorphic Jackson config. Fix needs 2.18.8+ (minor bump).
+CVE-2026-54512
+CVE-2026-54513
+
+# 2026-07-17 KH-0.3-closure — org.springframework:spring-core 6.1.21, HIGH. Annotation-detection
+# gap affecting @EnableMethodSecurity-based authorization on generic superclasses/interfaces.
+# Unreachable: this app authorizes by route (rbac.security.SecurityConfig's
+# authorizeHttpRequests + ScopeGuard), not by method-level @PreAuthorize/@EnableMethodSecurity —
+# grepped, neither is used anywhere. Fix needs 6.2.11+ (minor bump).
+CVE-2025-41249
+
+# 2026-07-17 KH-0.3-closure — `trivy image` findings, /usr/bin/pebble (gobinary), all 5 HIGH, all
+# golang.org/x/net (bundled inside that binary): CVE-2026-25681, CVE-2026-27136, CVE-2026-33814,
+# CVE-2026-39821, CVE-2026-39822 (stdlib). `pebble` is Canonical's container init/service-manager
+# tool baked into the official `eclipse-temurin:*-jre` base image — not something this Dockerfile
+# or app introduces. Unreachable: verified `docker inspect khatm-platform:scan` shows this image's
+# ENTRYPOINT is exactly `["java", "-jar", "app.jar"]`; `pebble` never runs as PID 1 or otherwise in
+# this container. No app/base-image change available at patch-level (base-image tag swap is
+# outside KH-0.3's no-app-code scope) — genuinely unfixable from this repo alone; would need
+# Canonical to update the base image or a base-image swap, neither in scope this session.
+CVE-2026-25681
+CVE-2026-27136
+CVE-2026-33814
+CVE-2026-39821
+CVE-2026-39822

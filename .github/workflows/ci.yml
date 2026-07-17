@@ -82,6 +82,7 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
           format: 'table'
+          trivyignores: '.trivyignore'
 
       - name: Trivy image (runtime image)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
@@ -93,6 +94,7 @@ jobs:
           ignore-unfixed: true
           exit-code: '1'
           format: 'table'
+          trivyignores: '.trivyignore'
 
   # KH-0.3.4 — secrets hygiene gate. gitleaks scans the commits new to this PR (and the pushed
   # commits on push to main). A one-time full-history scan was run locally at session close and
