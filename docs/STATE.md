@@ -15,6 +15,20 @@
   — live now. A path rename/removal from here needs its own ADR; new endpoints/fields are always
   safe to add. `OpenApiContractTest` fails the build if the committed file ever drifts from what
   the code actually serves.
+- Most recent session (chore, not a WBS task): **chore/state-update-post-pr19** — the planned
+  STATE.md merge-record follow-up (matches the PR #16 → PR #17 pattern) turned up two more real
+  bugs via its own CI run, both found and fixed in the same PR: (1) `rbac.domain.AdminBootstrap`
+  had the identical unguarded `api`/`worker` concurrent-boot race `key.domain.KeyBootstrap` was
+  fixed for at KH-0.3-closure, just not caught at the same time — a `compose-smoke` CI failure
+  (duplicate-key violation on `app_user`) surfaced it for real; fixed with the same
+  `khatm.web.enabled` gate. (2) `OpenApiContractTest`'s freshness-gate comparison was silently
+  platform-dependent — Jackson's default pretty printer uses `System.lineSeparator()` (`\r\n` on
+  Windows), so a locally regenerated contract could never byte-match the git-normalized (`eol=lf`)
+  committed file on a Windows dev machine, independent of any real content drift; fixed by forcing
+  `\n` in the object indenter only (array formatting left at Jackson's default so the committed
+  file's inline-array style didn't change). Both fixes verified: `mvn verify` green (98/98), and
+  `scripts/smoke.sh` re-run locally end-to-end (both boot phases) against the `AdminBootstrap` fix
+  specifically, not just inferred from CI. See "Last completed" for detail.
 - Prev task: **KH-0.3 Phase-0 closure** — DevOps gates + one docs promotion, **no application
   code** (the only `pom.xml` edits are Trivy-driven patch-level dependency bumps). DONE & MERGED
   via PR #16 (2026-07-18, merge commit `b7b5342`, fast-forward — `main` had not diverged); branch
@@ -66,6 +80,43 @@
   "Last completed" → Session chore/swagger-and-flagged-fixes for details.
 
 ## Last completed
+- 2026-07-18: chore/state-update-post-pr19 — planned as a pure STATE.md merge record for PR #19,
+  but its own CI run (`compose-smoke`) failed on a docs-only diff, which CONVENTIONS §11 treats as
+  a hard merge blocker ("no exceptions") — investigated rather than bypassed, per CLAUDE.md's
+  root-cause-first stance, and turned up two real, previously-undiscovered bugs:
+  - **`rbac.domain.AdminBootstrap`'s `api`/`worker` concurrent-boot race**: identical shape to the
+    `key.domain.KeyBootstrap` race fixed at KH-0.3-closure (both roles running an idempotent
+    `ApplicationRunner` unconditionally against one shared, freshly-created database), just never
+    caught for this class at the same time. Confirmed via the actual CI log: `khatm-api` crashed
+    at startup with `PSQLException: duplicate key value violates unique constraint
+    "app_user_tenant_id_username_key"` — both containers' `bootstrapIfNeeded()` saw
+    `users.existsByTenantId(tenantId)` as `false` simultaneously and both attempted the insert.
+    Fixed with the exact same `@ConditionalOnProperty(khatm.web.enabled, matchIfMissing=true)` gate
+    `KeyBootstrap` already carries, so only the `api` role ever runs it. New
+    `rbac.domain.AdminBootstrapRoleGuardTest` (mirrors `key.domain.KeyBootstrapRoleGuardTest`
+    exactly); `shared.events.WorkerProfileSecurityBootTest`'s worker-role absence-check list
+    gained `adminBootstrap` alongside the existing `keyBootstrap`/controller entries. **Verified
+    for real, not just via CI**: `scripts/smoke.sh` re-run locally end-to-end from a clean `docker
+    compose down -v` — both boot phases passed.
+  - **`OpenApiContractTest`'s freshness-gate comparison was platform-dependent**: Jackson's default
+    pretty printer (`writerWithDefaultPrettyPrinter()`) inserts `System.lineSeparator()` between
+    object fields — `\r\n` on Windows, `\n` on the Linux CI runners. A contract regenerated on a
+    Windows dev machine could therefore never byte-match the git-normalized (`.gitattributes`
+    `eol=lf`) committed file, regardless of whether the actual OpenAPI content had drifted at all;
+    this had been silently masked until now because every prior local generation/comparison on
+    this branch happened to compare two CRLF copies against each other (before either side had
+    been through a real git commit-then-checkout cycle). Fixed by constructing an explicit
+    `DefaultPrettyPrinter().withObjectIndenter(new DefaultIndenter("  ", "\n"))` — deliberately
+    **not** overriding the array indenter too, since Jackson's own default there
+    (`FixedSpaceIndenter`, keeps short arrays inline like `["TENANT", "CONSUMING_PARTY"]`) is what
+    the already-committed `docs/api/openapi.json` uses; overriding both would have reformatted
+    every array as an unrelated cosmetic change. Re-verified deterministic across three consecutive
+    local runs after the fix.
+  - Both fixes bundled into this same PR (not a separate branch) since they were direct blockers
+    discovered while trying to get *this* PR's CI green, in the spirit of the swagger session's
+    "flagged and fixed in the same PR" precedent for the analogous `KeyBootstrap` race.
+  - `mvn verify` green throughout (98/98 tests after both fixes, re-run from clean each time, not
+    assumed).
 - 2026-07-18: KH-1.6-early — `/api/v1` path migration + full OpenAPI coverage + published contract
   + read-only schema endpoints. No spec doc; the session brief itself was the spec, four parts.
   `mvn verify` green, 95/95 tests. DONE & MERGED via PR #19 (merge commit `652aa73`, fast-forward);
