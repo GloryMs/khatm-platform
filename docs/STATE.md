@@ -3,7 +3,11 @@
 
 ## Current phase / task
 - Phase 0 — Production Foundation, fully closed (see prior sessions). Phase 1 underway.
-- Current task: **KH-1.6-early** — `/api/v1` path migration (the platform's one breaking contract
+- Current task: **KH-1.2.1** — claim delivery (`POST /api/v1/claims/redeem`), spec FS-1.2.1, D1–D8
+  pre-approved. `mvn verify` green, 112/112 tests (14 new). PR open against `main`, **not merged**
+  (see "Last completed" → Session KH-1.2.1 for the full breakdown). **Closes the `disclosures_enc`
+  blocker for good** — see "Open decisions / blockers" below, now empty of it.
+- Prev task: **KH-1.6-early** — `/api/v1` path migration (the platform's one breaking contract
   change) + full OpenAPI annotation coverage + published, freshness-gated `docs/api/openapi.json`
   + the two read-only schema endpoints the console's issue screen needs. `mvn verify` green, 95/95
   tests. DONE & MERGED via PR #19 (2026-07-18, merge commit `652aa73`, fast-forward — `main` had
@@ -80,6 +84,96 @@
   "Last completed" → Session chore/swagger-and-flagged-fixes for details.
 
 ## Last completed
+- 2026-07-18: KH-1.2.1 — claim delivery, spec FS-1.2.1, D1–D8 pre-approved. `mvn verify` green,
+  112/112 tests (14 new, up from 98). PR open against `main`, **not merged** (session instruction).
+  Branch `feat/KH-1.2.1-claim-delivery`, first commit mirrors the spec into `docs/specs/`.
+  - **Part 0 (convention promotion, first)**: `docs/CONVENTIONS.md §9` gained a paragraph on the
+    static-initializer singleton-container test-support pattern — bitten twice already
+    (`RbacHttpTestSupport` at KH-0.6b, `ErrorEnvelopeTestSupport` at KH-1.6-early), both cited by
+    session name so a third bite can't happen unnoticed.
+  - **`credential.domain.ClaimRedemptionService#redeem`** (new, public — module-private via
+    Modulith, `credential.web.ClaimController` in a different sub-package needs it): the D2
+    single-transaction flow — `ClaimCodeRepository#findByCodeHashForUpdate` (`SELECT ... FOR
+    UPDATE`, new) locks the row, validates (not claimed, not expired, `disclosures_enc` still
+    populated), decrypts via the existing `ClaimsEncryptionService` (KH-0.4, its `decrypt()` had
+    no production caller until now), sets `claimed_at`, zeroes `disclosures_enc`, records
+    `CLAIM_CODE_REDEEMED`, and returns a `ClaimRedeemResult` built entirely from the in-memory
+    decrypted material — `ClaimController` only assembles the HTTP response from that returned
+    value, which happens after Spring's transactional advice has already committed. Every failure
+    flavor (unknown/malformed/expired/already-claimed/expiry-zeroed) collapses to the identical
+    `NotFoundException(KH-CLM-0404)` (D5) — none of them audited individually (D7). The `FOR
+    UPDATE` lock is what makes a redeem race-safe against `ClaimCodeExpiryWorker`'s concurrent
+    sweep touching the same row.
+  - **`credential.domain.ClaimRedeemThrottleService`** (new, public, same module-privacy
+    rationale): per-IP Redis fixed-window counter (`khatm:claims:redeem:throttle:{ip}`, same
+    increment-then-set-TTL-once shape as `rbac.domain.AuthService`'s login lockout), config
+    `khatm.claims.redeem.throttle.max-attempts`/`.window` (defaults 10/1m). Trips → `429
+    KH-CLM-0429` — **rides on `ValidationException`**, a deliberate judgment call flagged in the
+    class Javadoc for PR review: none of CLAUDE.md's six `KhatmException` subtypes was written
+    with HTTP 429 in mind (the `rbac` module's own analogous lockout counter reuses
+    `AuthenticationException`/401 instead), and adding a seventh subtype would silently
+    invalidate CLAUDE.md's documented "six subtypes" list without an explicit approved
+    instruction to do so. Every attempt counts toward the window, successful or not; `X-Forwarded-
+    For` deliberately not read (no reverse proxy locally yet — spec D6). The one failure flavor of
+    this endpoint that IS audited individually: `CLAIM_REDEEM_THROTTLED` (IP + count).
+  - **New `KH-CLM` error-code tag** (`ErrorCode`/`CONVENTIONS.md §2`): deliberately the one tag
+    that names a bounded concern rather than its owning Java module 1:1 — claim-delivery lives
+    inside `credential` (no new Modulith module, per the task's hard constraint) but is a
+    conceptually separate, wallet-facing failure vocabulary from `CRD`'s. `KH-CLM-0404` (404,
+    `error.clm.invalid_or_expired`) and `KH-CLM-0429` (429, `error.clm.throttled`) — both bundle
+    keys added in both languages same commit (Arabic review gate still pending — see below).
+  - **`credential.web.ClaimController`** (new): `POST /api/v1/claims/redeem`, thin (throttle →
+    validate → call service → map). `rbac.security.SecurityConfig` gained its third public entry
+    (`CLAIMS_REDEEM_PATH`, alongside `/verify` and JWKS) — no explicit CSRF-ignore entry needed,
+    the existing no-session-cookie exemption already covers it, the same as `/consume`. Full
+    OpenAPI annotations including **QR contract v1 (D8) embedded verbatim** in the endpoint's
+    `@Operation` description: `{"v":1,"api":"<platform base URL>","code":"<claim code>"}` —
+    confirmed present in the published `docs/api/openapi.json` byte-for-byte.
+  - **`disclosures_enc` blocker: CLOSED FOR GOOD.** All three thirds: encryption (KH-0.4,
+    `CredentialService#issueClaimCode`), expiry-zeroing (ADR-09-worker,
+    `ClaimCodeExpiryWorker#sweep`), on-claim zeroing (this session,
+    `ClaimRedemptionService#redeem`). `ClaimCode`'s own Javadoc rewritten to describe the real,
+    now-complete picture instead of the old "KH-1.2.1 not done yet" placeholder note.
+  - **Tests (14 new)**: `ClaimRedemptionServiceTest` (happy path incl. zero-claims-empty-
+    disclosures-list edge case, double-redeem 404, expired 404, expiry-sweep-zeroed 404, unknown
+    404), `ClaimRedemptionConcurrencyTest` (20 concurrent redeemers of the same code → exactly 1
+    success, real separate threads/transactions, not sequential calls; a genuine redeem-vs-sweep
+    race on an already-expired row, latch-synchronized, asserting neither double delivery nor
+    delivery of zeroed material), `ClaimControllerHttpTest` (D4 response shape over real HTTP,
+    zero-credentials happy path, double-redeem 404), `ClaimRedeemThrottleHttpTest` (Nth attempt
+    trips 429 + one audit row, recovers after the window — test-scoped 5/2s throttle config now
+    lives in `RbacHttpTestSupport` itself, same place the analogous lockout override already was),
+    `PublicEndpointsNoCredentialsTest` extended to exactly three (D9→D7 extension), `NoDisclosure-
+    ContentInLogsTest` extended with a redeem-cycle method (no claim value, salt, or the raw code
+    itself ever in a log line).
+  - **Side fixes forced by the new concurrency test, in the same PR**: (1) `RbacHttpTestSupport`
+    gained a `@BeforeEach` that clears the claim-redeem throttle's Redis keys — unlike the
+    lockout counter (scoped per random test username), the throttle counter is scoped per source
+    IP, and every subclass's `TestRestTemplate` shares one loopback address, so without this reset
+    one class's incidental `/redeem` calls could silently eat into another's throttle budget
+    depending on JUnit's test-class execution order. (2) The redeem-vs-sweep concurrency test
+    genuinely commits real data (it must, for cross-connection visibility) rather than relying on
+    `@Transactional` rollback like `ClaimCodeExpirySweepTest`'s tests do — but `audit_log` is
+    append-only (trigger-enforced, CLAUDE.md), so its `CLAIM_CODES_EXPIRED` audit row from
+    `ClaimCodeExpiryWorker#sweep` can never be cleaned up afterward. `ClaimCodeExpirySweepTest`'s
+    two audit-row-count assertions were absolute (`COUNT(*) = N`), which only ever worked because
+    every *prior* writer of that action was itself `@Transactional`-rolled-back; converted both to
+    before/after deltas, which is what they should have asserted all along in a shared-context
+    suite. (3) Two Hibernate first-level-cache staleness bugs surfaced by wrapping two service-
+    level tests in `@Transactional` for their own cleanup (needed because *they* deliberately leave
+    an expired-but-populated row on the rejection path, which the append-only-log problem above
+    doesn't apply to since claim_code isn't append-only): a raw `jdbc.update()` setting
+    `expires_at` into the past needs an `entityManager.flush()` immediately before it (the
+    just-`save()`d entity hasn't hit the DB yet within one shared test transaction — unlike the
+    non-transactional happy-path tests, where each service call auto-commits) and an
+    `entityManager.clear()` immediately after (so a subsequent JPQL identity-SELECT inside
+    `redeem()` doesn't hand back the stale, pre-update cached instance instead of re-reading the
+    row) — the exact `NoDisclosureContentInLogsTest`/`ClaimCodeExpirySweepTest` idiom, just not
+    obviously required until a *third* consumer of the pattern (this session's tests) actually hit
+    both failure modes in sequence.
+  - **Arabic-speaker review gate (spec FS-0.6a §4) — NOT yet run** for `error.clm.invalid_or_
+    expired`/`error.clm.throttled`: flagged for the PR reviewer, same as every prior session's new
+    key set.
 - 2026-07-18: chore/state-update-post-pr19 — planned as a pure STATE.md merge record for PR #19,
   but its own CI run (`compose-smoke`) failed on a docs-only diff, which CONVENTIONS §11 treats as
   a hard merge blocker ("no exceptions") — investigated rather than bypassed, per CLAUDE.md's
@@ -1197,43 +1291,37 @@
   the stack.
 
 ## Open decisions / blockers
-- **`claim_code.disclosures_enc` — expiry-zeroing half CLOSED (ADR-09-worker, 2026-07-16). Only
-  the on-claim half remains.** Full picture across sessions:
-  - Encryption: CLOSED (KH-0.4) — `issueClaimCode` AES-256-GCM encrypts disclosures before
-    persisting (key from `khatm.claims.enc-key`, fails startup outside `local` if missing).
-  - **Expiry-zeroing: CLOSED (ADR-09-worker)** — `ClaimCodeExpiryWorker` sweeps expired+unclaimed
-    codes and NULLs `disclosures_enc`, writing a `CLAIM_CODES_EXPIRED` audit row (now via
-    `shared.audit.AuditService`, migrated off the direct-insert stopgap in KH-0.6b) only when
-    something changed (FS-0.2 §3.7's expiry case).
-  - **What remains open**: the **on-claim zeroing** (NULL `disclosures_enc` the instant a wallet
-    successfully claims a code) and the actual **claim-delivery path** to a wallet — both KH-1.2.1
-    (spec §9 explicitly notes it authenticates by *possessing the claim code*, not a session or
-    API key, and is not closed off by KH-0.6b's `SecurityConfig`). `decrypt()` exists on
-    `ClaimsEncryptionService` (tested), ready for the claim endpoint to call.
+- **`claim_code.disclosures_enc` — CLOSED FOR GOOD (KH-1.2.1, 2026-07-18).** All three thirds now
+  real: encryption (KH-0.4, `CredentialService#issueClaimCode`, AES-256-GCM, key from
+  `khatm.claims.enc-key`), expiry-zeroing (ADR-09-worker, `ClaimCodeExpiryWorker#sweep`), on-claim
+  zeroing (KH-1.2.1, `ClaimRedemptionService#redeem` — `POST /api/v1/claims/redeem`, spec FS-1.2.1
+  D2, `SELECT ... FOR UPDATE`-locked single transaction, race-safe against the sweep). Every
+  `disclosures_enc` row ends up `NULL` exactly once, either the moment a wallet claims it or the
+  moment it expires unclaimed, never later, never both, never neither. Nothing left open under
+  this blocker.
+- **Arabic-speaker review gate (spec FS-0.6a §4) for KH-1.2.1's two new keys
+  (`error.clm.invalid_or_expired`, `error.clm.throttled`) — NOT yet run**, same as every prior
+  session's new-key set; flagged in the PR body for Majd before merge.
 
 ## Next up (ordered)
-1. KH-1.2.1 — claim-delivery endpoint: a wallet claims a code → `ClaimsEncryptionService.decrypt`
-   → deliver disclosures → **on-claim zero** `disclosures_enc` to NULL. Authenticates by possessing
-   the claim code itself (spec FS-0.6b §9) — needs its own spec (from the advisory session) to fix
-   that contract, not session/API-key auth. The ADR-09 worker skeleton and the audit write path it
-   depends on are both real; only the on-claim half + delivery path remain.
-2. KH-1.3 — Status List: publish the real signed bitstring artifact endpoint (the `status` claim's
-   `uri` is a placeholder until then, KH-0.4 D3).
-3. KH-1.4.3 — `allowed_schemas` enforcement for consuming parties, building on the
+1. KH-1.3 — Status List: publish the real signed bitstring artifact endpoint (the `status` claim's
+   `uri` is a placeholder until then, KH-0.4 D3; KH-1.2.1's `ClaimRedeemResponse.statusListUri`
+   carries the same placeholder shape and will pick up the real value automatically — additive
+   value change, no shape change, per spec FS-1.2.1 §5).
+2. KH-1.4.3 — `allowed_schemas` enforcement for consuming parties, building on the
    `CONSUMING_PARTY` API-key principal `rbac.security.ApiKeyAuthFilter` now provides (spec FS-0.6b
    §9 — explicitly no filter changes needed, the principal is already there).
-4. KH-1.6-remainder — **KH-1.6-early (this session) closed the path-versioning break, full
-   endpoint annotation coverage, the published/freshness-gated `docs/api/openapi.json`, and the
-   two read-only schema endpoints.** Nothing else was identified as outstanding under the KH-1.6
-   umbrella during this session — if a future session finds more (e.g. a typed schema-authoring
-   API, additional read endpoints console/wallet need), it folds in here rather than reopening
-   KH-1.6-early's scope.
-5. KH-0.3.3 activation — **config, not code**: set the staging secrets in `docs/deploy-staging.md`
+3. KH-0.3.3 activation — **config, not code**: set the staging secrets in `docs/deploy-staging.md`
    and the `release.yml` deploy job runs on the next push to `main`. (The publish half is already
-   live; only the gated deploy half waits on a host.)
-6. KH-2.2 — full RBAC (replaces D5's lean `role.scopes text[]` with real Permission tables, admin
+   live; only the gated deploy half waits on a host — Majd.)
+4. KH-1.6-remainder — **KH-1.6-early closed the path-versioning break, full endpoint annotation
+   coverage, the published/freshness-gated `docs/api/openapi.json`, and the two read-only schema
+   endpoints.** Nothing else was identified as outstanding under the KH-1.6 umbrella — if a future
+   session finds more (e.g. a typed schema-authoring API, additional read endpoints console/wallet
+   need), it folds in here rather than reopening KH-1.6-early's scope.
+5. KH-2.2 — full RBAC (replaces D5's lean `role.scopes text[]` with real Permission tables, admin
    console for user/role management) + RBAC-gated REST endpoint for `KeyLifecycleService.rotate()`.
-7. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM.
+6. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM.
 
 ## Standing conventions (promoted to docs/CONVENTIONS.md §7)
 - **Work rules 2 & 3 (error handling & i18n)** → `docs/CONVENTIONS.md §7.1`.
