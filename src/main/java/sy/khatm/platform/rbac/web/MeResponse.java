@@ -4,7 +4,7 @@ import java.util.Set;
 import sy.khatm.platform.shared.LocalizedText;
 
 /**
- * {@code GET /api/auth/me} response body (spec FS-0.6b DoD #1).
+ * {@code GET /api/v1/auth/me} response body (spec FS-0.6b DoD #1).
  *
  * @param username the authenticated user's username
  * @param displayNameI18n the user's bilingual display name

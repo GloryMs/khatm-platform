@@ -1,5 +1,6 @@
 package sy.khatm.platform.schema.persistence;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -14,4 +15,6 @@ public interface CredentialSchemaRepository extends JpaRepository<CredentialSche
 
   Optional<CredentialSchema> findByTenantIdAndCodeAndVersion(
       UUID tenantId, String code, int version);
+
+  List<CredentialSchema> findAllByTenantId(UUID tenantId);
 }

@@ -48,11 +48,11 @@ class AuthSecretsNotLoggedTest extends RbacHttpTestSupport {
   @Test
   void loginAttempts_neverLogThePasswordOrItsHash() {
     rest.postForEntity(
-        "/api/auth/login",
+        "/api/v1/auth/login",
         Map.of("username", BOOTSTRAP_ADMIN_USERNAME, "password", KNOWN_WRONG_PASSWORD),
         Void.class);
     rest.postForEntity(
-        "/api/auth/login",
+        "/api/v1/auth/login",
         Map.of("username", BOOTSTRAP_ADMIN_USERNAME, "password", BOOTSTRAP_ADMIN_PASSWORD),
         Void.class);
 

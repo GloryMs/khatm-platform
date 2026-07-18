@@ -25,7 +25,7 @@ lands here in KH-0.6b), `api_key` (new, `V2__auth_api_keys.sql`).
   - `SecurityConfig` — one `SecurityFilterChain`. Public: `POST /verify`, `GET
     /.well-known/jwks.json` (D9). Everything else needs a valid session or API key;
     `ScopeGuard`'s per-route `AuthorizationManager`s add the scope/actor-kind requirement spec §3
-    names for `/issue`, `/revoke`, `/consume`, `/api/admin/**`.
+    names for `/issue`, `/revoke`, `/consume`, `/api/v1/admin/**`.
   - `ApiKeyAuthFilter` — authenticates `Authorization: Bearer khk_...` for the current request
     only; never persists to a session (API-key paths are stateless by construction, not by
     special-casing — see the class Javadoc for why).
@@ -35,8 +35,8 @@ lands here in KH-0.6b), `api_key` (new, `V2__auth_api_keys.sql`).
     shape `shared.web.GlobalExceptionHandler` produces, independently, because both run *before*
     `DispatcherServlet` and so `GlobalExceptionHandler` (an `@RestControllerAdvice`) never sees
     these denials.
-- `web/` — `AuthController`: `POST /api/auth/login` · `POST /api/auth/logout` · `GET
-  /api/auth/me` · `POST /api/admin/api-keys` · `POST /api/admin/api-keys/{id}/revoke`.
+- `web/` — `AuthController`: `POST /api/v1/auth/login` · `POST /api/v1/auth/logout` · `GET
+  /api/v1/auth/me` · `POST /api/v1/admin/api-keys` · `POST /api/v1/admin/api-keys/{id}/revoke`.
 - `seed/` — `DemoApiKeySeeder` (`local`/`dev` only): a demo `CONSUMING_PARTY` API key, logged once
   in full so a developer can exercise `/consume` without a real onboarding flow (KH-1.4.3). The
   console admin itself needs no separate demo seeder — `AdminBootstrap` already provisions one in

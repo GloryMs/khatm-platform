@@ -26,7 +26,7 @@ class AuthLoginCycleTest extends RbacHttpTestSupport {
   void loginThenMeThenLogout_worksWithSessionCookie_andLogoutInvalidatesIt() throws Exception {
     ResponseEntity<Void> loginResponse =
         rest.postForEntity(
-            "/api/auth/login",
+            "/api/v1/auth/login",
             Map.of("username", BOOTSTRAP_ADMIN_USERNAME, "password", BOOTSTRAP_ADMIN_PASSWORD),
             Void.class);
     assertThat(loginResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -37,7 +37,7 @@ class AuthLoginCycleTest extends RbacHttpTestSupport {
     String csrfValue = csrfCookie.substring(csrfCookie.indexOf('=') + 1);
 
     ResponseEntity<String> meResponse =
-        rest.exchange("/api/auth/me", HttpMethod.GET, withCookie(sessionCookie), String.class);
+        rest.exchange("/api/v1/auth/me", HttpMethod.GET, withCookie(sessionCookie), String.class);
     assertThat(meResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
     JsonNode me = JSON.readTree(meResponse.getBody());
     assertThat(me.get("username").asText()).isEqualTo(BOOTSTRAP_ADMIN_USERNAME);
@@ -55,11 +55,11 @@ class AuthLoginCycleTest extends RbacHttpTestSupport {
     logoutHeaders.set("X-XSRF-TOKEN", csrfValue);
     ResponseEntity<Void> logoutResponse =
         rest.exchange(
-            "/api/auth/logout", HttpMethod.POST, new HttpEntity<>(logoutHeaders), Void.class);
+            "/api/v1/auth/logout", HttpMethod.POST, new HttpEntity<>(logoutHeaders), Void.class);
     assertThat(logoutResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
 
     ResponseEntity<String> meAfterLogout =
-        rest.exchange("/api/auth/me", HttpMethod.GET, withCookie(sessionCookie), String.class);
+        rest.exchange("/api/v1/auth/me", HttpMethod.GET, withCookie(sessionCookie), String.class);
     assertThat(meAfterLogout.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
   }
 

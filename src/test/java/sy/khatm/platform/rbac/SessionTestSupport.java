@@ -26,7 +26,7 @@ final class SessionTestSupport {
   static AuthenticatedSession login(TestRestTemplate rest, String username, String password) {
     ResponseEntity<Void> response =
         rest.postForEntity(
-            "/api/auth/login", Map.of("username", username, "password", password), Void.class);
+            "/api/v1/auth/login", Map.of("username", username, "password", password), Void.class);
     if (response.getStatusCode() != HttpStatus.OK) {
       throw new AssertionError("Login failed with status " + response.getStatusCode());
     }

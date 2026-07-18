@@ -9,7 +9,7 @@ import sy.khatm.platform.shared.LocalizedText;
  *
  * <p>Public (unlike most of {@code rbac.domain}) because {@code rbac.web.AuthController} — a
  * different Java package, even though both are inside the module-private {@code rbac} module —
- * needs it to build the session's {@code Authentication} and the {@code /api/auth/me} response
+ * needs it to build the session's {@code Authentication} and the {@code /api/v1/auth/me} response
  * (same visibility precedent as {@code key.domain.KeyLifecycleService}, spec FS-0.5 D-notes).
  *
  * @param userId the authenticated user's id

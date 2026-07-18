@@ -8,7 +8,9 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import sy.khatm.platform.schema.api.SchemaCatalog;
 import sy.khatm.platform.schema.api.SchemaDefinition;
+import sy.khatm.platform.schema.api.SchemaDetail;
 import sy.khatm.platform.schema.api.SchemaRef;
+import sy.khatm.platform.schema.api.SchemaSummary;
 import sy.khatm.platform.schema.persistence.CredentialSchemaRepository;
 import sy.khatm.platform.shared.TenantContext;
 import sy.khatm.platform.shared.Uuidv7;
@@ -32,6 +34,20 @@ class SchemaCatalogService implements SchemaCatalog {
   @Transactional(readOnly = true)
   public Optional<SchemaRef> findById(UUID id) {
     return schemas.findById(id).map(SchemaCatalogService::toRef);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<SchemaSummary> listAll() {
+    return schemas.findAllByTenantId(TenantContext.current()).stream()
+        .map(SchemaCatalogService::toSummary)
+        .toList();
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public Optional<SchemaDetail> findDetailById(UUID id) {
+    return schemas.findById(id).map(SchemaCatalogService::toDetail);
   }
 
   @Override
@@ -68,5 +84,19 @@ class SchemaCatalogService implements SchemaCatalog {
         schema.getVersion(),
         schema.getClaimsDefJson(),
         List.of(schema.getSdFields()));
+  }
+
+  private static SchemaSummary toSummary(CredentialSchema schema) {
+    return new SchemaSummary(
+        schema.getId(), schema.getNameI18n(), schema.getVersion(), schema.getStatus());
+  }
+
+  private static SchemaDetail toDetail(CredentialSchema schema) {
+    return new SchemaDetail(
+        schema.getId(),
+        schema.getNameI18n(),
+        schema.getVersion(),
+        schema.getStatus(),
+        schema.getClaimsDefJson());
   }
 }

@@ -18,7 +18,7 @@ import org.springframework.security.web.access.intercept.RequestAuthorizationCon
  *   <li>{@code /revoke} — {@code revoke} scope, {@code ACTOR_USER} only (spec §3: "جلسة").
  *   <li>{@code /consume} — {@code consume} scope, {@code ACTOR_API_KEY_CONSUMING_PARTY} only (SEC
  *       §7 — a console session is explicitly {@code 403} here, DoD #4).
- *   <li>{@code /api/admin/**} — {@code admin} scope, any actor.
+ *   <li>{@code /api/v1/admin/**} — {@code admin} scope, any actor.
  * </ul>
  *
  * <p>Every decision is a plain boolean over the current {@link Authentication}'s authorities — an

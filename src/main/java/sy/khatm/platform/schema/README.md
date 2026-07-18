@@ -19,3 +19,11 @@ only) — `credential.CredentialService#verify`'s mandatory-disclosure check (sp
 needs the full field list and the redefined `sd_fields` ("withholdable," not "hidden") to
 decide which claims_def fields a presentation must always disclose. No new cross-module
 boundary: this just widens the existing `schema :: api` DTO `credential` already depends on.
+
+KH-1.6-early: `web/SchemaController` adds `GET /api/v1/schemas` (list: id, name_i18n, version,
+status) and `GET /api/v1/schemas/{id}` (adds claims_def) — the console issue screen's read
+dependency. Authenticated session OR any valid API key, no specific scope (read-only tenant
+metadata; see `rbac.security.SecurityConfig`'s Javadoc for the explicit decision). Backed by two
+new `SchemaCatalog` methods, `#listAll`/`#findDetailById`, and two new list/detail-view DTOs,
+`SchemaSummary`/`SchemaDetail` — `SchemaRef` itself is unchanged (still what `credential` depends
+on). New `KH-SCH-0404` error code for the first schema lookup that can actually fail.

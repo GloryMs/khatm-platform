@@ -2,18 +2,26 @@
 > Updated at the end of EVERY Claude Code session. This file is the session anchor.
 
 ## Current phase / task
-- Phase 0 — Production Foundation. **Phase 0 is now fully closed** (application half completed by
-  KH-0.6b; DevOps half completed by KH-0.3 Phase-0 closure below) except KH-0.3.3's deploy
-  *activation*, which is explicitly a config task (set the staging secrets listed in
-  `docs/deploy-staging.md`), not a code task.
-- Current task: **KH-0.3 Phase-0 closure** — DevOps gates + one docs promotion, **no application
+- Phase 0 — Production Foundation, fully closed (see prior sessions). Phase 1 underway.
+- Current task: **KH-1.6-early** — `/api/v1` path migration (the platform's one breaking contract
+  change) + full OpenAPI annotation coverage + published, freshness-gated `docs/api/openapi.json`
+  + the two read-only schema endpoints the console's issue screen needs. `mvn verify` green, 95/95
+  tests. PR #19 open against `main`, **not yet merged** (session brief explicitly said do not
+  merge). See "Last completed" → Session KH-1.6-early for the four parts, the endpoint mapping
+  table, and the pre-existing `ErrorEnvelopeTestSupport` bug found and fixed along the way.
+- **The API contract is PUBLISHED/ADDITIVE-ONLY from this session on**: `docs/api/openapi.json`,
+  raw URL `https://raw.githubusercontent.com/GloryMs/khatm-platform/main/docs/api/openapi.json`
+  (live once PR #19 merges to `main`). A path rename/removal from here needs its own ADR; new
+  endpoints/fields are always safe to add. `OpenApiContractTest` fails the build if the committed
+  file ever drifts from what the code actually serves.
+- Prev task: **KH-0.3 Phase-0 closure** — DevOps gates + one docs promotion, **no application
   code** (the only `pom.xml` edits are Trivy-driven patch-level dependency bumps). DONE & MERGED
   via PR #16 (2026-07-18, merge commit `b7b5342`, fast-forward — `main` had not diverged); branch
   `chore/KH-0.3-phase0-closure` deleted. **PR #16's CI was fully green** (`verify`/`trivy`/
   `gitleaks`/`compose-smoke` all passed) before merge, per user confirmation. See "Last completed"
   → Session KH-0.3-closure for the five parts, the build-infra fix it forced, and the three
   CI-config bugs found and fixed via the PR's own CI runs.
-- Prev task: **KH-0.6b** — console auth, API keys, RBAC-lite & the full `audit_log` write path
+- Before that: **KH-0.6b** — console auth, API keys, RBAC-lite & the full `audit_log` write path
   (spec FS-0.6b, D1–D10 as given; `mvn verify` green, 81/81 tests). DONE & MERGED via PR #14
   (2026-07-17, merge commit `e05008c`); branch `feat/KH-0.6b-auth` deleted. **Completes the
   application half of Phase 0** — no endpoint ships without authentication behind it from here.
@@ -31,6 +39,11 @@
 - Arabic-speaker review gate (FS-0.6a §4): ran for KH-0.6a (one wording refinement on
   `verify.reason.bad_sd_alg`) and again for KH-0.6b's new `error.rbc.*` keys in the PR #14 merge
   session — no concerns, wording kept as written, `MessageBundleParityTest` stayed green.
+- PR #19 (`feat/KH-1.6-early-api-v1-contract` → `main`) open, **not yet merged**.
+- PR #18 (`chore/swagger-and-flagged-fixes` → `main`) merged 2026-07-18 (merge commit `98cb234`);
+  branch deleted. **Corrects a stale claim this file carried** ("PR #18 open, not yet merged" —
+  written before merge, never updated after; caught at the start of the KH-1.6-early session by
+  checking actual `git log`/`gh pr view` instead of trusting this file blindly).
 - PR #16 (`chore/KH-0.3-phase0-closure` → `main`) merged 2026-07-18 (merge commit `b7b5342`,
   fast-forward); branch deleted.
 - PR #14 (`feat/KH-0.6b-auth` → `main`) merged 2026-07-17 (merge commit `e05008c`); branch deleted.
@@ -42,15 +55,88 @@
 - PR #4 (KH-0.3.1, CI pipeline) merged 2026-07-14 (commit `4a65a39`); branch deleted.
 - Branch protection is enabled on this repo — all changes (including docs-only housekeeping)
   go through a PR, never a direct push to `main`.
-- Most recent session (chore, not a WBS task — does not change "Current task"/"Prev task" above):
-  **chore/swagger-and-flagged-fixes** — local/dev-only Swagger UI + the two flags KH-0.3-closure
-  raised for "the next session touching `rbac.security`/`key.domain`" (CVE-2026-22732,
-  `KeyBootstrap` race) + STATE hygiene. PR #18 open against `main`, **not yet merged** (session
-  brief explicitly said do not merge). CI green (`verify`/`trivy` — now without the CVE allowlist
-  entry — /`gitleaks`/`compose-smoke` on the unsequenced boot) before this line was written. See
+- Prior session (chore, not a WBS task): **chore/swagger-and-flagged-fixes** — local/dev-only
+  Swagger UI + the two flags KH-0.3-closure raised for "the next session touching
+  `rbac.security`/`key.domain`" (CVE-2026-22732, `KeyBootstrap` race) + STATE hygiene. Merged via
+  PR #18 (see above). CI green (`verify`/`trivy`/`gitleaks`/`compose-smoke`) before merge. See
   "Last completed" → Session chore/swagger-and-flagged-fixes for details.
 
 ## Last completed
+- 2026-07-18: KH-1.6-early — `/api/v1` path migration + full OpenAPI coverage + published contract
+  + read-only schema endpoints. No spec doc; the session brief itself was the spec, four parts.
+  `mvn verify` green, 95/95 tests. PR #19 open against `main`, **not merged** (brief said not to).
+  Confirmed `main` included PR #18 (checked `git log`/`gh pr view` directly rather than trusting
+  this file, which — see the PR-list correction above — had gone stale on that exact point).
+  - **Part 1 — `/api/v1` migration (the breaking change)**: `credential` endpoints were already
+    under `/api/v1/credentials/**` (since KH-0.4), so this session's actual scope was narrower
+    than the brief's worst case — only `rbac.web.AuthController`'s five endpoints moved:
+    `/api/auth/{login,logout,me}` → `/api/v1/auth/{login,logout,me}`, `/api/admin/api-keys` (+
+    `/{id}/revoke`) → `/api/v1/admin/api-keys` (+ `/{id}/revoke`). No aliases, no redirects — the
+    old paths simply don't exist on this branch. `SecurityConfig`'s `LOGIN_PATH`/`ADMIN_PATH`
+    constants, `ScopeGuard`'s Javadoc, `scripts/smoke.sh`, the `rbac` README, and every rbac HTTP
+    test's path literals moved together in the same commit; re-ran the full rbac HTTP suite
+    (login/lockout/logout/me, admin api-key create/revoke, scope/consume/public-endpoint gates)
+    to confirm nothing broke silently.
+  - **Part 2 — full OpenAPI coverage**: `CredentialController`'s `consume`/`revoke`/`get` gained
+    the same `@Operation`/`@ApiResponse` annotation quality `/issue`/`/verify` already had (KH-0.4).
+    New `OpenApiContractTest#everyRestControllerMapping_hasAMatchingOperationInApiDocs` enforces
+    it going forward — **implemented as a source-text scan over `src/main/java` (same technique
+    `NoDirectAuditLogInsertTest` uses), not live reflection over `RequestMappingHandlerMapping`**:
+    reflection would also pick up framework-internal controllers (Boot's `BasicErrorController`,
+    springdoc's own `/v3/api-docs` handler) that were never annotated and never should be, making
+    "how many operations should exist" ambiguous. A source scan restricted to `src/main/java`
+    counts exactly this platform's own endpoints and naturally excludes `TestBoomController`
+    (lives under `src/test/java`).
+  - **Part 3 — published contract**: `docs/api/openapi.json` generated by a context-booting test
+    (`OpenApiContractTest`, extends `shared.web.ErrorEnvelopeTestSupport`), **not** the
+    springdoc-openapi-maven-plugin — recorded per the brief's "record which was used": that plugin
+    needs a real listening instance of the app during the `mvn` build itself, which in this
+    codebase means standing up Testcontainers-backed Postgres/Redis/keystore wiring outside the
+    test lifecycle that already builds it, for no benefit over reusing the test context. The same
+    test class is the freshness gate (second `@Test` method) — fetches `/v3/api-docs` over a real
+    HTTP call (an API key with an unrelated scope, proving `/v3/api-docs` itself needs no specific
+    scope), canonicalizes it (recursive alphabetical key sort — springdoc's internal map ordering
+    isn't a documented guarantee, so this test cares about content drift, not incidental
+    reordering), strips `/api/v1/_test/**` paths (the `TestBoomController` fixture — real in the
+    booted test context, never shipped) and the `servers[0].url` field (springdoc fills this from
+    the test's own ephemeral random port; comparing it would fail on every single run for a reason
+    with nothing to do with an actual contract change), and byte-compares against the committed
+    file — same self-serve philosophy as `ErrorCodesDocGenerationTest`, fails with the exact
+    content to paste in in the assertion message. **Generation snag, resolved**: initially tried
+    extracting that "paste this in" content straight from a redirected `mvn` console log; on
+    Windows Git-Bash this silently corrupted multi-byte UTF-8 (em dashes) into malformed bytes
+    that then failed `Files.readString` on the *next* run trying to read the corrupted committed
+    file back — switched the failure path to write the generated content straight to a
+    `target/openapi-generated.json` file via `Files.writeString` instead of relying on console
+    capture, sidestepping the console codepage entirely. README gained an "API contract" section.
+  - **Part 4 — read-only schema endpoints**: `schema :: api` gained `SchemaSummary`/`SchemaDetail`
+    DTOs and `SchemaCatalog#listAll`/`#findDetailById` (the existing `SchemaRef`/`ensurePublished`/
+    `findById` surface `credential` depends on is untouched). New `schema.web.SchemaController`:
+    `GET /api/v1/schemas` (id, name_i18n, version, status) and `GET /api/v1/schemas/{id}` (adds
+    claims_def). `SecurityConfig` gained an explicit `SCHEMAS_PATH` matcher —
+    `.authenticated()`, no `ScopeGuard` rule — documented in both the class Javadoc and the
+    endpoints' own `@Operation` descriptions as a deliberate choice (read-only tenant metadata
+    every actor kind may see), not the silent authenticated-any-scope default CONVENTIONS §7.2
+    warns against relying on implicitly. New `KH-SCH-0404` — the first schema lookup that can
+    actually fail (every prior `SchemaCatalog` caller finds-or-creates or degrades gracefully);
+    `schema.not-found` added to both message bundles + `docs/error-codes.md`. **Still needs the
+    Arabic-speaker review gate (spec FS-0.6a §4)** for the new `schema.not-found` Arabic string —
+    flagged in the PR, not yet done as of this session ending (same pattern as KH-0.6a's original
+    `messages_ar.properties` flag).
+  - **Side fix (pre-existing bug, found by adding a second subclass)**:
+    `shared.web.ErrorEnvelopeTestSupport` used `@Testcontainers`/`@Container` — the exact pattern
+    `rbac.RbacHttpTestSupport`'s own Javadoc already documents as broken for a base class with
+    more than one subclass sharing a cached Spring context (the first subclass's `afterAll` stops
+    the container out from under every sibling). It only had one subclass
+    (`ErrorEnvelopeAndI18nTest`) before this session; `OpenApiContractTest` becoming the second
+    reproduced the bug for real — `mvn verify` failed with `CannotCreateTransactionException`
+    against a dead connection pool. Converted to the same manual static-initializer pattern
+    `RbacHttpTestSupport`/`IntegrationTestSupport` already use (start once, never stop; Ryuk reaps
+    at JVM exit). Confirmed fixed by re-running both subclasses together, and again inside the
+    full `mvn verify`.
+  - **Tests**: `SchemaReadEndpointsTest` (list/detail/404-with-KH-SCH-0404/API-key-with-unrelated-
+    scope-still-works/no-credential-401), `OpenApiContractTest` (coverage + freshness, both
+    described above). Every existing rbac HTTP test's path literals updated; all re-ran green.
 - 2026-07-18: chore/swagger-and-flagged-fixes — local Swagger UI + the two KH-0.3-closure follow-up
   flags (CVE-2026-22732, `KeyBootstrap` race) + STATE hygiene. No spec; the session brief itself
   was the spec, four parts. `mvn verify` green throughout (re-run after each part, not only at the
@@ -1068,6 +1154,9 @@
     (spec §9 explicitly notes it authenticates by *possessing the claim code*, not a session or
     API key, and is not closed off by KH-0.6b's `SecurityConfig`). `decrypt()` exists on
     `ClaimsEncryptionService` (tested), ready for the claim endpoint to call.
+- **`schema.not-found`'s Arabic wording needs the native-speaker review gate (spec FS-0.6a §4)**
+  before PR #19 merges — flagged in the PR body, not yet done as of this session ending (same
+  pattern KH-0.6a's original `messages_ar.properties` note used).
 
 ## Next up (ordered)
 1. KH-1.2.1 — claim-delivery endpoint: a wallet claims a code → `ClaimsEncryptionService.decrypt`
@@ -1080,8 +1169,12 @@
 3. KH-1.4.3 — `allowed_schemas` enforcement for consuming parties, building on the
    `CONSUMING_PARTY` API-key principal `rbac.security.ApiKeyAuthFilter` now provides (spec FS-0.6b
    §9 — explicitly no filter changes needed, the principal is already there).
-4. KH-1.6 — published OpenAPI contract: full endpoint annotation coverage (KH-0.4/KH-0.6a/KH-0.6b
-   only annotated `/issue`/`/verify`/the new `rbac` endpoints) + CI-published `openapi.json`.
+4. KH-1.6-remainder — **KH-1.6-early (this session) closed the path-versioning break, full
+   endpoint annotation coverage, the published/freshness-gated `docs/api/openapi.json`, and the
+   two read-only schema endpoints.** Nothing else was identified as outstanding under the KH-1.6
+   umbrella during this session — if a future session finds more (e.g. a typed schema-authoring
+   API, additional read endpoints console/wallet need), it folds in here rather than reopening
+   KH-1.6-early's scope.
 5. KH-0.3.3 activation — **config, not code**: set the staging secrets in `docs/deploy-staging.md`
    and the `release.yml` deploy job runs on the next push to `main`. (The publish half is already
    live; only the gated deploy half waits on a host.)

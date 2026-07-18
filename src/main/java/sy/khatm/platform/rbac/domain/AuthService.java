@@ -137,8 +137,8 @@ public class AuthService {
   }
 
   /**
-   * Look up a user's display details for {@code GET /api/auth/me} — a fresh read, not cached in the
-   * session, so a display-name or language change is reflected without re-login.
+   * Look up a user's display details for {@code GET /api/v1/auth/me} — a fresh read, not cached in
+   * the session, so a display-name or language change is reflected without re-login.
    *
    * @param userId the authenticated user's id
    * @return the user's current view, or empty if the account no longer exists

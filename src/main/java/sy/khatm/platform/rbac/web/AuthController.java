@@ -26,8 +26,8 @@ import sy.khatm.platform.rbac.security.SessionAuthenticator;
 import sy.khatm.platform.shared.web.ErrorEnvelope;
 
 /**
- * Console session auth ({@code /api/auth/*}) and admin API-key management ({@code
- * /api/admin/api-keys/*}) (spec FS-0.6b §3).
+ * Console session auth ({@code /api/v1/auth/*}) and admin API-key management ({@code
+ * /api/v1/admin/api-keys/*}) (spec FS-0.6b §3).
  *
  * <p>Thin: validate → call the domain/security services → map. {@link SessionAuthenticator} owns
  * the actual {@code HttpSession} establishment/teardown so this class never touches Spring
@@ -71,7 +71,7 @@ class AuthController {
             description = "Authentication failed (KH-RBC-0401, generic message)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
       })
-  @PostMapping("/api/auth/login")
+  @PostMapping("/api/v1/auth/login")
   ResponseEntity<Void> login(
       @Valid @RequestBody LoginRequest req,
       HttpServletRequest request,
@@ -85,7 +85,7 @@ class AuthController {
       summary = "Console logout",
       description = "Invalidates the current session.",
       responses = {@ApiResponse(responseCode = "200", description = "Logged out")})
-  @PostMapping("/api/auth/logout")
+  @PostMapping("/api/v1/auth/logout")
   ResponseEntity<Void> logout(HttpServletRequest request, HttpServletResponse response) {
     sessionAuthenticator.clear(request, response);
     return ResponseEntity.ok().build();
@@ -102,7 +102,7 @@ class AuthController {
             description = "No valid session or API key",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
       })
-  @GetMapping("/api/auth/me")
+  @GetMapping("/api/v1/auth/me")
   ResponseEntity<MeResponse> me() {
     CurrentActor actor =
         currentActorResolver
@@ -130,7 +130,7 @@ class AuthController {
             description = "Missing the admin scope (KH-RBC-0403)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
       })
-  @PostMapping("/api/admin/api-keys")
+  @PostMapping("/api/v1/admin/api-keys")
   ResponseEntity<CreateApiKeyResponse> createApiKey(@Valid @RequestBody CreateApiKeyRequest req) {
     CreatedApiKey created = apiKeyService.create(req.ownerType(), req.ownerId(), req.scopes());
     return ResponseEntity.ok(
@@ -149,7 +149,7 @@ class AuthController {
             description = "Missing the admin scope (KH-RBC-0403)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
       })
-  @PostMapping("/api/admin/api-keys/{id}/revoke")
+  @PostMapping("/api/v1/admin/api-keys/{id}/revoke")
   ResponseEntity<Void> revokeApiKey(@PathVariable String id) {
     apiKeyService.revoke(UUID.fromString(id));
     return ResponseEntity.ok().build();

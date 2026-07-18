@@ -1,5 +1,6 @@
 package sy.khatm.platform.schema.api;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -33,4 +34,24 @@ public interface SchemaCatalog {
    * @return the matching schema reference, or empty if no such schema exists
    */
   Optional<SchemaRef> findById(UUID id);
+
+  /**
+   * List every schema for the current tenant, list-view shape (KH-1.6-early, {@code GET
+   * /api/v1/schemas}).
+   *
+   * <p>Read-only tenant metadata; full schema authoring/versioning stays KH-1.1's backend half.
+   *
+   * @return every schema registered for the current tenant
+   */
+  List<SchemaSummary> listAll();
+
+  /**
+   * Look up a schema by its internal id, detail-view shape — {@link SchemaSummary}'s fields plus
+   * the claims definition a console issue form needs (KH-1.6-early, {@code GET
+   * /api/v1/schemas/{id}}).
+   *
+   * @param id the schema's internal UUID; must not be {@code null}
+   * @return the matching schema detail, or empty if no such schema exists
+   */
+  Optional<SchemaDetail> findDetailById(UUID id);
 }

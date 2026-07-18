@@ -49,6 +49,26 @@ gitignored.
   `.gitleaks.toml`.
 - **compose-smoke** — the restore-from-zero proof above.
 
+## API contract
+
+`docs/api/openapi.json` is the published, committed OpenAPI contract — generated from the running
+application's own `/v3/api-docs` by `OpenApiContractTest` (never hand-edited, same self-serve
+philosophy as `docs/error-codes.md`), and kept fresh by that same test running inside `mvn verify`
+on every PR and every push to `main`: the build fails if the committed file drifts from what the
+code actually serves. On merge to `main` it is therefore always the authoritative, fetchable
+contract — raw URL:
+`https://raw.githubusercontent.com/GloryMs/khatm-platform/main/docs/api/openapi.json`.
+
+**Additive-only from KH-1.6-early on.** Every business and auth endpoint now lives under
+`/api/v1/**` — the one breaking path change this platform ever makes with a straight face, done
+while there were zero external clients. From this point, a path rename or removal needs its own
+ADR; new endpoints/fields are always safe to add.
+
+**Consuming it:** console and wallet generate their HTTP client types from this file (typegen) —
+never hand-written request/response types (ADR-08). Point your generator at the raw URL above, or
+at `http://localhost:8080/v3/api-docs` for a local stack (Swagger UI at
+`http://localhost:8080/swagger-ui/index.html`, local/dev profiles only).
+
 ## Release & deploy (KH-0.3.3)
 
 `.github/workflows/release.yml` runs on push to `main`: it builds and pushes the image to the GitHub

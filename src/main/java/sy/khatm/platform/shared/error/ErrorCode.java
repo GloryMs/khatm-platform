@@ -12,12 +12,14 @@ import org.springframework.http.HttpStatus;
  * STS, LDG, HLD, CNS, RBC, CON, SYS}.
  *
  * <p><b>First batch</b> (spec FS-0.6a §3): codes for request-error paths that exist and are
- * exercised <em>today</em>. Deliberately omitted: a schema-not-found code (nothing in the codebase
- * currently looks up a schema in a way that can fail — {@code SchemaCatalog} methods find-or-create
- * or degrade gracefully), a credential-conflict code (the atomic-consume path already returns its
- * outcome as a 200 domain result, not an error). New codes are appended here as new request-error
- * paths are actually built — never renumbered, never added speculatively ahead of the path that
- * needs them.
+ * exercised <em>today</em>. Deliberately omitted: a credential-conflict code (the atomic-consume
+ * path already returns its outcome as a 200 domain result, not an error). New codes are appended
+ * here as new request-error paths are actually built — never renumbered, never added speculatively
+ * ahead of the path that needs them.
+ *
+ * <p><b>{@code SCH} code</b> (KH-1.6-early): {@code GET /api/v1/schemas/{id}} is the first schema
+ * lookup that can actually fail — every prior {@code SchemaCatalog} caller either finds-or-creates
+ * or degrades gracefully, so no schema-not-found code existed until this endpoint needed one.
  *
  * <p><b>{@code RBC} batch</b> (spec FS-0.6b §5): the three outcomes {@code
  * AuthenticationException}/{@code AuthorizationException} actually throw once session/API-key auth
@@ -61,7 +63,10 @@ public enum ErrorCode {
   KH_RBC_1401(HttpStatus.UNAUTHORIZED, "error.rbc.api_key_invalid"),
 
   /** A session or API key is valid but lacks the scope the endpoint requires. */
-  KH_RBC_0403(HttpStatus.FORBIDDEN, "error.rbc.forbidden");
+  KH_RBC_0403(HttpStatus.FORBIDDEN, "error.rbc.forbidden"),
+
+  /** A requested credential schema does not exist. */
+  KH_SCH_0404(HttpStatus.NOT_FOUND, "schema.not-found");
 
   private final HttpStatus httpStatus;
   private final String messageKey;
