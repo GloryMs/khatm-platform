@@ -3,6 +3,9 @@
 > Status: **inert / config-gated.** The publish half is live (every push to `main` builds and
 > pushes the image to GHCR); the deploy half does nothing until a staging host is wired up.
 > Activation is a one-time config task — no code change, no new PR. This document is the runbook.
+>
+> Swagger UI (`/swagger-ui.html`, `/v3/api-docs`) is intentionally **OFF** outside the `local`/`dev`
+> profiles — including on this staging host — until KH-1.6 decides contract publication.
 
 ## What runs today
 

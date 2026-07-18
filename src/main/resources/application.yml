@@ -102,6 +102,19 @@ logging:
   level:
     sy.khatm: INFO
 
+# Resolved by Maven resource filtering (@...@ delimiter, enabled by the inherited
+# spring-boot-starter-parent POM for application.yml) — see shared.config.OpenApiConfig.
+project:
+  version: "@project.version@"
+
+springdoc:
+  swagger-ui:
+    # Swagger UI's own "Try it out" reads the XSRF-TOKEN cookie and sends it back as
+    # X-XSRF-TOKEN automatically, so a POST through the UI survives sessionSecurityFilterChain's
+    # CSRF check without manual header copying (KH-0.6b CookieCsrfTokenRepository).
+    csrf:
+      enabled: true
+
 ---
 spring:
   config:

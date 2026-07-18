@@ -4,6 +4,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.UUID;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -41,6 +42,7 @@ import sy.khatm.platform.shared.web.ErrorEnvelope;
  */
 @RestController
 @RequestMapping("/api/v1/credentials")
+@Tag(name = "credential", description = "Issue, consume, verify, and revoke SD-JWT credentials")
 // api-role only (ADR-09): the worker image runs stream consumers and exposes no business REST
 // endpoints. matchIfMissing=true keeps this active in every profile that doesn't explicitly set
 // khatm.web.enabled=false (i.e. api/test/local/default), so existing web tests are unaffected.

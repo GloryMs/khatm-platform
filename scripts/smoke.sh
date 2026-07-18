@@ -120,28 +120,22 @@ check_e2e() {
 
 # ----------------------------------------------------------------------------
 
-# khatm-api and khatm-worker share one keystore volume + DB, and KeyBootstrap is not role-gated
-# (it runs as a plain ApplicationRunner in both). Starting them concurrently is a genuine race:
-# whichever loses (sees the ACTIVE issuer_key DB row already created by the other) skips its own
-# bootstrap, but that process's SoftKeyProvider already loaded its in-memory KeyStore at ITS OWN
-# startup — before the winner's file write was visible — so the loser is left signing against a
-# kid its own JVM never actually has. Bringing khatm-api up ALONE first (compose still starts
-# postgres/redis for it via their health-gated depends_on) and waiting for it to publish a real
-# JWKS key before starting khatm-worker makes bootstrap strictly sequential, so the second starter
-# always reads an already-complete keystore file. This is a real pre-existing concurrency bug
-# (see docs/STATE.md "Open decisions / blockers") — worked around here at the compose-sequencing
-# level since fixing KeyBootstrap itself is application code, out of scope for KH-0.3.
+# khatm-api and khatm-worker share one keystore volume + DB. Before this session, KeyBootstrap ran
+# as a plain, unconditional ApplicationRunner in both roles, so starting them concurrently was a
+# genuine race (see docs/STATE.md "Session KH-0.3-closure" for the reproduction and the sequenced
+# boot_stack workaround this replaces). key.domain.KeyBootstrap is now gated behind
+# khatm.web.enabled=true (this session's fix), so only the api role ever bootstraps the key —
+# a single plain `docker compose up -d` starting both roles concurrently is the end-to-end proof
+# the race is gone.
 boot_stack() {
-  bold "docker compose up -d --build khatm-api (+ its postgres/redis dependencies)"
-  docker compose -f "$COMPOSE_FILE" up -d --build khatm-api
-  wait_for_api
-  bold "docker compose up -d --build khatm-worker (api already holds the bootstrapped key)"
-  docker compose -f "$COMPOSE_FILE" up -d --build khatm-worker
+  bold "docker compose up -d --build (api + worker concurrently, unsequenced)"
+  docker compose -f "$COMPOSE_FILE" up -d --build
 }
 
 bold "=== Phase 1: clean boot ==="
 ensure_network
 boot_stack
+wait_for_api
 check_jwks
 check_e2e
 
@@ -149,6 +143,7 @@ bold "=== Phase 2: restore-from-zero (down -v, then up on the SAME image) ==="
 docker compose -f "$COMPOSE_FILE" down -v >/dev/null
 ensure_network   # external network survives `down`; re-check is harmless
 boot_stack
+wait_for_api
 check_jwks
 check_e2e
 

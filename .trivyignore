@@ -36,15 +36,6 @@ CVE-2025-14813
 # because it was already excluded by reachability — revisit if that changes).
 CVE-2026-40973
 
-# 2026-07-17 KH-0.3-closure — org.springframework.security:spring-security-web 6.3.10, CRITICAL
-# (CVSS 9.1). "Security policy bypass and information disclosure due to unwritten HTTP headers"
-# under Spring Security's default LAZY header-writing mode, which this app uses with no
-# HeaderWriter customization — reachability could NOT be ruled out the way the other entries here
-# were. Fix (6.5.9+) is a MINOR bump of spring-security-web alone (not the whole Boot BOM), outside
-# this session's patch-level-only scope — flagged explicitly for a dedicated follow-up session
-# rather than silently allowlisted; see docs/STATE.md "Open decisions / blockers".
-CVE-2026-22732
-
 # 2026-07-17 KH-0.3-closure — com.fasterxml.jackson.core:jackson-databind 2.17.3, HIGH (two CVEs,
 # same root cause). Both are PolymorphicTypeValidator/BasicPolymorphicTypeValidator allowlist-bypass
 # bugs — require an app to have polymorphic typing enabled (@JsonTypeInfo / activateDefaultTyping /
