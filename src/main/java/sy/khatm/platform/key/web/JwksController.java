@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import java.time.Duration;
 import java.util.List;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -28,6 +30,7 @@ import sy.khatm.platform.shared.TenantContext;
  * visible.
  */
 @RestController
+@Tag(name = "jwks", description = "Public JSON Web Key Set for signature verification")
 // api-role only (ADR-09): JWKS is part of the api/verify public surface; the worker image exposes
 // no business REST endpoints. See CredentialController for the matchIfMissing rationale.
 @ConditionalOnProperty(name = "khatm.web.enabled", havingValue = "true", matchIfMissing = true)
@@ -44,6 +47,9 @@ class JwksController {
   }
 
   /** Public JWKS ({@code ACTIVE} + {@code RETIRING} keys) — verifiers cache this. */
+  @Operation(
+      summary = "Fetch the JWKS",
+      description = "Public ACTIVE + RETIRING signing keys, no authentication required.")
   @GetMapping(value = "/.well-known/jwks.json", produces = MediaType.APPLICATION_JSON_VALUE)
   ResponseEntity<String> jwks() {
     List<PublishedKey> keys = lifecycle.publishableKeys(TenantContext.current());

@@ -42,8 +42,89 @@
 - PR #4 (KH-0.3.1, CI pipeline) merged 2026-07-14 (commit `4a65a39`); branch deleted.
 - Branch protection is enabled on this repo — all changes (including docs-only housekeeping)
   go through a PR, never a direct push to `main`.
+- Most recent session (chore, not a WBS task — does not change "Current task"/"Prev task" above):
+  **chore/swagger-and-flagged-fixes** — local/dev-only Swagger UI + the two flags KH-0.3-closure
+  raised for "the next session touching `rbac.security`/`key.domain`" (CVE-2026-22732,
+  `KeyBootstrap` race) + STATE hygiene. PR #18 open against `main`, **not yet merged** (session
+  brief explicitly said do not merge). CI green (`verify`/`trivy` — now without the CVE allowlist
+  entry — /`gitleaks`/`compose-smoke` on the unsequenced boot) before this line was written. See
+  "Last completed" → Session chore/swagger-and-flagged-fixes for details.
 
 ## Last completed
+- 2026-07-18: chore/swagger-and-flagged-fixes — local Swagger UI + the two KH-0.3-closure follow-up
+  flags (CVE-2026-22732, `KeyBootstrap` race) + STATE hygiene. No spec; the session brief itself
+  was the spec, four parts. `mvn verify` green throughout (re-run after each part, not only at the
+  end, per the brief). PR #18 open against `main`, **not merged** (brief said not to).
+  - **Part 1 — Swagger UI, local/dev only**: swapped `springdoc-openapi-starter-webmvc-api` for
+    `-webmvc-ui` (pulls the `-api` artifact in transitively). **Version pinned to 2.6.0, not the
+    2.8.x line the old `-api` artifact used** — discovered empirically, not from a compatibility
+    table alone: 2.7.0+ references Spring Framework 6.2's
+    `org.springframework.web.servlet.resource.LiteWebJarsResourceResolver` from its UI
+    auto-configuration, unconditionally enough to throw `NoClassDefFoundError` at context startup
+    on Spring Boot 3.3.13's Framework 6.1 line (this pom's actual, CLAUDE.md-frozen pin). The old
+    `-api`-only artifact never exercised that code path (no UI static resources), so the same
+    2.8.x/Boot-3.3.x mismatch was latent and harmless until this session's UI swap actually hit
+    it. 2.6.0 is the last springdoc-openapi release still targeting Boot 3.0.x–3.3.x. `rbac.security
+    .SecurityConfig`: both `SecurityFilterChain` beans now take an `Environment` parameter and
+    permit `/v3/api-docs/**`, `/swagger-ui/**`, `/swagger-ui.html` only when
+    `environment.matchesProfiles("local", "dev")` is true — computed per chain build, not a third
+    permanent entry alongside D9's public two; outside those profiles the paths fall through to
+    `anyRequest().authenticated()` and 401 like anything else. `shared.config.OpenApiConfig` (new)
+    supplies the `OpenAPI` bean (title "Khatm Platform API", version from `@project.version@` —
+    Maven resource filtering, already enabled for `application.yml` by the inherited
+    `spring-boot-starter-parent` POM, so **no build-plugin change was needed** to get a real
+    version string). `springdoc.swagger-ui.csrf.enabled=true` (application.yml) makes Swagger UI's
+    own "Try it out" read the `XSRF-TOKEN` cookie and echo `X-XSRF-TOKEN` automatically. `@Tag`
+    added to `AuthController`/`CredentialController`/`JwksController` (auth/credential/jwks
+    groups). Two new tests (`rbac.SwaggerUiAccessTest`/`SwaggerUiLocalEnabledTest`, the latter
+    merging `local` onto `RbacHttpTestSupport`'s `test` profile via `@ActiveProfiles`'s default
+    `inheritProfiles=true`) prove 401 outside local/dev and 200 (JSON parses, UI page renders)
+    inside it. `docs/deploy-staging.md` gained a one-line note that Swagger stays off on staging
+    until KH-1.6. Manually verified against a live `docker compose` stack (see Part 3): `/v3/api-
+    docs` and `/swagger-ui/index.html` return 200 unauthenticated under `local,api`; a full
+    login → `/api/auth/me` (forces the XSRF-TOKEN cookie) → `X-XSRF-TOKEN`-bearing `/issue` call
+    — the exact mechanics Swagger UI's own CSRF handling uses — succeeded end-to-end via curl.
+  - **Part 2 — CVE-2026-22732**: tried the brief's preferred path first — a `dependencyManagement`
+    override of `spring-security-web` alone to 6.5.9, everything else left at the Boot BOM's
+    6.3.10 — and it resolved fine but **broke at runtime**, confirmed by actually running the
+    suite, not assumed: every `@SpringBootTest` hitting `requestMappingHandlerAdapter` failed with
+    `NoClassDefFoundError: org/springframework/security/core/annotation/SecurityAnnotationScanners`,
+    a class `spring-security-web` 6.5.9 references that only exists in `spring-security-core`
+    6.4+. Fell back to the brief's documented contingency: override the whole
+    `spring-security.version` property to `6.5.9` instead, moving config/core/crypto/test/web
+    together. `mvn verify` green after (81+ tests, zero failures across all surefire reports).
+    `.trivyignore`'s `CVE-2026-22732` entry deleted; `trivy fs` (run locally via the `aquasec/
+    trivy:0.72.0` Docker image, matching CI's pinned binary version) reports 0 CRITICAL/HIGH on
+    `pom.xml` without it — the CVE is genuinely closed, not just allowlisted differently.
+  - **Part 3 — `KeyBootstrap` race, fixed**: added
+    `@ConditionalOnProperty(name = "khatm.web.enabled", havingValue = "true", matchIfMissing =
+    true)` to `key.domain.KeyBootstrap` — the exact ADR-09 shape `CredentialController`/
+    `JwksController` already use — so only the `api` role ever bootstraps the shared PKCS#12
+    keystore. New `key.domain.KeyBootstrapRoleGuardTest` (lightweight `ApplicationContextRunner`,
+    mirrors `shared.events.WorkerRoleGuardTest`'s pattern, mocked `KeyLifecycleService`): bean
+    present with `khatm.web.enabled=true` or unset (api/local/default's `matchIfMissing` shape),
+    absent with `khatm.web.enabled=false`. `shared.events.WorkerProfileSecurityBootTest` (the
+    existing full-context DoD #9 worker-boot test) extended with a `context.getBean("keyBootstrap")`
+    absence assertion alongside its existing controller-absence checks. `scripts/smoke.sh`'s
+    `boot_stack` reverted to one plain `docker compose up -d --build` (api+worker concurrently,
+    unsequenced) — the sequenced-boot workaround deleted along with the bug it patched (fixing the
+    revert also required re-adding a `wait_for_api` call after `boot_stack` that the simplification
+    had accidentally dropped, caught by the first local smoke run failing with "Empty reply from
+    server" before Tomcat had even started listening). **Ran the unsequenced smoke script 3 times
+    from a clean `docker compose down -v`** (6 full boot cycles counting each run's own
+    down-v/reboot restore-from-zero phase) — all 6 passed; `khatm-worker`'s logs never show a
+    `KeyBootstrap` line at all across any run (confirmed via `docker compose logs khatm-worker |
+    grep -i keybootstrap` — no output), while `khatm-api`'s always shows exactly one
+    `Bootstrapped issuer key kid=...` line. The race is closed, not just less likely.
+  - **Part 4 — STATE hygiene**: deleted the stale "KH-0.6b `messages_ar.properties` … not yet had
+    the native-speaker review gate" blocker — contradicted by this file's own top section (the
+    gate ran in the PR #14 merge session, reviewed by Majd, no changes needed). Moved the
+    CVE-2026-22732 and `KeyBootstrap` entries out of "Open decisions / blockers" (both CLOSED by
+    this session, per the two paragraphs above) — the CVE's original KH-0.3-closure write-up
+    gained a forward-pointer to this entry instead of being deleted outright, and the KH-0.5.1
+    decision explaining why `KeyBootstrap` ran in every profile gained a one-line "superseded"
+    note (it now runs in every *profile*, but only the `api` *role*).
+  - See "Decisions made" → Session chore/swagger-and-flagged-fixes.
 - 2026-07-18: KH-0.3 Phase-0 closure — DevOps gates + one docs promotion (**no application code**;
   the only `pom.xml` edits are the Trivy-driven patch-level dependency bumps, Part 1). DONE &
   MERGED via PR #16 (2026-07-18, merge commit `b7b5342`, fast-forward — `main` had not diverged
@@ -92,8 +173,12 @@
     CVEs in `/usr/bin/pebble` — Canonical's container-init tool baked into the official
     `eclipse-temurin:*-jre` base image, confirmed via `docker inspect` to never run in this
     container (`ENTRYPOINT ["java","-jar","app.jar"]` only) — allowlisted as unreachable/
-    unfixable-from-this-repo. See `docs/STATE.md` "Open decisions / blockers" for the
-    CVE-2026-22732 follow-up flag, and `.trivyignore` for every entry's full justification.
+    unfixable-from-this-repo. **CVE-2026-22732 CLOSED (2026-07-18, session
+    chore/swagger-and-flagged-fixes)** — see that session's entry below for the fix (whole
+    `spring-security.version` line bumped to 6.5.9, not `spring-security-web` alone) and why the
+    single-artifact path had to be abandoned; `.trivyignore` entry deleted, `trivy fs` passes
+    clean without it. See `.trivyignore`'s remaining entries for every other allowlisted CVE's
+    full justification.
   - **Part 2 — KH-0.3.4 (secrets)**: `gitleaks` CI gate (per-PR diff via `gitleaks-action@v2`,
     `fetch-depth: 0`). Full-history scan run locally: **0 real findings** — the 12 raw hits were one
     synthetic TEST fixture (`khatm-test-claims-enc-key-32byte`, base64) in two `src/test/java`
@@ -633,6 +718,10 @@
 - **`KeyBootstrap` runs in every profile, not just `local`/`dev`**: unlike `DemoSeeder`, a
   production boot with zero issuer keys is a broken deployment, not a missing convenience —
   there is no other provisioning path yet (explicitly temporary; see the module README).
+  **Superseded (2026-07-18, session chore/swagger-and-flagged-fixes)**: "every profile" turned out
+  to include every *role* too (`api` and `worker` both ran it), which was a real concurrency bug,
+  not just an unused-elsewhere no-op — see that session's entry for the fix. It still runs in
+  every *profile* (local/dev/prod alike), just only in the `api` role now.
 - **Command-line-style `--key=value` args, not `.properties(...)`, for the two
   multi-`SpringApplicationBuilder`-run tests**: `SpringApplicationBuilder.properties(String...)`
   registers a *lowest-precedence* "defaultProperties" source — `application.yml`'s own
@@ -926,41 +1015,46 @@
   `application.yml` supplies a documented default (`admin` / a printed placeholder password) so
   `docker compose up` still needs zero setup.
 
+### Session chore/swagger-and-flagged-fixes (2026-07-18)
+- **springdoc-openapi pinned to 2.6.0, not the 2.8.x line the old `-api`-only artifact used**:
+  confirmed empirically that 2.7.0+ needs Spring Framework 6.2 (`LiteWebJarsResourceResolver`,
+  `NoClassDefFoundError` on this pom's Boot 3.3.13 / Framework 6.1 line) for its UI
+  auto-configuration. 2.6.0 is the last release still targeting Boot 3.0.x–3.3.x. Re-check this
+  pin whenever the frozen Boot 3.x line itself moves to 3.4+.
+- **Swagger UI's version string comes from Maven resource filtering (`@project.version@` in
+  `application.yml`), not a `spring-boot-maven-plugin` `build-info` execution**: the session's
+  hard constraint limited `pom.xml` changes to the springdoc swap and the spring-security
+  override, so adding a new plugin execution was out of scope. `spring-boot-starter-parent`
+  already filters `application.yml` with the `@...@` delimiter for every child project — zero pom
+  changes needed to resolve a real version string in `shared.config.OpenApiConfig`.
+- **CVE-2026-22732: whole `spring-security.version` line bumped, not `spring-security-web`
+  alone** — the brief's preferred path was tried first and genuinely does not work on this
+  codebase: `spring-security-web` 6.5.9 references a `spring-security-core` 6.4+-only class
+  (`SecurityAnnotationScanners`), so leaving `spring-security-core` at the Boot BOM's 6.3.10
+  breaks every Spring MVC context at `requestMappingHandlerAdapter` creation. This was confirmed
+  by actually running `mvn verify`, not inferred from a compatibility matrix — the single-artifact
+  override resolved cleanly at the dependency-tree level and only failed at runtime. Fell back to
+  the brief's own documented contingency (override `spring-security.version` itself, 6.5.9,
+  moving config/core/crypto/test/web together) — this is the "record which path was taken and
+  why" the brief asked for.
+- **`KeyBootstrapRoleGuardTest` uses a mocked `KeyLifecycleService`, not a real one, and never
+  exercises `KeyBootstrap#run`**: `ApplicationContextRunner` (unlike a full `SpringApplication`
+  boot) never invokes `ApplicationRunner`/`CommandLineRunner` beans — that's
+  `SpringApplication.callRunners()`'s job, which this lightweight harness deliberately skips. The
+  test only proves the `@ConditionalOnProperty` wiring (bean present/absent), the same scope
+  `shared.events.WorkerRoleGuardTest` already established as sufficient for this class of
+  role-gate test; `shared.events.WorkerProfileSecurityBootTest`'s real full-context boot is what
+  actually proves the worker role never runs it in practice.
+- **`scripts/smoke.sh`'s `wait_for_api` call has to stay, even after the sequenced-boot workaround
+  it was paired with is gone**: reverting `boot_stack` to a single `docker compose up -d --build`
+  very nearly dropped the `wait_for_api` call along with it (both lived in the old, more complex
+  `boot_stack` function) — `docker compose up -d` returns as soon as containers start, not once
+  Tomcat is actually accepting connections, so the very first local re-run failed `check_jwks`
+  with "Empty reply from server" before catching this. `wait_for_api` is now called explicitly
+  after `boot_stack` in both phases of the script, independent of how `boot_stack` itself boots
+  the stack.
+
 ## Open decisions / blockers
-- **NEW (KH-0.3-closure, 2026-07-17): CVE-2026-22732 (spring-security-web 6.3.10, CRITICAL, CVSS
-  9.1) allowlisted but flagged, not silently deferred.** "Security policy bypass and information
-  disclosure due to unwritten HTTP headers" under Spring Security's default LAZY header-writing
-  mode — this app uses no `HeaderWriter` customization, so the vulnerable default is actually in
-  effect; reachability could NOT be ruled out the way every other KH-0.3.2 allowlist entry was.
-  Fix needs `spring-security-web` 6.5.9+ / 7.0.4+ — a targeted MINOR bump of that one artifact
-  (not the whole Boot BOM), outside this session's patch-level-only mandate. User decision
-  (2026-07-17): allowlist now with a flagged note, track as a dedicated follow-up rather than
-  bump immediately. **Next session touching `rbac.security` or doing a dependency pass should
-  either bump `spring-security-web` alone to 6.5.9+/7.0.4+ (verify no API break against this
-  codebase's two-filter-chain setup first) or re-triage if a 3.3.x/3.4.x Spring Boot line ships a
-  BOM that manages a fixed version.** See `.trivyignore` for the full CVE writeup.
-- **NEW (discovered KH-0.3-closure, 2026-07-17): `KeyBootstrap` is not role-gated — concurrent
-  `api`+`worker` first boot has a real race.** Both roles share one `khatm_keys` PKCS#12 volume and
-  both run `key.domain.KeyBootstrap` as a plain `ApplicationRunner` (no `khatm.web.enabled`/
-  `khatm.worker.enabled` guard, unlike the ADR-09-gated business beans). On a genuinely concurrent
-  `docker compose up -d` (both containers starting together), whichever process's `KeyBootstrap`
-  loses the race sees the `issuer_key` DB row already `ACTIVE` (created by the winner) and skips
-  its own bootstrap — but that process's `SoftKeyProvider` had already loaded its in-memory
-  `KeyStore` from the (still-empty, or not-yet-written) keystore file at ITS OWN startup, before the
-  winner's write was visible. Result: the loser signs/verifies against a `kid` its own JVM never
-  actually holds, and `/issue` fails with `com.nimbusds.jose.JOSEException: No such key in
-  keystore: providerRef=...` (`KH-KEY-0500`). Reproduced locally via `scripts/smoke.sh`'s first,
-  unsequenced draft (both services started by one `docker compose up -d --build`); confirmed via
-  `khatm-worker` logs showing `SoftKeyProvider: created a new empty PKCS#12 keystore` +
-  `KeyBootstrap: Bootstrapped issuer key kid=...` while `khatm-api` logged `Active issuer key
-  already present — bootstrap skipped` in the same window. **Worked around, not fixed**, at the
-  compose-sequencing level in `scripts/smoke.sh` (`boot_stack` brings `khatm-api` up alone first,
-  waits for a real JWKS key, then starts `khatm-worker`) — this is a script-only workaround,
-  legitimate because KH-0.3 was scoped to no application code. The real fix (gate `KeyBootstrap`
-  behind `khatm.web.enabled=true` the same way `CredentialController`/`JwksController` already are,
-  so only the `api` role ever bootstraps) is a one-line, low-risk application change — flagged here
-  for the next session that touches `key.domain`, not filed as its own WBS task since it's small
-  enough to fold into whatever touches that package next.
 - **`claim_code.disclosures_enc` — expiry-zeroing half CLOSED (ADR-09-worker, 2026-07-16). Only
   the on-claim half remains.** Full picture across sessions:
   - Encryption: CLOSED (KH-0.4) — `issueClaimCode` AES-256-GCM encrypts disclosures before
@@ -974,10 +1068,6 @@
     (spec §9 explicitly notes it authenticates by *possessing the claim code*, not a session or
     API key, and is not closed off by KH-0.6b's `SecurityConfig`). `decrypt()` exists on
     `ClaimsEncryptionService` (tested), ready for the claim endpoint to call.
-- **KH-0.6b's `messages_ar.properties` additions (`error.rbc.*`) have not yet had the FS-0.6a §4
-  native-speaker Arabic review gate** — same situation KH-0.6a itself was in at its own
-  session-end; the gate ran in that feature's *merge* session, not its implementation session.
-  Whoever merges/reviews the KH-0.6b PR should run the same check before or shortly after merge.
 
 ## Next up (ordered)
 1. KH-1.2.1 — claim-delivery endpoint: a wallet claims a code → `ClaimsEncryptionService.decrypt`

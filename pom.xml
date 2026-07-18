@@ -35,6 +35,17 @@
     <postgresql.version>42.7.11</postgresql.version>
     <tomcat.version>10.1.55</tomcat.version>
     <netty.version>4.1.135.Final</netty.version>
+    <!-- CVE-2026-22732 follow-up (flagged in docs/STATE.md "Open decisions / blockers" at
+         KH-0.3-closure): tried overriding spring-security-web ALONE first (dependencyManagement
+         entry, everything else left at the Boot BOM's 6.3.10) per the session brief's preferred
+         path. Confirmed broken empirically, not assumed: spring-security-web 6.5.9 references
+         org.springframework.security.core.annotation.SecurityAnnotationScanners, a class that
+         only exists in spring-security-core 6.4+ — with core still at 6.3.10, every
+         @SpringBootTest context hitting requestMappingHandlerAdapter failed with
+         NoClassDefFoundError. Falling back to the whole line, exactly as the brief's contingency
+         says: override spring-security.version itself so config/core/crypto/test/web all move to
+         the same matching 6.5.x release together. -->
+    <spring-security.version>6.5.9</spring-security.version>
   </properties>
 
   <dependencyManagement>
@@ -173,16 +184,28 @@
     </dependency>
 
     <!--
-      KH-0.4: OpenAPI annotations for the issue/verify request-response shapes (CLAUDE.md work
-      rule 1 / "Stack (frozen)"). Annotations + JSON generation (/v3/api-docs) only — the
-      "-api" artifact deliberately excludes the Swagger UI, which we don't want to expose yet
-      (no auth exists ahead of KH-0.6). Full endpoint coverage and CI-published openapi.json
-      remain KH-1.6 (spec FS-0.4 §7).
+      KH-0.4 introduced the "-api" artifact for OpenAPI annotations + JSON generation
+      (/v3/api-docs) only, deliberately excluding Swagger UI (no auth existed yet). Now that
+      KH-0.6b's auth layer is live, this session swaps to "-webmvc-ui", which pulls in
+      "-webmvc-api" transitively and adds /swagger-ui.html — one concept, one artifact, per
+      CLAUDE.md work rule 4. Swagger UI itself is exposed only when profile local/dev is active
+      (see rbac.security.SecurityConfig); the JSON contract (/v3/api-docs) is always generated,
+      unauthenticated exposure is what's gated.
+
+      Version pinned to 2.6.0, NOT 2.8.x (the previously-used "-api" version): confirmed
+      empirically, not from the compatibility table alone — 2.7.0+ eagerly references Spring
+      Framework 6.2's org.springframework.web.servlet.resource.LiteWebJarsResourceResolver from
+      its UI auto-configuration (NoClassDefFoundError at context startup), which does not exist
+      on Spring Boot 3.3.13's Framework 6.1 line (CLAUDE.md's frozen "Spring Boot 3.x", this
+      pom's actual pin). The previous "-api"-only artifact never hit this code path (it serves no
+      UI static resources), so the same latent 2.8.x/Boot-3.3.x mismatch was silently harmless
+      until this session's UI swap actually exercised it. 2.6.0 is the last springdoc-openapi
+      release still targeting Spring Boot 3.0.x-3.3.x per springdoc's own compatibility matrix.
     -->
     <dependency>
       <groupId>org.springdoc</groupId>
-      <artifactId>springdoc-openapi-starter-webmvc-api</artifactId>
-      <version>2.8.17</version>
+      <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
+      <version>2.6.0</version>
     </dependency>
 
     <!--

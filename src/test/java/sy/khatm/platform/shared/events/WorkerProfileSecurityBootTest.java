@@ -25,7 +25,9 @@ import org.testcontainers.containers.PostgreSQLContainer;
  * by {@code khatm.web.enabled}), and the role split still holds under it — both {@link
  * SecurityFilterChain} beans (the api-key / session split, spec §3) are present (Spring Security
  * itself loads in every role), but the two business REST controllers ({@code CredentialController},
- * {@code JwksController}) are absent, exactly as ADR-09 already established before this session.
+ * {@code JwksController}) are absent, exactly as ADR-09 already established before this session —
+ * and, new this session, so is {@code key.domain.KeyBootstrap} (the KH-0.3-closure race-condition
+ * flag's fix: only the {@code api} role ever bootstraps the shared PKCS#12 keystore now).
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class WorkerProfileSecurityBootTest {
@@ -74,6 +76,8 @@ class WorkerProfileSecurityBootTest {
     assertThatThrownBy(() -> context.getBean("credentialController"))
         .isInstanceOf(NoSuchBeanDefinitionException.class);
     assertThatThrownBy(() -> context.getBean("jwksController"))
+        .isInstanceOf(NoSuchBeanDefinitionException.class);
+    assertThatThrownBy(() -> context.getBean("keyBootstrap"))
         .isInstanceOf(NoSuchBeanDefinitionException.class);
   }
 }

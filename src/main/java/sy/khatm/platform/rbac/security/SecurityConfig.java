@@ -5,6 +5,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.core.env.Environment;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -68,6 +69,13 @@ import sy.khatm.platform.shared.audit.AuditService;
  * always-loaded, unused filter chains are harmless. {@code WorkerProfileSecurityBootTest} asserts
  * the worker profile still boots cleanly with Spring Security on the classpath (spec FS-0.6b DoD
  * #9).
+ *
+ * <p><b>Swagger UI (local/dev only):</b> {@code /v3/api-docs/**}, {@code /swagger-ui/**}, and
+ * {@code /swagger-ui.html} are permitted anonymously only when profile {@code local} or {@code dev}
+ * is active ({@link Environment#matchesProfiles}) — a conditional carve-out computed per chain
+ * build, not a third, permanently-public entry alongside D9's two. Outside those profiles the paths
+ * fall through to {@code anyRequest().authenticated()} like everything else, so they 401 exactly as
+ * an unauthenticated request to any other endpoint would.
  */
 @Configuration
 @EnableWebSecurity
@@ -80,6 +88,9 @@ class SecurityConfig {
   private static final String CONSUME_PATH = "/api/v1/credentials/consume";
   private static final String REVOKE_PATH = "/api/v1/credentials/*/revoke";
   private static final String ADMIN_PATH = "/api/admin/**";
+  private static final String[] SWAGGER_PATHS = {
+    "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html"
+  };
 
   @Bean
   @Order(1)
@@ -88,10 +99,12 @@ class SecurityConfig {
       ApiKeyService apiKeyService,
       AuditService audit,
       KhatmAuthenticationEntryPoint entryPoint,
-      KhatmAccessDeniedHandler accessDeniedHandler)
+      KhatmAccessDeniedHandler accessDeniedHandler,
+      Environment environment)
       throws Exception {
+    boolean swaggerEnabled = environment.matchesProfiles("local", "dev");
     http.securityMatcher(SecurityConfig::hasApiKeyHeader)
-        .authorizeHttpRequests(SecurityConfig::configureAuthorization)
+        .authorizeHttpRequests(auth -> configureAuthorization(auth, swaggerEnabled))
         .sessionManagement(
             session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
         .csrf(AbstractHttpConfigurer::disable)
@@ -107,9 +120,11 @@ class SecurityConfig {
   SecurityFilterChain sessionSecurityFilterChain(
       HttpSecurity http,
       KhatmAuthenticationEntryPoint entryPoint,
-      KhatmAccessDeniedHandler accessDeniedHandler)
+      KhatmAccessDeniedHandler accessDeniedHandler,
+      Environment environment)
       throws Exception {
-    http.authorizeHttpRequests(SecurityConfig::configureAuthorization)
+    boolean swaggerEnabled = environment.matchesProfiles("local", "dev");
+    http.authorizeHttpRequests(auth -> configureAuthorization(auth, swaggerEnabled))
         .sessionManagement(
             session -> session.sessionCreationPolicy(SessionCreationPolicy.IF_REQUIRED))
         .csrf(
@@ -127,8 +142,11 @@ class SecurityConfig {
   }
 
   private static void configureAuthorization(
-      AuthorizeHttpRequestsConfigurer<HttpSecurity>.AuthorizationManagerRequestMatcherRegistry
-          auth) {
+      AuthorizeHttpRequestsConfigurer<HttpSecurity>.AuthorizationManagerRequestMatcherRegistry auth,
+      boolean swaggerEnabled) {
+    if (swaggerEnabled) {
+      auth.requestMatchers(SWAGGER_PATHS).permitAll();
+    }
     auth.requestMatchers(HttpMethod.POST, VERIFY_PATH)
         .permitAll()
         .requestMatchers(HttpMethod.GET, JWKS_PATH)
