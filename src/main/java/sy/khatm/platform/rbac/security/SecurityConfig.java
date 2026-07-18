@@ -43,6 +43,13 @@ import sy.khatm.platform.shared.audit.AuditService;
  * {@link ScopeGuard}'s per-route rules layer the specific scope/actor-kind requirement spec §3
  * names explicitly on top.
  *
+ * <p><b>API versioning (KH-1.6-early):</b> every business and auth endpoint lives under {@code
+ * /api/v1/**} — the one breaking path change this platform ever makes with a straight face, done
+ * now while there are zero external clients. {@code /.well-known/jwks.json} and the springdoc paths
+ * stay unversioned by convention (well-known URIs and build tooling, not business resources). From
+ * here, the published contract ({@code docs/api/openapi.json}) only grows additively; a future
+ * rename needs its own ADR.
+ *
  * <p><b>CSRF:</b> only {@link #sessionSecurityFilterChain} has it — {@link
  * #apiKeySecurityFilterChain} is stateless, and a bearer token is immune to CSRF by construction (a
  * browser never attaches an {@code Authorization} header to a cross-site request on its own), so
@@ -51,8 +58,8 @@ import sy.khatm.platform.shared.audit.AuditService;
  * (spec §3); the plain {@link CsrfTokenRequestAttributeHandler} (not Spring Security's default
  * Xor/BREACH-protected one) is used so that read-cookie/send-header pattern needs no extra
  * encode/decode step. Exempted: {@code /verify} (genuinely public, no session ever involved) and
- * {@code /api/auth/login} (there is no session yet to protect, and a first-time caller has no token
- * to send), and — critically — any request carrying <em>no {@code KHATM_SESSION} cookie at
+ * {@code /api/v1/auth/login} (there is no session yet to protect, and a first-time caller has no
+ * token to send), and — critically — any request carrying <em>no {@code KHATM_SESSION} cookie at
  * all</em>. CSRF exists to stop a forged cross-site request from riding on an ambient cookie a
  * browser attaches automatically; a request with no session cookie has no ambient credential to
  * protect, so enforcing CSRF on it only gets in the way of the real answer. Without this, {@code
@@ -63,6 +70,13 @@ import sy.khatm.platform.shared.audit.AuditService;
  * written on every response — see its Javadoc for why that is not automatic for a pure JSON API in
  * Spring Security 6.
  *
+ * <p><b>Schema read endpoints (KH-1.6-early):</b> {@code GET /api/v1/schemas} and {@code GET
+ * /api/v1/schemas/{id}} require only {@code anyRequest().authenticated()} — any valid session or
+ * API key, no specific scope. This is a deliberate, explicit decision (not the silent default):
+ * they expose read-only tenant metadata (schema display names/versions/status, and the claims
+ * definition needed to render an issue form) that every authenticated actor kind is entitled to
+ * see, so layering a scope requirement on top would add friction with no security benefit.
+ *
  * <p><b>Worker role:</b> this configuration class loads in every profile (nothing here is
  * conditional on {@code khatm.web.enabled}) — the worker image runs no business REST endpoints
  * regardless (ADR-09's {@code @ConditionalOnProperty} on the controllers themselves), so
@@ -70,9 +84,9 @@ import sy.khatm.platform.shared.audit.AuditService;
  * the worker profile still boots cleanly with Spring Security on the classpath (spec FS-0.6b DoD
  * #9).
  *
- * <p><b>Swagger UI (local/dev only):</b> {@code /v3/api-docs/**}, {@code /swagger-ui/**}, and
- * {@code /swagger-ui.html} are permitted anonymously only when profile {@code local} or {@code dev}
- * is active ({@link Environment#matchesProfiles}) — a conditional carve-out computed per chain
+ * <p><b>Swagger UI/api-docs (local/dev only):</b> {@code /v3/api-docs/**}, {@code /swagger-ui/**},
+ * and {@code /swagger-ui.html} are permitted anonymously only when profile {@code local} or {@code
+ * dev} is active ({@link Environment#matchesProfiles}) — a conditional carve-out computed per chain
  * build, not a third, permanently-public entry alongside D9's two. Outside those profiles the paths
  * fall through to {@code anyRequest().authenticated()} like everything else, so they 401 exactly as
  * an unauthenticated request to any other endpoint would.
@@ -83,11 +97,12 @@ class SecurityConfig {
 
   private static final String VERIFY_PATH = "/api/v1/credentials/verify";
   private static final String JWKS_PATH = "/.well-known/jwks.json";
-  private static final String LOGIN_PATH = "/api/auth/login";
+  private static final String LOGIN_PATH = "/api/v1/auth/login";
   private static final String ISSUE_PATH = "/api/v1/credentials/issue";
   private static final String CONSUME_PATH = "/api/v1/credentials/consume";
   private static final String REVOKE_PATH = "/api/v1/credentials/*/revoke";
-  private static final String ADMIN_PATH = "/api/admin/**";
+  private static final String ADMIN_PATH = "/api/v1/admin/**";
+  private static final String SCHEMAS_PATH = "/api/v1/schemas/**";
   private static final String[] SWAGGER_PATHS = {
     "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html"
   };
@@ -161,6 +176,8 @@ class SecurityConfig {
         .access(ScopeGuard.requireScopeAndUserSession("revoke"))
         .requestMatchers(ADMIN_PATH)
         .access(ScopeGuard.requireScope("admin"))
+        .requestMatchers(HttpMethod.GET, SCHEMAS_PATH)
+        .authenticated()
         .anyRequest()
         .authenticated();
   }

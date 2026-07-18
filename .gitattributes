@@ -19,3 +19,4 @@
 # Windows CRLF checkout — pin it the same way the SQL/checksum/shell files are pinned.
 .trivyignore text eol=lf
 docs/error-codes.md text eol=lf
+docs/api/openapi.json text eol=lf

@@ -3,7 +3,7 @@ package sy.khatm.platform.rbac.domain;
 import sy.khatm.platform.shared.LocalizedText;
 
 /**
- * A user's display details for {@code GET /api/auth/me} (spec FS-0.6b DoD #1).
+ * A user's display details for {@code GET /api/v1/auth/me} (spec FS-0.6b DoD #1).
  *
  * <p>Public — see {@link LoginResult}'s Javadoc for why (same {@code domain} → {@code web}
  * cross-package visibility need within the module-private {@code rbac} module).

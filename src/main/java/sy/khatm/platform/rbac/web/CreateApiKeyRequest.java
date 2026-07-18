@@ -7,7 +7,7 @@ import java.util.UUID;
 import sy.khatm.platform.rbac.domain.ApiKeyOwnerType;
 
 /**
- * {@code POST /api/admin/api-keys} request body (spec FS-0.6b DoD #5).
+ * {@code POST /api/v1/admin/api-keys} request body (spec FS-0.6b DoD #5).
  *
  * @param ownerType who this key acts on behalf of
  * @param ownerId the owning consuming party's id ({@code CONSUMING_PARTY} only); must be {@code

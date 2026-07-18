@@ -70,7 +70,7 @@ json_value() {
 }
 
 check_e2e() {
-  bold "Check 2: login -> /api/auth/me -> issue -> verify (authenticated end-to-end)"
+  bold "Check 2: login -> /api/v1/auth/me -> issue -> verify (authenticated end-to-end)"
 
   # 2a. Login is CSRF-exempt + permitAll; the response sets the KHATM_SESSION cookie.
   local code
@@ -78,20 +78,20 @@ check_e2e() {
     -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
     -H 'Content-Type: application/json' \
     -d "{\"username\":\"$ADMIN_USER\",\"password\":\"$ADMIN_PASS\"}" \
-    "$BASE_URL/api/auth/login")"
+    "$BASE_URL/api/v1/auth/login")"
   [ "$code" = "200" ] || fail "login returned HTTP $code (expected 200)"
 
-  # 2b. GET /api/auth/me: proves the session, AND forces the XSRF-TOKEN cookie to be written
+  # 2b. GET /api/v1/auth/me: proves the session, AND forces the XSRF-TOKEN cookie to be written
   #     (Spring Security 6 resolves the CSRF token lazily; a pure JSON API never triggers it,
   #     so the KH-0.6b console pattern of read-cookie/send-header needs this nudge).
   code="$(curl -s -o /dev/null -w '%{http_code}' \
     -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
-    "$BASE_URL/api/auth/me")"
-  [ "$code" = "200" ] || fail "/api/auth/me returned HTTP $code (session not established)"
+    "$BASE_URL/api/v1/auth/me")"
+  [ "$code" = "200" ] || fail "/api/v1/auth/me returned HTTP $code (session not established)"
 
   local xsrf
   xsrf="$(awk '$6 == "XSRF-TOKEN" { print $7 }' "$COOKIE_JAR")"
-  [ -n "$xsrf" ] || fail "no XSRF-TOKEN cookie after /api/auth/me — CSRF cookie was not written"
+  [ -n "$xsrf" ] || fail "no XSRF-TOKEN cookie after /api/v1/auth/me — CSRF cookie was not written"
 
   # 2c. Issue a credential (session auth + `issue` scope; admin holds it). Echo the CSRF token.
   local issue_body

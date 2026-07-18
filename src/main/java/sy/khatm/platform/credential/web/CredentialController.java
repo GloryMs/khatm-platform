@@ -115,11 +115,60 @@ class CredentialController {
         result.revoked());
   }
 
+  @Operation(
+      summary = "Consume one use of a credential",
+      description =
+          "The atomic double-spend guard: a single-transaction conditional UPDATE decrements the"
+              + " remaining uses only if the credential is still ACTIVE and unexpired, so exactly"
+              + " one caller wins under concurrency. Requires the consume scope and a"
+              + " CONSUMING_PARTY API key (a console session is always 403 here). An optional"
+              + " idempotencyKey makes repeated calls with the same key return the first outcome"
+              + " without re-running the UPDATE.",
+      responses = {
+        @ApiResponse(
+            responseCode = "200",
+            description =
+                "Consumption outcome (accepted, already-exhausted, expired, or revoked"
+                    + " — always a domain result, never an error envelope for a normal denial)"),
+        @ApiResponse(
+            responseCode = "401",
+            description = "No valid session or API key",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "403",
+            description =
+                "Missing the consume scope, or called with a console session instead of"
+                    + " a CONSUMING_PARTY API key",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
+      })
   @PostMapping("/consume")
   ConsumeResponse consume(@RequestBody ConsumeRequest req) {
     return service.consume(req);
   }
 
+  @Operation(
+      summary = "Revoke a credential",
+      description =
+          "Immediately and permanently invalidates the credential — a subsequent /verify or"
+              + " /consume call reports it revoked. Requires the revoke scope and a console"
+              + " session (an API key is always 403 here). Irreversible.",
+      responses = {
+        @ApiResponse(responseCode = "200", description = "Revoked"),
+        @ApiResponse(
+            responseCode = "401",
+            description = "No valid session or API key",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "403",
+            description =
+                "Missing the revoke scope, or called with an API key instead of a"
+                    + " console session",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "404",
+            description = "No credential with this id (KH-CRD-0404)",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
+      })
   @PostMapping("/{id}/revoke")
   ResponseEntity<Void> revoke(@PathVariable String id) {
     boolean ok = service.revoke(UUID.fromString(id));
@@ -129,6 +178,23 @@ class CredentialController {
     return ResponseEntity.ok().build();
   }
 
+  @Operation(
+      summary = "Fetch a credential's current status",
+      description =
+          "Proof/status metadata only (ref, schema, status, uses remaining, timestamps) — never the"
+              + " claim values themselves, which only ever leave the platform inside a one-time"
+              + " sdJwt presentation (P1 rule). Requires any valid session or API key.",
+      responses = {
+        @ApiResponse(responseCode = "200", description = "Credential status"),
+        @ApiResponse(
+            responseCode = "401",
+            description = "No valid session or API key",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "404",
+            description = "No credential with this id (KH-CRD-0404)",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
+      })
   @GetMapping("/{id}")
   ResponseEntity<CredentialView> get(@PathVariable String id) {
     CredentialView view =

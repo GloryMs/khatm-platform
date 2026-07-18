@@ -96,7 +96,7 @@ class AuthLockoutTest extends RbacHttpTestSupport {
     Thread.sleep(2500);
     ResponseEntity<Void> recovered =
         rest.postForEntity(
-            "/api/auth/login",
+            "/api/v1/auth/login",
             Map.of("username", username, "password", CORRECT_PASSWORD),
             Void.class);
     assertThat(recovered.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -104,6 +104,6 @@ class AuthLockoutTest extends RbacHttpTestSupport {
 
   private ResponseEntity<String> login(String user, String password) {
     return rest.postForEntity(
-        "/api/auth/login", Map.of("username", user, "password", password), String.class);
+        "/api/v1/auth/login", Map.of("username", user, "password", password), String.class);
   }
 }

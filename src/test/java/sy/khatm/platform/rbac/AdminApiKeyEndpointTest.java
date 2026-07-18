@@ -16,9 +16,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import sy.khatm.platform.rbac.SessionTestSupport.AuthenticatedSession;
 
 /**
- * Spec FS-0.6b DoD #5 — {@code POST /api/admin/api-keys} (scope {@code admin}) shows the raw secret
- * exactly once and persists only the hash + prefix; revocation cuts the key off immediately on its
- * very next request.
+ * Spec FS-0.6b DoD #5 — {@code POST /api/v1/admin/api-keys} (scope {@code admin}) shows the raw
+ * secret exactly once and persists only the hash + prefix; revocation cuts the key off immediately
+ * on its very next request.
  */
 class AdminApiKeyEndpointTest extends RbacHttpTestSupport {
 
@@ -35,7 +35,7 @@ class AdminApiKeyEndpointTest extends RbacHttpTestSupport {
     ResponseEntity<String> createResponse =
         SessionTestSupport.post(
             rest,
-            "/api/admin/api-keys",
+            "/api/v1/admin/api-keys",
             session,
             Map.of("ownerType", "TENANT", "scopes", java.util.List.of("issue")));
     assertThat(createResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
@@ -61,7 +61,7 @@ class AdminApiKeyEndpointTest extends RbacHttpTestSupport {
     assertThat(beforeRevoke.getStatusCode()).isEqualTo(HttpStatus.OK);
 
     ResponseEntity<String> revokeResponse =
-        SessionTestSupport.post(rest, "/api/admin/api-keys/" + id + "/revoke", session, null);
+        SessionTestSupport.post(rest, "/api/v1/admin/api-keys/" + id + "/revoke", session, null);
     assertThat(revokeResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
 
     // The very next request with the same key is rejected.
@@ -75,7 +75,7 @@ class AdminApiKeyEndpointTest extends RbacHttpTestSupport {
     ResponseEntity<String> bootstrapCreate =
         SessionTestSupport.post(
             rest,
-            "/api/admin/api-keys",
+            "/api/v1/admin/api-keys",
             SessionTestSupport.login(rest, BOOTSTRAP_ADMIN_USERNAME, BOOTSTRAP_ADMIN_PASSWORD),
             Map.of("ownerType", "TENANT", "scopes", java.util.List.of("issue")));
     String limitedKey = JSON.readTree(bootstrapCreate.getBody()).get("rawKey").asText();
@@ -84,7 +84,7 @@ class AdminApiKeyEndpointTest extends RbacHttpTestSupport {
     headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + limitedKey);
     ResponseEntity<String> response =
         rest.exchange(
-            "/api/admin/api-keys",
+            "/api/v1/admin/api-keys",
             HttpMethod.POST,
             new HttpEntity<>(
                 Map.of("ownerType", "TENANT", "scopes", java.util.List.of("issue")), headers),

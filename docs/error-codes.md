@@ -13,3 +13,4 @@
 | `KH-RBC-0401` | 401 | `error.rbc.unauthenticated` |
 | `KH-RBC-1401` | 401 | `error.rbc.api_key_invalid` |
 | `KH-RBC-0403` | 403 | `error.rbc.forbidden` |
+| `KH-SCH-0404` | 404 | `schema.not-found` |

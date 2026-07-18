@@ -3,7 +3,7 @@ package sy.khatm.platform.rbac.web;
 import java.util.UUID;
 
 /**
- * {@code POST /api/admin/api-keys} response body (spec FS-0.6b §4, DoD #5).
+ * {@code POST /api/v1/admin/api-keys} response body (spec FS-0.6b §4, DoD #5).
  *
  * @param id the created key's id (needed to revoke it later)
  * @param keyPrefix the key's lookup prefix — safe to store/display going forward
