@@ -28,6 +28,11 @@ import org.testcontainers.containers.PostgreSQLContainer;
  * {@code JwksController}) are absent, exactly as ADR-09 already established before this session —
  * and, new this session, so is {@code key.domain.KeyBootstrap} (the KH-0.3-closure race-condition
  * flag's fix: only the {@code api} role ever bootstraps the shared PKCS#12 keystore now).
+ *
+ * <p><b>KH-1.6-early:</b> {@code rbac.domain.AdminBootstrap} joined the absence list too — it had
+ * the identical unguarded-race shape {@code KeyBootstrap} was fixed for above, just not caught in
+ * the same session; a `compose-smoke` CI failure (both roles racing to insert the same bootstrap
+ * admin row) surfaced it for real.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class WorkerProfileSecurityBootTest {
@@ -78,6 +83,8 @@ class WorkerProfileSecurityBootTest {
     assertThatThrownBy(() -> context.getBean("jwksController"))
         .isInstanceOf(NoSuchBeanDefinitionException.class);
     assertThatThrownBy(() -> context.getBean("keyBootstrap"))
+        .isInstanceOf(NoSuchBeanDefinitionException.class);
+    assertThatThrownBy(() -> context.getBean("adminBootstrap"))
         .isInstanceOf(NoSuchBeanDefinitionException.class);
   }
 }

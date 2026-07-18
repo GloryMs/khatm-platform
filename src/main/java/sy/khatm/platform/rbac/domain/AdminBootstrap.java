@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -35,8 +36,21 @@ import sy.khatm.platform.shared.audit.AuditService;
  * startup fails rather than silently skipping bootstrap or creating a guessable account (mirrors
  * {@code SoftKeyProvider}'s passphrase check and {@code ClaimsEncryptionService}'s key check, spec
  * FS-0.5 §3).
+ *
+ * <p><b>{@code khatm.web.enabled} gate (discovered KH-1.6-early, fixed here):</b> this class had no
+ * role gate — the exact race {@code key.domain.KeyBootstrap}'s own Javadoc documents and was fixed
+ * for at KH-0.3-closure, just not caught here at the same time. With {@code api} and {@code worker}
+ * booting concurrently (ADR-09's unsequenced `docker compose up -d`), both roles ran this {@code
+ * ApplicationRunner} against the same fresh database: both saw {@code
+ * users.existsByTenantId(tenantId)} as {@code false} and both attempted the insert, and the loser's
+ * unhandled {@code DataIntegrityViolationException} against the {@code
+ * app_user_tenant_id_username_key} unique constraint crashed that container's startup entirely —
+ * confirmed empirically via a `compose-smoke` CI failure (not merely theorized). Gated the same way
+ * {@code CredentialController}/{@code JwksController}/{@code KeyBootstrap} already are so only the
+ * {@code api} role ever runs it, making it a single writer again.
  */
 @Component
+@ConditionalOnProperty(name = "khatm.web.enabled", havingValue = "true", matchIfMissing = true)
 class AdminBootstrap implements ApplicationRunner {
 
   private static final Logger log = LoggerFactory.getLogger(AdminBootstrap.class);

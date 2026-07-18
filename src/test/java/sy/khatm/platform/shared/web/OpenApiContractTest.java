@@ -2,6 +2,8 @@ package sy.khatm.platform.shared.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.fasterxml.jackson.core.util.DefaultIndenter;
+import com.fasterxml.jackson.core.util.DefaultPrettyPrinter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -65,6 +67,16 @@ class OpenApiContractTest extends ErrorEnvelopeTestSupport {
       Pattern.compile("@(Get|Post|Put|Delete|Patch)Mapping\\b");
   private static final Set<String> HTTP_METHOD_KEYS =
       Set.of("get", "post", "put", "delete", "patch", "head", "options", "trace");
+  // Jackson's default pretty printer inserts System.lineSeparator() between object fields, which
+  // is \r\n on Windows — that made a locally regenerated file byte-diff from the git-normalized
+  // (eol=lf, see .gitattributes) committed one on every Windows run, independent of any real
+  // content drift (confirmed empirically). Forcing \n here makes the comparison
+  // platform-independent. Only the object indenter is overridden — the array indenter is left at
+  // DefaultPrettyPrinter's own default (FixedSpaceIndenter, keeps short arrays inline like
+  // ["TENANT", "CONSUMING_PARTY"]); overriding it too would reformat every array onto its own
+  // lines, a cosmetic change unrelated to the line-ending fix.
+  private static final DefaultPrettyPrinter LF_PRETTY_PRINTER =
+      new DefaultPrettyPrinter().withObjectIndenter(new DefaultIndenter("  ", "\n"));
 
   @Autowired private TestRestTemplate rest;
   @Autowired private ApiKeyService apiKeyService;
@@ -173,7 +185,7 @@ class OpenApiContractTest extends ErrorEnvelopeTestSupport {
   }
 
   private static String canonicalPrettyJson(JsonNode node) throws IOException {
-    return JSON.writerWithDefaultPrettyPrinter().writeValueAsString(canonicalize(node)) + "\n";
+    return JSON.writer(LF_PRETTY_PRINTER).writeValueAsString(canonicalize(node)) + "\n";
   }
 
   private static JsonNode canonicalize(JsonNode node) {
