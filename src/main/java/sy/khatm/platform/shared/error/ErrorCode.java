@@ -27,6 +27,18 @@ import org.springframework.http.HttpStatus;
  * different situation worth its own code and message — spec FS-0.6b §5), and a valid session/key
  * missing the required scope.
  *
+ * <p><b>{@code CLM} batch</b> (spec FS-1.2.1 D5/D6): a new module tag, deliberately distinct from
+ * {@code CRD} even though {@code claim_code} is owned by the same {@code credential} Java module
+ * (no new Modulith module — the task's hard constraint) — claim-delivery is a conceptually separate
+ * bounded concern (wallet-facing, authenticates by code possession, its own generic-failure and
+ * rate-limit vocabulary) from credential issuance/verification/consumption, and the spec names
+ * these exact codes explicitly. {@link #KH_CLM_0404} is deliberately generic (D5): unknown,
+ * expired, already-claimed, and expiry-zeroed all collapse to the same code and message — an
+ * anti-probing measure (distinguishing them would leak information to an external scanner); the
+ * real reason lives only in {@code audit_log} for the throttle case ({@link #KH_CLM_0429}), never
+ * for a plain not-found (D7 — logging every failed guess individually would turn an external
+ * scanner into a write amplifier against the audit table).
+ *
  * <p>{@code docs/error-codes.md} is generated from this enum by a test ({@code
  * ErrorCodesDocGenerationTest}) — never hand-edited (CLAUDE.md work rule 1).
  */
@@ -66,7 +78,20 @@ public enum ErrorCode {
   KH_RBC_0403(HttpStatus.FORBIDDEN, "error.rbc.forbidden"),
 
   /** A requested credential schema does not exist. */
-  KH_SCH_0404(HttpStatus.NOT_FOUND, "schema.not-found");
+  KH_SCH_0404(HttpStatus.NOT_FOUND, "schema.not-found"),
+
+  /**
+   * A claim code is unknown, malformed, expired, already claimed, or expiry-zeroed — one generic
+   * outcome for every flavor (spec FS-1.2.1 D5), so an external caller cannot distinguish "never
+   * existed" from "someone already claimed it."
+   */
+  KH_CLM_0404(HttpStatus.NOT_FOUND, "error.clm.invalid_or_expired"),
+
+  /**
+   * The per-IP claim-redeem throttle tripped (spec FS-1.2.1 D6) — too many {@code POST
+   * /api/v1/claims/redeem} attempts from the same address within the fixed window.
+   */
+  KH_CLM_0429(HttpStatus.TOO_MANY_REQUESTS, "error.clm.throttled");
 
   private final HttpStatus httpStatus;
   private final String messageKey;

@@ -34,6 +34,7 @@ import sy.khatm.platform.support.IntegrationTestSupport;
 class NoDisclosureContentInLogsTest extends IntegrationTestSupport {
 
   @Autowired private CredentialService credentialService;
+  @Autowired private ClaimRedemptionService redemptionService;
   @Autowired private ClaimCodeRepository claimCodes;
   @Autowired private JdbcTemplate jdbc;
   @Autowired private EntityManager entityManager;
@@ -118,6 +119,43 @@ class NoDisclosureContentInLogsTest extends IntegrationTestSupport {
     List<String> messages =
         appender.list.stream().map(ILoggingEvent::getFormattedMessage).collect(Collectors.toList());
     assertThat(messages).noneMatch(m -> m.contains("TOP-SECRET-SWEEP-999"));
+    for (String salt : saltsUsed) {
+      assertThat(messages).noneMatch(m -> m.contains(salt));
+    }
+  }
+
+  /**
+   * Spec FS-1.2.1 DoD #6 — extends the no-disclosure guarantee to the claim-redeem path: an issue →
+   * claim-code → redeem cycle's log output must never contain a plaintext claim value, a disclosure
+   * salt, or the raw claim code itself (SEC §9.7 — the code is a one-time secret, access logs
+   * capture paths and headers, never bodies, but this asserts the application's own log lines carry
+   * none of it either).
+   */
+  @Test
+  void redeemCycle_neverLogsDisclosureValuesSaltsOrTheClaimCodeItself() {
+    Map<String, Object> claims = Map.of("secretValue", "TOP-SECRET-REDEEM-VALUE-321");
+
+    IssueResponse issued =
+        credentialService.issue(
+            new IssueRequest(
+                "RedeemLogProbe/v1", "holder-redeem-log-probe", 1, 60, claims, List.of()));
+    ClaimCodeIssued claimCode =
+        credentialService.issueClaimCode(
+            UUID.fromString(issued.id()), issued.sdJwt(), Duration.ofMinutes(5));
+
+    List<String> saltsUsed =
+        SDJWT.parse(issued.sdJwt()).getDisclosures().stream()
+            .map(d -> d.getSalt())
+            .collect(Collectors.toList());
+    assertThat(saltsUsed).isNotEmpty();
+
+    ClaimRedeemResult result = redemptionService.redeem(claimCode.code());
+    assertThat(result.disclosures()).isNotEmpty();
+
+    List<String> messages =
+        appender.list.stream().map(ILoggingEvent::getFormattedMessage).collect(Collectors.toList());
+    assertThat(messages).noneMatch(m -> m.contains("TOP-SECRET-REDEEM-VALUE-321"));
+    assertThat(messages).noneMatch(m -> m.contains(claimCode.code()));
     for (String salt : saltsUsed) {
       assertThat(messages).noneMatch(m -> m.contains(salt));
     }

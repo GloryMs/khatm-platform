@@ -62,6 +62,12 @@ khatm:
     # base64-encoded. Same no-silent-default pattern as khatm.keys.soft.passphrase above —
     # ClaimsEncryptionService fails startup if this is blank outside the 'local' profile.
     enc-key: ${KHATM_CLAIMS_ENC_KEY:}
+    redeem:
+      # KH-1.2.1 (spec FS-1.2.1 D6): per-IP fixed-window throttle on POST /api/v1/claims/redeem —
+      # the platform's only genuinely public write endpoint besides /verify.
+      throttle:
+        max-attempts: 10
+        window: 1m
   # KH-0.6b (spec FS-0.6b §7): console auth, API keys, RBAC.
   auth:
     session:

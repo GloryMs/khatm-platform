@@ -4,12 +4,15 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Set;
 import java.util.function.Supplier;
 import org.junit.jupiter.api.BeforeEach;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.web.client.RestTemplateBuilder;
+import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.test.context.ActiveProfiles;
@@ -80,6 +83,8 @@ public abstract class RbacHttpTestSupport {
    */
   protected TestRestTemplate rest;
 
+  @Autowired private StringRedisTemplate redis;
+
   @BeforeEach
   void initJdkHttpClientRestTemplate() {
     Supplier<ClientHttpRequestFactory> requestFactorySupplier = JdkClientHttpRequestFactory::new;
@@ -88,6 +93,24 @@ public abstract class RbacHttpTestSupport {
             new RestTemplateBuilder()
                 .requestFactory(requestFactorySupplier)
                 .rootUri("http://localhost:" + port));
+  }
+
+  /**
+   * Every subclass here shares one cached Spring context and one {@link TestRestTemplate}, so every
+   * subclass's HTTP calls originate from the same loopback address — unlike {@code
+   * khatm:auth:fail:*} (scoped per-username, already isolated by each login test's own randomized
+   * username), the claim-redeem throttle counter (spec FS-1.2.1 D6) is scoped per-<em>IP</em> with
+   * no such natural per-test axis. Clearing it before every test method keeps one class's redeem
+   * calls (e.g. {@code PublicEndpointsNoCredentialsTest}) from silently eating into another's
+   * throttle budget (e.g. {@code ClaimRedeemThrottleHttpTest}) regardless of JUnit's test-class
+   * execution order.
+   */
+  @BeforeEach
+  void resetClaimRedeemThrottleCounter() {
+    Set<String> keys = redis.keys("khatm:claims:redeem:throttle:*");
+    if (keys != null && !keys.isEmpty()) {
+      redis.delete(keys);
+    }
   }
 
   @DynamicPropertySource
@@ -106,5 +129,10 @@ public abstract class RbacHttpTestSupport {
     // exercise in a test without an artificial sleep longer than a few seconds.
     registry.add("khatm.auth.lockout.max-attempts", () -> "5");
     registry.add("khatm.auth.lockout.window", () -> "2s");
+    // Same rationale, for KH-1.2.1's claim-redeem throttle (spec FS-1.2.1 D6) — small numbers so
+    // DoD #5's "Nth attempt trips it, after the window it recovers" is practical without a
+    // minute-long sleep.
+    registry.add("khatm.claims.redeem.throttle.max-attempts", () -> "5");
+    registry.add("khatm.claims.redeem.throttle.window", () -> "2s");
   }
 }

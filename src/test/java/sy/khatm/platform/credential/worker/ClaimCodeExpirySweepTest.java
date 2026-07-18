@@ -89,6 +89,12 @@ class ClaimCodeExpirySweepTest extends IntegrationTestSupport {
             Instant.now().minus(1, ChronoUnit.HOURS),
             Instant.now().minus(30, ChronoUnit.MINUTES));
 
+    // audit_log is append-only (CLAUDE.md), so this shared-context suite's other, genuinely
+    // non-transactional tests (e.g. KH-1.2.1's redeem-vs-sweep concurrency race, which commits for
+    // real since it needs cross-connection visibility) can leave real CLAIM_CODES_EXPIRED rows
+    // behind that no @Transactional rollback ever removes — a before/after delta is the only
+    // count assertion that's robust to that, an absolute count is not.
+    Integer auditCountBefore = countClaimCodesExpiredAuditRows();
     int zeroed = worker.sweep();
 
     assertThat(zeroed).isEqualTo(1);
@@ -98,11 +104,9 @@ class ClaimCodeExpirySweepTest extends IntegrationTestSupport {
     assertThat(disclosuresEncOf(unexpired)).as("unexpired code must be untouched").isNotNull();
     assertThat(disclosuresEncOf(claimed)).as("already-claimed code must be untouched").isNotNull();
 
-    // A CLAIM_CODES_EXPIRED audit row carrying the count.
-    Integer auditCount =
-        jdbc.queryForObject(
-            "SELECT COUNT(*) FROM audit_log WHERE action = 'CLAIM_CODES_EXPIRED'", Integer.class);
-    assertThat(auditCount).isEqualTo(1);
+    // Exactly one new CLAIM_CODES_EXPIRED audit row carrying the count.
+    Integer auditCountAfter = countClaimCodesExpiredAuditRows();
+    assertThat(auditCountAfter - auditCountBefore).isEqualTo(1);
     String detailCount =
         jdbc.queryForObject(
             "SELECT detail->>'count' FROM audit_log WHERE action = 'CLAIM_CODES_EXPIRED' "
@@ -133,13 +137,20 @@ class ClaimCodeExpirySweepTest extends IntegrationTestSupport {
         Instant.now().plus(1, ChronoUnit.HOURS),
         null);
 
+    // See the sibling test's comment on why this must be a delta, not an absolute count.
+    Integer auditCountBefore = countClaimCodesExpiredAuditRows();
     int zeroed = worker.sweep();
 
     assertThat(zeroed).isZero();
-    Integer auditCount =
-        jdbc.queryForObject(
-            "SELECT COUNT(*) FROM audit_log WHERE action = 'CLAIM_CODES_EXPIRED'", Integer.class);
-    assertThat(auditCount).as("no audit row when nothing was zeroed").isZero();
+    Integer auditCountAfter = countClaimCodesExpiredAuditRows();
+    assertThat(auditCountAfter - auditCountBefore)
+        .as("no audit row when nothing was zeroed")
+        .isZero();
+  }
+
+  private Integer countClaimCodesExpiredAuditRows() {
+    return jdbc.queryForObject(
+        "SELECT COUNT(*) FROM audit_log WHERE action = 'CLAIM_CODES_EXPIRED'", Integer.class);
   }
 
   private UUID insertClaimCode(

@@ -1,9 +1,23 @@
 # credential
 
 Core lifecycle of verifiable credentials: issue, verify, consume (atomic single-use
-decrement), revoke. Stores only cryptographic proofs and status metadata — never document
-content or PII (P1 rule) — as of KH-0.4, that rule is enforced by the token's own structure
-(SD-JWT), not just storage policy.
+decrement), revoke, and redeem a one-time wallet claim code. Stores only cryptographic proofs
+and status metadata — never document content or PII (P1 rule) — as of KH-0.4, that rule is
+enforced by the token's own structure (SD-JWT), not just storage policy.
+
+**Claim delivery (KH-1.2.1, spec FS-1.2.1) — closes the `disclosures_enc` blocker for good.**
+`POST /api/v1/claims/redeem` is the wallet-facing exchange: lock the code row (`SELECT ... FOR
+UPDATE`), validate (not claimed, not expired, still has encrypted disclosures), decrypt,
+deliver, set `claimed_at`, zero `disclosures_enc` — all one transaction, no grace window. It
+authenticates by possessing the code alone (spec §9) — `rbac.security.SecurityConfig`'s third
+public endpoint (alongside `/verify` and JWKS) — guarded instead by
+`ClaimRedeemThrottleService`'s per-IP fixed-window counter (D6). Every failure flavor (unknown,
+malformed, expired, already claimed, expiry-zeroed) collapses to the identical `404
+KH-CLM-0404` (D5, anti-probing); the throttle is the one outcome audited individually
+(`CLAIM_REDEEM_THROTTLED`, IP + count). The `SELECT ... FOR UPDATE` lock is what makes a redeem
+race-safe against `ClaimCodeExpiryWorker`'s concurrent sweep touching the same row — together
+the two paths guarantee `disclosures_enc` always ends up `NULL` exactly once, either on claim
+or on expiry, never both, never neither.
 
 **Events in:** none yet. **Events out:** `CredentialIssued`, `CredentialConsumed`,
 `CredentialRevoked` (future — KH-1.3).

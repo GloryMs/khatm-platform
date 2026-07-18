@@ -22,7 +22,10 @@ src/main/resources/
 - Entities: singular noun (`Credential`). Tables: snake_case singular (`credential`).
 - DTO records: suffix by direction — `IssueRequest`, `CredentialResponse`.
 - Services: `<Concept>Service`; mappers: `<Concept>Mapper`; events: past tense (`CredentialIssued`).
-- Error codes: `KH-<MOD>-<NNNN>`; module tags: TEN, KEY, SCH, CRD, STS, LDG, HLD, CNS, RBC, CON, SYS.
+- Error codes: `KH-<MOD>-<NNNN>`; module tags: TEN, KEY, SCH, CRD, STS, LDG, HLD, CNS, RBC, CON, SYS,
+  CLM. `CLM` (KH-1.2.1) is the one tag that names a bounded concern rather than its owning Java
+  module 1:1 — claim-delivery lives inside the `credential` module (no new module for one endpoint)
+  but is a conceptually separate, wallet-facing failure vocabulary from `CRD`'s.
 - REST: `/api/v1/<plural-resource>`; path params are opaque refs, never DB ids.
 - Checkstyle exceptions (documented here, not just in `checkstyle.xml`): the `ConstantName`
   rule permits `log`/`logger` in addition to `UPPER_SNAKE_CASE` (logger fields are mutable

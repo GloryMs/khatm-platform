@@ -1,9 +1,13 @@
 package sy.khatm.platform.credential.persistence;
 
+import jakarta.persistence.LockModeType;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import sy.khatm.platform.credential.domain.ClaimCode;
 
 /**
@@ -40,4 +44,18 @@ public interface ClaimCodeRepository extends JpaRepository<ClaimCode, UUID> {
           + "AND c.disclosuresEnc IS NOT NULL "
           + "AND c.claimedAt IS NULL")
   int zeroExpiredUnclaimed();
+
+  /**
+   * Locate a claim code by its {@code code_hash}, taking a {@code SELECT ... FOR UPDATE} row lock
+   * (spec FS-1.2.1 D2/§3) — the sole mechanism that resolves a race between a redeem and a
+   * concurrent {@code ClaimCodeExpiryWorker} sweep touching the same row: whichever transaction's
+   * statement reaches the row first (this lock, or the sweep's bulk {@code UPDATE}) makes the other
+   * wait until it commits, so neither can observe or act on a half-updated row.
+   *
+   * @param codeHash SHA-256 of the caller-supplied raw claim code
+   * @return the locked row, or empty if no claim code has this hash
+   */
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  @Query("SELECT c FROM ClaimCode c WHERE c.codeHash = :codeHash")
+  Optional<ClaimCode> findByCodeHashForUpdate(@Param("codeHash") byte[] codeHash);
 }
