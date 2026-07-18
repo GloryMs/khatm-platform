@@ -6,14 +6,15 @@
 - Current task: **KH-1.6-early** — `/api/v1` path migration (the platform's one breaking contract
   change) + full OpenAPI annotation coverage + published, freshness-gated `docs/api/openapi.json`
   + the two read-only schema endpoints the console's issue screen needs. `mvn verify` green, 95/95
-  tests. PR #19 open against `main`, **not yet merged** (session brief explicitly said do not
-  merge). See "Last completed" → Session KH-1.6-early for the four parts, the endpoint mapping
-  table, and the pre-existing `ErrorEnvelopeTestSupport` bug found and fixed along the way.
-- **The API contract is PUBLISHED/ADDITIVE-ONLY from this session on**: `docs/api/openapi.json`,
+  tests. DONE & MERGED via PR #19 (2026-07-18, merge commit `652aa73`, fast-forward — `main` had
+  not diverged); branch `feat/KH-1.6-early-api-v1-contract` deleted. See "Last completed" →
+  Session KH-1.6-early for the four parts, the endpoint mapping table, and the pre-existing
+  `ErrorEnvelopeTestSupport` bug found and fixed along the way.
+- **The API contract is PUBLISHED/ADDITIVE-ONLY as of PR #19's merge**: `docs/api/openapi.json`,
   raw URL `https://raw.githubusercontent.com/GloryMs/khatm-platform/main/docs/api/openapi.json`
-  (live once PR #19 merges to `main`). A path rename/removal from here needs its own ADR; new
-  endpoints/fields are always safe to add. `OpenApiContractTest` fails the build if the committed
-  file ever drifts from what the code actually serves.
+  — live now. A path rename/removal from here needs its own ADR; new endpoints/fields are always
+  safe to add. `OpenApiContractTest` fails the build if the committed file ever drifts from what
+  the code actually serves.
 - Prev task: **KH-0.3 Phase-0 closure** — DevOps gates + one docs promotion, **no application
   code** (the only `pom.xml` edits are Trivy-driven patch-level dependency bumps). DONE & MERGED
   via PR #16 (2026-07-18, merge commit `b7b5342`, fast-forward — `main` had not diverged); branch
@@ -37,9 +38,12 @@
   DONE & MERGED via PR #10 (2026-07-16). **Work rules 2 & 3 are now LIVE** — standing obligations
   promoted to `docs/CONVENTIONS.md §7` (the in-file "Immediate note" blocks were retired).
 - Arabic-speaker review gate (FS-0.6a §4): ran for KH-0.6a (one wording refinement on
-  `verify.reason.bad_sd_alg`) and again for KH-0.6b's new `error.rbc.*` keys in the PR #14 merge
-  session — no concerns, wording kept as written, `MessageBundleParityTest` stayed green.
-- PR #19 (`feat/KH-1.6-early-api-v1-contract` → `main`) open, **not yet merged**.
+  `verify.reason.bad_sd_alg`), again for KH-0.6b's new `error.rbc.*` keys in the PR #14 merge
+  session, and again for KH-1.6-early's new `schema.not-found` key (confirmed by the user directly
+  before PR #19's merge, no wording changes) — no concerns raised in any of the three,
+  `MessageBundleParityTest` stayed green throughout.
+- PR #19 (`feat/KH-1.6-early-api-v1-contract` → `main`) merged 2026-07-18 (merge commit `652aa73`,
+  fast-forward); branch deleted.
 - PR #18 (`chore/swagger-and-flagged-fixes` → `main`) merged 2026-07-18 (merge commit `98cb234`);
   branch deleted. **Corrects a stale claim this file carried** ("PR #18 open, not yet merged" —
   written before merge, never updated after; caught at the start of the KH-1.6-early session by
@@ -64,8 +68,10 @@
 ## Last completed
 - 2026-07-18: KH-1.6-early — `/api/v1` path migration + full OpenAPI coverage + published contract
   + read-only schema endpoints. No spec doc; the session brief itself was the spec, four parts.
-  `mvn verify` green, 95/95 tests. PR #19 open against `main`, **not merged** (brief said not to).
-  Confirmed `main` included PR #18 (checked `git log`/`gh pr view` directly rather than trusting
+  `mvn verify` green, 95/95 tests. DONE & MERGED via PR #19 (merge commit `652aa73`, fast-forward);
+  branch deleted. The Arabic-speaker review gate for the new `schema.not-found` key ran in a
+  follow-up exchange (user confirmed directly, no wording changes) before merge. Confirmed `main`
+  included PR #18 at session start (checked `git log`/`gh pr view` directly rather than trusting
   this file, which — see the PR-list correction above — had gone stale on that exact point).
   - **Part 1 — `/api/v1` migration (the breaking change)**: `credential` endpoints were already
     under `/api/v1/credentials/**` (since KH-0.4), so this session's actual scope was narrower
@@ -119,10 +125,9 @@
     every actor kind may see), not the silent authenticated-any-scope default CONVENTIONS §7.2
     warns against relying on implicitly. New `KH-SCH-0404` — the first schema lookup that can
     actually fail (every prior `SchemaCatalog` caller finds-or-creates or degrades gracefully);
-    `schema.not-found` added to both message bundles + `docs/error-codes.md`. **Still needs the
-    Arabic-speaker review gate (spec FS-0.6a §4)** for the new `schema.not-found` Arabic string —
-    flagged in the PR, not yet done as of this session ending (same pattern as KH-0.6a's original
-    `messages_ar.properties` flag).
+    `schema.not-found` added to both message bundles + `docs/error-codes.md`. The Arabic-speaker
+    review gate (spec FS-0.6a §4) for the new `schema.not-found` string ran before merge (user
+    confirmed directly, no wording changes needed).
   - **Side fix (pre-existing bug, found by adding a second subclass)**:
     `shared.web.ErrorEnvelopeTestSupport` used `@Testcontainers`/`@Container` — the exact pattern
     `rbac.RbacHttpTestSupport`'s own Javadoc already documents as broken for a base class with
@@ -1154,9 +1159,6 @@
     (spec §9 explicitly notes it authenticates by *possessing the claim code*, not a session or
     API key, and is not closed off by KH-0.6b's `SecurityConfig`). `decrypt()` exists on
     `ClaimsEncryptionService` (tested), ready for the claim endpoint to call.
-- **`schema.not-found`'s Arabic wording needs the native-speaker review gate (spec FS-0.6a §4)**
-  before PR #19 merges — flagged in the PR body, not yet done as of this session ending (same
-  pattern KH-0.6a's original `messages_ar.properties` note used).
 
 ## Next up (ordered)
 1. KH-1.2.1 — claim-delivery endpoint: a wallet claims a code → `ClaimsEncryptionService.decrypt`
