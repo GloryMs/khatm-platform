@@ -171,9 +171,9 @@
     row) — the exact `NoDisclosureContentInLogsTest`/`ClaimCodeExpirySweepTest` idiom, just not
     obviously required until a *third* consumer of the pattern (this session's tests) actually hit
     both failure modes in sequence.
-  - **Arabic-speaker review gate (spec FS-0.6a §4) — NOT yet run** for `error.clm.invalid_or_
-    expired`/`error.clm.throttled`: flagged for the PR reviewer, same as every prior session's new
-    key set.
+  - **Arabic-speaker review gate (spec FS-0.6a §4)** for `error.clm.invalid_or_expired`/
+    `error.clm.throttled`: confirmed by the user (Majd) directly before merge, no wording changes
+    needed — same pattern as every prior session's new-key set.
 - 2026-07-18: chore/state-update-post-pr19 — planned as a pure STATE.md merge record for PR #19,
   but its own CI run (`compose-smoke`) failed on a docs-only diff, which CONVENTIONS §11 treats as
   a hard merge blocker ("no exceptions") — investigated rather than bypassed, per CLAUDE.md's
@@ -1299,9 +1299,6 @@
   `disclosures_enc` row ends up `NULL` exactly once, either the moment a wallet claims it or the
   moment it expires unclaimed, never later, never both, never neither. Nothing left open under
   this blocker.
-- **Arabic-speaker review gate (spec FS-0.6a §4) for KH-1.2.1's two new keys
-  (`error.clm.invalid_or_expired`, `error.clm.throttled`) — NOT yet run**, same as every prior
-  session's new-key set; flagged in the PR body for Majd before merge.
 
 ## Next up (ordered)
 1. KH-1.3 — Status List: publish the real signed bitstring artifact endpoint (the `status` claim's
