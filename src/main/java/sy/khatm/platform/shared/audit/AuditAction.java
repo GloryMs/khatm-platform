@@ -81,6 +81,13 @@ public enum AuditAction {
   CLAIM_CODE_REDEEMED,
 
   /**
+   * An issuer minted a wallet claim code for an already-issued credential ({@code credential}
+   * module, KH-1.2.2, {@code POST /api/v1/credentials/{id}/claim-code}). {@code entityRef} is the
+   * credential's ref — never the code itself, and never the code this mint silently voided.
+   */
+  CLAIM_CODE_ISSUED,
+
+  /**
    * The per-IP claim-redeem throttle tripped (spec FS-1.2.1 D6/D7) — the one failure flavor of
    * {@code POST /api/v1/claims/redeem} that IS recorded individually. {@code detail} carries the
    * source IP and the attempt count; never the code.

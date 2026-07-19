@@ -75,6 +75,12 @@ import sy.khatm.platform.shared.audit.AuditService;
  * CsrfCookieFilter} forces the {@code XSRF-TOKEN} cookie to actually be written on every response —
  * see its Javadoc for why that is not automatic for a pure JSON API in Spring Security 6.
  *
+ * <p><b>Claim-code minting (KH-1.2.2):</b> {@code POST /api/v1/credentials/{id}/claim-code} reuses
+ * the exact {@link ScopeGuard#requireScopeNotConsumingPartyKey} rule {@code /issue} already has
+ * (spec FS-1.2.1 D2's re-issue recovery path is issuer-side, the same actor kind as issuance itself
+ * — session or TENANT API key, never a {@code CONSUMING_PARTY} key) — a deliberate, explicit
+ * decision (CONVENTIONS §7.2), not the silent authenticated-any-scope default.
+ *
  * <p><b>Schema read endpoints (KH-1.6-early):</b> {@code GET /api/v1/schemas} and {@code GET
  * /api/v1/schemas/{id}} require only {@code anyRequest().authenticated()} — any valid session or
  * API key, no specific scope. This is a deliberate, explicit decision (not the silent default):
@@ -106,6 +112,7 @@ class SecurityConfig {
   private static final String ISSUE_PATH = "/api/v1/credentials/issue";
   private static final String CONSUME_PATH = "/api/v1/credentials/consume";
   private static final String REVOKE_PATH = "/api/v1/credentials/*/revoke";
+  private static final String CLAIM_CODE_PATH = "/api/v1/credentials/*/claim-code";
   private static final String ADMIN_PATH = "/api/v1/admin/**";
   private static final String SCHEMAS_PATH = "/api/v1/schemas/**";
   private static final String CLAIMS_REDEEM_PATH = "/api/v1/claims/redeem";
@@ -177,6 +184,8 @@ class SecurityConfig {
         .requestMatchers(HttpMethod.POST, CLAIMS_REDEEM_PATH)
         .permitAll()
         .requestMatchers(HttpMethod.POST, ISSUE_PATH)
+        .access(ScopeGuard.requireScopeNotConsumingPartyKey("issue"))
+        .requestMatchers(HttpMethod.POST, CLAIM_CODE_PATH)
         .access(ScopeGuard.requireScopeNotConsumingPartyKey("issue"))
         .requestMatchers(HttpMethod.POST, CONSUME_PATH)
         .access(ScopeGuard.requireScopeAndConsumingPartyKey("consume"))
