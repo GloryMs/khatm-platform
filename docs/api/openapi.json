@@ -1,6 +1,33 @@
 {
   "components" : {
     "schemas" : {
+      "ClaimCodeMintRequest" : {
+        "description" : "Request to mint a fresh wallet claim code for an already-issued credential",
+        "properties" : {
+          "sdJwt" : {
+            "type" : "string"
+          },
+          "ttlMinutes" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "required" : [ "sdJwt" ],
+        "type" : "object"
+      },
+      "ClaimCodeMintResponse" : {
+        "description" : "Result of minting a one-time wallet claim code",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "expiresAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "ClaimRedeemRequest" : {
         "description" : "Request to redeem a one-time wallet claim code",
         "properties" : {
@@ -787,6 +814,94 @@
           }
         },
         "summary" : "Fetch a credential's current status",
+        "tags" : [ "credential" ]
+      }
+    },
+    "/api/v1/credentials/{id}/claim-code" : {
+      "post" : {
+        "description" : "The console-facing counterpart to POST /issue's one-time claim-code delivery — spec FS-1.2.1 D2's explicit recovery path: if a code never reached the wallet (lost response, expired unclaimed, or the issuer simply wants to hand the credential out again), the issuer mints a new one here rather than re-issuing the whole credential. Requires the exact sdJwt presentation string the original /issue call returned — the platform never stores disclosures outside a claim_code row (P1), so this endpoint cannot reconstruct them on its own; the caller is expected to have retained that one-time delivery for exactly this purpose.\n\nMinting voids any prior still-live code for this credential (its disclosures_enc is zeroed, the same mechanism the redeem and expiry-sweep paths use) — at most one code is ever redeemable per credential at a time.\n\nThe response's code is a one-time delivery, exactly like /issue's sdJwt: it appears in this response and nowhere else, ever. It is what a console issue screen encodes into the QR v1 payload described on POST /api/v1/claims/redeem — {\"v\":1,\"api\":\"<platform base URL>\",\"code\":\"<this code>\"} — for a wallet to scan and redeem at that endpoint.",
+        "operationId" : "mintClaimCode",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ClaimCodeMintRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ClaimCodeMintResponse"
+                }
+              }
+            },
+            "description" : "Claim code minted"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Bean Validation failed (a blank sdJwt)"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the issue scope, or called with a CONSUMING_PARTY API key instead of a console session or TENANT API key"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No credential with this id (KH-CRD-0404)"
+          },
+          "409" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "The credential is revoked or has expired and can no longer accept a claim code (KH-CRD-0409)"
+          }
+        },
+        "summary" : "Mint a fresh wallet claim code for an already-issued credential",
         "tags" : [ "credential" ]
       }
     },

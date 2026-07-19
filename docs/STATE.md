@@ -3,10 +3,19 @@
 
 ## Current phase / task
 - Phase 0 — Production Foundation, fully closed (see prior sessions). Phase 1 underway.
-- Current task: **KH-1.2.1** — claim delivery (`POST /api/v1/claims/redeem`), spec FS-1.2.1, D1–D8
-  pre-approved. `mvn verify` green, 112/112 tests (14 new). PR open against `main`, **not merged**
-  (see "Last completed" → Session KH-1.2.1 for the full breakdown). **Closes the `disclosures_enc`
-  blocker for good** — see "Open decisions / blockers" below, now empty of it.
+- Current task: **KH-1.2.2** — expose claim-code minting (`POST
+  /api/v1/credentials/{id}/claim-code`), spec FS-1.2.1 D2's "issuer re-issues a claim code"
+  recovery path realized over HTTP (no separate spec doc — the session brief itself was the spec,
+  same precedent as KH-1.6-early). `mvn verify` green (see "Last completed" → Session KH-1.2.2 for
+  the test count and full breakdown). PR open against `main`, **not merged**.
+- Prev task: **KH-1.2.1** — claim delivery (`POST /api/v1/claims/redeem`), spec FS-1.2.1, D1–D8
+  pre-approved. `mvn verify` green, 112/112 tests (14 new). DONE & MERGED via PR #21 (2026-07-19,
+  merge commit `165b022`); branch `feat/KH-1.2.1-claim-delivery` deleted. **Corrects a stale claim
+  this file carried** ("PR open, not yet merged" — written before merge, never updated after; caught
+  at the start of the KH-1.2.2 session by checking `git log` directly instead of trusting this file
+  blindly, the same lesson KH-1.6-early's session already flagged once). See "Last completed" →
+  Session KH-1.2.1 for the full breakdown. **Closes the `disclosures_enc` blocker for good** — see
+  "Open decisions / blockers" below, now empty of it.
 - Prev task: **KH-1.6-early** — `/api/v1` path migration (the platform's one breaking contract
   change) + full OpenAPI annotation coverage + published, freshness-gated `docs/api/openapi.json`
   + the two read-only schema endpoints the console's issue screen needs. `mvn verify` green, 95/95
@@ -84,9 +93,66 @@
   "Last completed" → Session chore/swagger-and-flagged-fixes for details.
 
 ## Last completed
+- 2026-07-19: KH-1.2.2 — expose claim-code minting, `POST /api/v1/credentials/{id}/claim-code`
+  (spec FS-1.2.1 D2's re-issue recovery path exposed over HTTP; no separate spec doc — the session
+  brief itself was the spec, same precedent as KH-1.6-early). `mvn verify` green, 124/124 tests (12
+  new, up from 112 — 6 service-level `ClaimCodeMintServiceTest`, 5 HTTP scope-gate
+  `ClaimCodeMintScopeGateTest`, 1 `NoDisclosureContentInLogsTest` extension). PR open against
+  `main`, **not merged** (session instruction). Branch
+  `feat/KH-1.2.2-claim-code-endpoint`.
+  - **`CredentialService#mintClaimCode`** (new, public — same module-privacy rationale as every
+    other `CredentialService` method): finds the credential (else `NotFoundException`
+    `KH-CRD-0404`, same code/message `GET`/`revoke` already use — no new "foreign-tenant" handling
+    needed, since the platform is still single-tenant and every existing lookup in this module
+    already works this way), rejects a revoked-or-expired one (new `ConflictException`
+    `KH-CRD-0409`, one message for both flavors — the caller here is always an authenticated
+    issuer, not an external prober, so there was no D5-style anti-probing reason to split them),
+    voids any prior still-live claim code for the credential (new `ClaimCodeRepository
+    #zeroPendingForCredential`, the exact same `disclosures_enc`-zeroing shape
+    `#zeroExpiredUnclaimed` already uses, just scoped by `credential_id` instead of by expiry), then
+    delegates to the existing `#issueClaimCode` unchanged — genuinely "no new domain mechanics,"
+    per the session brief. Requires the caller to supply the original `sdJwt` presentation string
+    in the request body: the platform never persists a presentation's disclosures outside a
+    `claim_code` row (P1), so minting a code for an already-issued credential is only possible if
+    the issuer retained that one-time delivery — exactly the recovery case FS-1.2.1 D2 describes
+    ("the issuer re-issues a claim code"). `ttlMinutes` optional, defaults to 15.
+  - **`credential.web.CredentialController#mintClaimCode`** (new): `POST
+    /api/v1/credentials/{id}/claim-code`, thin (validate → call service → map). Full OpenAPI
+    annotations, including the required cross-reference to `/api/v1/claims/redeem`'s QR v1 payload
+    description (the minted `code` is what a console issue screen would encode into that JSON).
+  - **`rbac.security.SecurityConfig`** gained one new path rule: `POST
+    /api/v1/credentials/*/claim-code` reuses `/issue`'s exact
+    `ScopeGuard.requireScopeNotConsumingPartyKey("issue")` rule verbatim (session brief: "session
+    or TENANT API key with scope issue") — documented as a deliberate, explicit per-endpoint
+    decision in the class Javadoc (CONVENTIONS §7.2), not the silent authenticated-any-scope
+    default.
+  - **New `KH-CRD-0409`** (`ErrorCode`/`credential.not-claimable`) — the first `CRD` code with a
+    status other than 404; both message bundles updated in the same commit (Arabic review gate
+    pending — flagged below, same as every prior session's new-key set). **New
+    `AuditAction.CLAIM_CODE_ISSUED`** — `entityRef` is the credential's ref, never the code (actor
+    attribution is automatic via `AuditService` reading `SecurityContextHolder`, same as every
+    other audited action; no explicit actor-passing needed in the new code).
+  - **Tests (12 new)**: `ClaimCodeMintServiceTest` (happy path + audit row, custom `ttlMinutes`
+    honored, **second mint voids the first still-live code** — asserted both by code identity and
+    by a DB count of rows with `disclosures_enc IS NOT NULL AND claimed_at IS NULL` staying at
+    exactly 1 while both rows still exist, unknown-credential 404, revoked-credential 409,
+    expired-credential 409), `ClaimCodeMintScopeGateTest` (rbac package, mirrors
+    `ScopeGateTest`/`ConsumeApiKeyGateTest`'s established pattern: no-credentials 401,
+    `CONSUMING_PARTY` key 403, `TENANT` key missing `issue` scope 403, `TENANT` key with `issue`
+    scope 200, `ISSUER_OPERATOR` session 200), `NoDisclosureContentInLogsTest` extended with a
+    mint-then-mint-again cycle (neither raw code, neither salt, nor the plaintext claim value ever
+    appears in a log line). `OpenApiContractTest` regenerated the published contract additively —
+    confirmed via the test's own freshness gate, not just assumed.
+  - **Side note (test-writing snag, resolved)**: the DB's `CHECK (valid_to > valid_from)` on
+    `credential` means the expired-credential test can't push only `valid_to` into the past — it
+    must move `valid_from` back too (both set to before "now," `valid_to` still after
+    `valid_from`), otherwise the raw JDBC `UPDATE` itself is rejected by the constraint before the
+    service method under test ever runs.
+  - **Arabic-speaker review gate (spec FS-0.6a §4)** for `credential.not-claimable`: **pending** —
+    flag in the PR body before merge, same as every other session's new-key set.
 - 2026-07-18: KH-1.2.1 — claim delivery, spec FS-1.2.1, D1–D8 pre-approved. `mvn verify` green,
-  112/112 tests (14 new, up from 98). PR open against `main`, **not merged** (session instruction).
-  Branch `feat/KH-1.2.1-claim-delivery`, first commit mirrors the spec into `docs/specs/`.
+  112/112 tests (14 new, up from 98). DONE & MERGED via PR #21 (2026-07-19, merge commit `165b022`);
+  branch `feat/KH-1.2.1-claim-delivery` deleted. First commit mirrors the spec into `docs/specs/`.
   - **Part 0 (convention promotion, first)**: `docs/CONVENTIONS.md §9` gained a paragraph on the
     static-initializer singleton-container test-support pattern — bitten twice already
     (`RbacHttpTestSupport` at KH-0.6b, `ErrorEnvelopeTestSupport` at KH-1.6-early), both cited by

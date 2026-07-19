@@ -160,4 +160,38 @@ class NoDisclosureContentInLogsTest extends IntegrationTestSupport {
       assertThat(messages).noneMatch(m -> m.contains(salt));
     }
   }
+
+  /**
+   * KH-1.2.2 — extends the no-disclosure guarantee to the claim-code mint path: an issue → mint →
+   * mint-again cycle (the second mint voids the first code) must never log a plaintext claim value,
+   * a disclosure salt, or either raw claim code.
+   */
+  @Test
+  void mintCycle_neverLogsDisclosureValuesSaltsOrEitherClaimCode() {
+    Map<String, Object> claims = Map.of("secretValue", "TOP-SECRET-MINT-VALUE-654");
+
+    IssueResponse issued =
+        credentialService.issue(
+            new IssueRequest("MintLogProbe/v1", "holder-mint-log-probe", 1, 60, claims, List.of()));
+
+    List<String> saltsUsed =
+        SDJWT.parse(issued.sdJwt()).getDisclosures().stream()
+            .map(d -> d.getSalt())
+            .collect(Collectors.toList());
+    assertThat(saltsUsed).isNotEmpty();
+
+    ClaimCodeIssued first =
+        credentialService.mintClaimCode(UUID.fromString(issued.id()), issued.sdJwt(), null);
+    ClaimCodeIssued second =
+        credentialService.mintClaimCode(UUID.fromString(issued.id()), issued.sdJwt(), null);
+
+    List<String> messages =
+        appender.list.stream().map(ILoggingEvent::getFormattedMessage).collect(Collectors.toList());
+    assertThat(messages).noneMatch(m -> m.contains("TOP-SECRET-MINT-VALUE-654"));
+    assertThat(messages).noneMatch(m -> m.contains(first.code()));
+    assertThat(messages).noneMatch(m -> m.contains(second.code()));
+    for (String salt : saltsUsed) {
+      assertThat(messages).noneMatch(m -> m.contains(salt));
+    }
+  }
 }

@@ -17,6 +17,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import sy.khatm.platform.credential.api.ClaimCodeMintRequest;
+import sy.khatm.platform.credential.api.ClaimCodeMintResponse;
 import sy.khatm.platform.credential.api.ConsumeRequest;
 import sy.khatm.platform.credential.api.ConsumeResponse;
 import sy.khatm.platform.credential.api.CredentialView;
@@ -24,6 +26,7 @@ import sy.khatm.platform.credential.api.IssueRequest;
 import sy.khatm.platform.credential.api.IssueResponse;
 import sy.khatm.platform.credential.api.VerifyRequest;
 import sy.khatm.platform.credential.api.VerifyResponse;
+import sy.khatm.platform.credential.domain.ClaimCodeIssued;
 import sy.khatm.platform.credential.domain.CredentialService;
 import sy.khatm.platform.shared.error.ErrorCode;
 import sy.khatm.platform.shared.error.NotFoundException;
@@ -176,6 +179,60 @@ class CredentialController {
       throw new NotFoundException(ErrorCode.KH_CRD_0404, "credential.not-found", id);
     }
     return ResponseEntity.ok().build();
+  }
+
+  @Operation(
+      summary = "Mint a fresh wallet claim code for an already-issued credential",
+      description =
+          "The console-facing counterpart to POST /issue's one-time claim-code delivery — spec"
+              + " FS-1.2.1 D2's explicit recovery path: if a code never reached the wallet (lost"
+              + " response, expired unclaimed, or the issuer simply wants to hand the credential"
+              + " out again), the issuer mints a new one here rather than re-issuing the whole"
+              + " credential. Requires the exact sdJwt presentation string the original /issue"
+              + " call returned — the platform never stores disclosures outside a claim_code row"
+              + " (P1), so this endpoint cannot reconstruct them on its own; the caller is expected"
+              + " to have retained that one-time delivery for exactly this purpose."
+              + "\n\nMinting voids any prior still-live code for this credential (its"
+              + " disclosures_enc is zeroed, the same mechanism the redeem and expiry-sweep paths"
+              + " use) — at most one code is ever redeemable per credential at a time."
+              + "\n\nThe response's code is a one-time delivery, exactly like /issue's sdJwt: it"
+              + " appears in this response and nowhere else, ever. It is what a console issue"
+              + " screen encodes into the QR v1 payload described on POST"
+              + " /api/v1/claims/redeem — {\"v\":1,\"api\":\"<platform base URL>\",\"code\":\"<this"
+              + " code>\"} — for a wallet to scan and redeem at that endpoint.",
+      responses = {
+        @ApiResponse(responseCode = "200", description = "Claim code minted"),
+        @ApiResponse(
+            responseCode = "400",
+            description = "Bean Validation failed (a blank sdJwt)",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "401",
+            description = "No valid session or API key",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "403",
+            description =
+                "Missing the issue scope, or called with a CONSUMING_PARTY API key instead of a"
+                    + " console session or TENANT API key",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "404",
+            description = "No credential with this id (KH-CRD-0404)",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "409",
+            description =
+                "The credential is revoked or has expired and can no longer accept a claim code"
+                    + " (KH-CRD-0409)",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
+      })
+  @PostMapping("/{id}/claim-code")
+  ResponseEntity<ClaimCodeMintResponse> mintClaimCode(
+      @PathVariable String id, @Valid @RequestBody ClaimCodeMintRequest req) {
+    ClaimCodeIssued minted =
+        service.mintClaimCode(UUID.fromString(id), req.sdJwt(), req.ttlMinutes());
+    return ResponseEntity.ok(new ClaimCodeMintResponse(minted.code(), minted.expiresAt()));
   }
 
   @Operation(

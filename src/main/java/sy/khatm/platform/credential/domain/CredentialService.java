@@ -61,8 +61,10 @@ import sy.khatm.platform.shared.TenantContext;
 import sy.khatm.platform.shared.Uuidv7;
 import sy.khatm.platform.shared.audit.AuditAction;
 import sy.khatm.platform.shared.audit.AuditService;
+import sy.khatm.platform.shared.error.ConflictException;
 import sy.khatm.platform.shared.error.ErrorCode;
 import sy.khatm.platform.shared.error.IntegrityException;
+import sy.khatm.platform.shared.error.NotFoundException;
 import sy.khatm.platform.shared.error.VerifyReason;
 import sy.khatm.platform.status.api.StatusAllocation;
 import sy.khatm.platform.status.api.StatusListAllocator;
@@ -94,6 +96,7 @@ import sy.khatm.platform.status.api.StatusListAllocator;
 public class CredentialService {
 
   private static final String DEFAULT_STATUS_LIST_CODE = "default";
+  private static final int DEFAULT_CLAIM_CODE_TTL_MINUTES = 15;
   private static final String SD_ALG = "sha-256";
   private static final ObjectMapper JSON = new ObjectMapper();
   private static final SecureRandom SECURE_RANDOM = new SecureRandom();
@@ -280,6 +283,55 @@ public class CredentialService {
     claimCodes.save(claimCode);
 
     return new ClaimCodeIssued(code, expiresAt);
+  }
+
+  /**
+   * Mint a fresh wallet claim code for an already-issued credential (KH-1.2.2, spec FS-1.2.1 D2's
+   * "the issuer re-issues a claim code" recovery path exposed over HTTP — this is the
+   * console-facing counterpart to {@link #issueClaimCode}, not a new mechanism). The platform never
+   * persists a presentation's disclosures outside a {@code claim_code} row (P1), so {@code
+   * sdJwtPresentation} must be one the caller already holds — the exact string {@link #issue}
+   * returned, retained by the issuer for precisely this recovery case.
+   *
+   * <p>Enforces "one live code per credential" (spec FS-1.2.1's single-shot philosophy, extended to
+   * minting): any prior pending code for this credential is voided first, via the same
+   * disclosures_enc-zeroing mechanism {@link
+   * sy.khatm.platform.credential.worker.ClaimCodeExpiryWorker#sweep} and {@link
+   * sy.khatm.platform.credential.domain.ClaimRedemptionService#redeem} already use — a stale code
+   * left over from a previous mint becomes unredeemable (generic {@code KH-CLM-0404}) rather than a
+   * second live code competing with the new one.
+   *
+   * @param credentialId the credential to mint a claim code for
+   * @param sdJwtPresentation the full SD-JWT presentation covering this credential's disclosures
+   * @param ttlMinutes how long the new code remains claimable; {@code null} defaults to {@value
+   *     #DEFAULT_CLAIM_CODE_TTL_MINUTES}
+   * @return the raw one-time code (shown to the caller exactly once) and its expiry
+   * @throws NotFoundException {@link ErrorCode#KH_CRD_0404} if no credential with this id exists
+   * @throws ConflictException {@link ErrorCode#KH_CRD_0409} if the credential is revoked or past
+   *     its validity window
+   */
+  @Transactional
+  public ClaimCodeIssued mintClaimCode(
+      UUID credentialId, String sdJwtPresentation, Integer ttlMinutes) {
+    Credential credential =
+        credentials
+            .findById(credentialId)
+            .orElseThrow(
+                () ->
+                    new NotFoundException(
+                        ErrorCode.KH_CRD_0404, "credential.not-found", credentialId));
+    if (credential.isRevoked() || credential.getValidTo().isBefore(Instant.now())) {
+      throw new ConflictException(ErrorCode.KH_CRD_0409, "credential.not-claimable");
+    }
+
+    claimCodes.zeroPendingForCredential(credentialId);
+
+    Duration ttl =
+        Duration.ofMinutes(ttlMinutes == null ? DEFAULT_CLAIM_CODE_TTL_MINUTES : ttlMinutes);
+    ClaimCodeIssued minted = issueClaimCode(credentialId, sdJwtPresentation, ttl);
+
+    audit.record(AuditAction.CLAIM_CODE_ISSUED, "credential", credential.getRef(), null);
+    return minted;
   }
 
   // ── Verify (online: signature + status) ──────────────────────────────────

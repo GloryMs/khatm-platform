@@ -39,6 +39,12 @@ import org.springframework.http.HttpStatus;
  * for a plain not-found (D7 — logging every failed guess individually would turn an external
  * scanner into a write amplifier against the audit table).
  *
+ * <p><b>{@code KH_CRD_0409}</b> (KH-1.2.2, spec FS-1.2.1 D2's re-issue recovery path exposed over
+ * HTTP): the first {@code CRD} code with a status other than 404 — every prior {@code
+ * CredentialService} caller either found-or-404'd or returned a 200 domain result, so no
+ * state-conflict code existed until minting a claim code needed to reject a revoked/expired
+ * credential explicitly.
+ *
  * <p>{@code docs/error-codes.md} is generated from this enum by a test ({@code
  * ErrorCodesDocGenerationTest}) — never hand-edited (CLAUDE.md work rule 1).
  */
@@ -46,6 +52,15 @@ public enum ErrorCode {
 
   /** A requested credential does not exist. */
   KH_CRD_0404(HttpStatus.NOT_FOUND, "credential.not-found"),
+
+  /**
+   * The credential exists but is revoked or past its validity window, so it can no longer accept a
+   * new claim code (spec FS-1.2.1 D2's re-issue recovery path, exposed as KH-1.2.2's {@code POST
+   * /api/v1/credentials/{id}/claim-code}). One code for both flavors — the mint caller is always an
+   * authenticated issuer, not an external prober, so there is no anti-probing reason to collapse
+   * this with {@link #KH_CRD_0404} the way {@link #KH_CLM_0404} collapses its own set.
+   */
+  KH_CRD_0409(HttpStatus.CONFLICT, "credential.not-claimable"),
 
   /** Signing a credential's SD-JWT failed (spec FS-0.5's {@code KeySigner}, wrapped). */
   KH_KEY_0500(HttpStatus.INTERNAL_SERVER_ERROR, "key.signing-failed"),
