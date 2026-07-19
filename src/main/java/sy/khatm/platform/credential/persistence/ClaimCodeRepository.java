@@ -58,4 +58,24 @@ public interface ClaimCodeRepository extends JpaRepository<ClaimCode, UUID> {
   @Lock(LockModeType.PESSIMISTIC_WRITE)
   @Query("SELECT c FROM ClaimCode c WHERE c.codeHash = :codeHash")
   Optional<ClaimCode> findByCodeHashForUpdate(@Param("codeHash") byte[] codeHash);
+
+  /**
+   * Zero {@code disclosures_enc} on every still-live (unclaimed, not yet zeroed) claim code for one
+   * credential — the "one live code per credential" half of KH-1.2.2's mint endpoint (spec FS-1.2.1
+   * D2's re-issue recovery path): minting a fresh code voids whatever the previous one still was,
+   * the same zeroing mechanism {@link #zeroExpiredUnclaimed()} and the redeem path already use,
+   * collapsing the voided row to the same terminal, unredeemable shape either of those leaves
+   * behind (an external caller attempting the old code gets the identical generic {@code
+   * KH-CLM-0404}).
+   *
+   * @param credentialId the credential whose prior pending codes should be voided
+   * @return the number of claim codes voided
+   */
+  @Modifying(flushAutomatically = true, clearAutomatically = true)
+  @Query(
+      "UPDATE ClaimCode c SET c.disclosuresEnc = NULL "
+          + "WHERE c.credentialId = :credentialId "
+          + "AND c.disclosuresEnc IS NOT NULL "
+          + "AND c.claimedAt IS NULL")
+  int zeroPendingForCredential(@Param("credentialId") UUID credentialId);
 }
