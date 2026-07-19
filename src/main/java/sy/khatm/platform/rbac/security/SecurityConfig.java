@@ -37,10 +37,13 @@ import sy.khatm.platform.shared.audit.AuditService;
  * within one chain — hence two chains, matched by request shape rather than URL pattern (the same
  * endpoint, e.g. {@code /issue}, can legitimately be called either way).
  *
- * <p><b>Public endpoints (D9):</b> {@code POST /api/v1/credentials/verify} and {@code GET
- * /.well-known/jwks.json} — the only two, enforced identically on both chains via {@link
- * #configureAuthorization}. Every other endpoint requires at least a valid session or API key;
- * {@link ScopeGuard}'s per-route rules layer the specific scope/actor-kind requirement spec §3
+ * <p><b>Public endpoints (D9, extended KH-1.2.1):</b> {@code POST /api/v1/credentials/verify},
+ * {@code GET /.well-known/jwks.json}, and {@code POST /api/v1/claims/redeem} — exactly three,
+ * enforced identically on both chains via {@link #configureAuthorization}. The third authenticates
+ * by possession of a one-time claim code rather than a session or API key (spec FS-1.2.1 §9) — its
+ * own per-IP throttle ({@code credential.domain.ClaimRedeemThrottleService}) is what keeps it from
+ * being an open door, not this class. Every other endpoint requires at least a valid session or API
+ * key; {@link ScopeGuard}'s per-route rules layer the specific scope/actor-kind requirement spec §3
  * names explicitly on top.
  *
  * <p><b>API versioning (KH-1.6-early):</b> every business and auth endpoint lives under {@code
@@ -66,9 +69,11 @@ import sy.khatm.platform.shared.audit.AuditService;
  * CsrfFilter} (which runs before authentication is even resolved) rejects a completely
  * credential-less POST to, say, {@code /issue} with a bare {@code 403} — masking spec D9/DoD #3's
  * required {@code 401} for "no session, no key at all" behind an unrelated CSRF failure (confirmed
- * empirically). {@link CsrfCookieFilter} forces the {@code XSRF-TOKEN} cookie to actually be
- * written on every response — see its Javadoc for why that is not automatic for a pure JSON API in
- * Spring Security 6.
+ * empirically). {@code /api/v1/claims/redeem} (KH-1.2.1) needs no explicit entry in this list for
+ * the same reason {@code /consume} never did: a wallet calling it never carries a {@code
+ * KHATM_SESSION} cookie, so the no-session-cookie exemption above already covers it. {@link
+ * CsrfCookieFilter} forces the {@code XSRF-TOKEN} cookie to actually be written on every response —
+ * see its Javadoc for why that is not automatic for a pure JSON API in Spring Security 6.
  *
  * <p><b>Schema read endpoints (KH-1.6-early):</b> {@code GET /api/v1/schemas} and {@code GET
  * /api/v1/schemas/{id}} require only {@code anyRequest().authenticated()} — any valid session or
@@ -103,6 +108,7 @@ class SecurityConfig {
   private static final String REVOKE_PATH = "/api/v1/credentials/*/revoke";
   private static final String ADMIN_PATH = "/api/v1/admin/**";
   private static final String SCHEMAS_PATH = "/api/v1/schemas/**";
+  private static final String CLAIMS_REDEEM_PATH = "/api/v1/claims/redeem";
   private static final String[] SWAGGER_PATHS = {
     "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html"
   };
@@ -167,6 +173,8 @@ class SecurityConfig {
         .requestMatchers(HttpMethod.GET, JWKS_PATH)
         .permitAll()
         .requestMatchers(HttpMethod.POST, LOGIN_PATH)
+        .permitAll()
+        .requestMatchers(HttpMethod.POST, CLAIMS_REDEEM_PATH)
         .permitAll()
         .requestMatchers(HttpMethod.POST, ISSUE_PATH)
         .access(ScopeGuard.requireScopeNotConsumingPartyKey("issue"))

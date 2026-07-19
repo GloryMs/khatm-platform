@@ -8,9 +8,10 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 /**
- * Spec FS-0.6b DoD #9 (first half) — {@code POST /api/v1/credentials/verify} and {@code GET
- * /.well-known/jwks.json} work with <b>zero</b> credentials: no session cookie, no {@code
- * Authorization} header at all (D9 — the only two endpoints that stay open).
+ * Spec FS-0.6b DoD #9 (first half), extended by spec FS-1.2.1 DoD #7 — {@code POST
+ * /api/v1/credentials/verify}, {@code GET /.well-known/jwks.json}, and {@code POST
+ * /api/v1/claims/redeem} work with <b>zero</b> credentials: no session cookie, no {@code
+ * Authorization} header at all (the only three endpoints that stay open).
  */
 class PublicEndpointsNoCredentialsTest extends RbacHttpTestSupport {
 
@@ -30,5 +31,15 @@ class PublicEndpointsNoCredentialsTest extends RbacHttpTestSupport {
     ResponseEntity<String> response = rest.getForEntity("/.well-known/jwks.json", String.class);
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+  }
+
+  @Test
+  void claimsRedeem_withNoCredentialsAtAll_returns404_notAnAuthError() {
+    ResponseEntity<String> response =
+        rest.postForEntity("/api/v1/claims/redeem", Map.of("code", "no-such-code"), String.class);
+
+    // An unknown code is a domain-shaped KH-CLM-0404 (spec FS-1.2.1 D5), never 401/403 — the
+    // point here is specifically that authentication is never even attempted for this path.
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
   }
 }

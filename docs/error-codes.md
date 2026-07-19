@@ -14,3 +14,5 @@
 | `KH-RBC-1401` | 401 | `error.rbc.api_key_invalid` |
 | `KH-RBC-0403` | 403 | `error.rbc.forbidden` |
 | `KH-SCH-0404` | 404 | `schema.not-found` |
+| `KH-CLM-0404` | 404 | `error.clm.invalid_or_expired` |
+| `KH-CLM-0429` | 429 | `error.clm.throttled` |

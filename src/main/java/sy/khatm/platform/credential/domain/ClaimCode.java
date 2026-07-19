@@ -15,9 +15,14 @@ import java.util.UUID;
  * claim succeeds or the code expires (spec FS-0.2 §3.7). Only {@code codeHash} (SHA-256) is stored
  * — the raw code is shown to the caller exactly once at creation and never persisted.
  *
- * <p>Real disclosure encryption/decryption is KH-1.2.1; {@link
- * sy.khatm.platform.credential.domain.CredentialService#issueClaimCode} currently leaves {@code
- * disclosuresEnc} {@code null} so the row round-trips correctly ahead of that work.
+ * <p>{@code disclosuresEnc} is AES-256-GCM encrypted by {@link
+ * sy.khatm.platform.credential.domain.CredentialService#issueClaimCode} (spec FS-0.4 D7) and zeroed
+ * by whichever of two paths reaches the row first: {@link
+ * sy.khatm.platform.credential.domain.ClaimRedemptionService#redeem} on a successful wallet claim
+ * (spec FS-1.2.1 D2), or {@link sy.khatm.platform.credential.worker.ClaimCodeExpiryWorker#sweep} on
+ * an unclaimed code whose TTL elapsed (ADR-09). {@code SELECT ... FOR UPDATE} in {@link
+ * sy.khatm.platform.credential.persistence.ClaimCodeRepository#findByCodeHashForUpdate} is what
+ * makes these two paths race-safe against each other.
  *
  * <p>This class is module-private.
  */

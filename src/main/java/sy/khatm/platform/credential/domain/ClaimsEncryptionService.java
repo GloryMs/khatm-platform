@@ -97,9 +97,9 @@ class ClaimsEncryptionService {
   /**
    * Decrypt a value produced by {@link #encrypt}.
    *
-   * <p>Not called by any production path yet — the claim-delivery worker that will call this is
-   * KH-1.2.1. Exists now as the tested, symmetric counterpart to {@link #encrypt}, proving the
-   * encryption is genuinely reversible with the right key (and only the right key).
+   * <p>Called by {@link ClaimRedemptionService#redeem} (spec FS-1.2.1) — the only production path
+   * that ever needs the plaintext disclosures back, exactly once, inside the transaction that
+   * immediately zeroes {@code disclosures_enc} afterward.
    *
    * @param nonceAndCiphertext {@code nonce (12 bytes) || ciphertext-with-GCM-tag}, as produced by
    *     {@link #encrypt}

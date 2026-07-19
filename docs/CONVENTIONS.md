@@ -22,7 +22,10 @@ src/main/resources/
 - Entities: singular noun (`Credential`). Tables: snake_case singular (`credential`).
 - DTO records: suffix by direction — `IssueRequest`, `CredentialResponse`.
 - Services: `<Concept>Service`; mappers: `<Concept>Mapper`; events: past tense (`CredentialIssued`).
-- Error codes: `KH-<MOD>-<NNNN>`; module tags: TEN, KEY, SCH, CRD, STS, LDG, HLD, CNS, RBC, CON, SYS.
+- Error codes: `KH-<MOD>-<NNNN>`; module tags: TEN, KEY, SCH, CRD, STS, LDG, HLD, CNS, RBC, CON, SYS,
+  CLM. `CLM` (KH-1.2.1) is the one tag that names a bounded concern rather than its owning Java
+  module 1:1 — claim-delivery lives inside the `credential` module (no new module for one endpoint)
+  but is a conceptually separate, wallet-facing failure vocabulary from `CRD`'s.
 - REST: `/api/v1/<plural-resource>`; path params are opaque refs, never DB ids.
 - Checkstyle exceptions (documented here, not just in `checkstyle.xml`): the `ConstantName`
   rule permits `log`/`logger` in addition to `UPPER_SNAKE_CASE` (logger fields are mutable
@@ -139,6 +142,21 @@ Adding a new endpoint means, in the **same commit**:
   `ConcurrentConsumeTest` (50 parallel, exactly 1 success), `MigrationCleanBootTest`,
   `MigrationImmutabilityTest` (checksum-locks every applied migration — KH-0.2.2, §6).
 - Naming: `methodName_condition_expectedResult`.
+- **Shared test-support base classes: the static-initializer singleton-container pattern only,
+  never `@Testcontainers`/`@Container` on a base with more than one subclass.** Those JUnit5
+  annotations bind a container's `start()`/`stop()` to the *owning test class's*
+  `beforeAll`/`afterAll` — including for a `static` field merely *inherited* from an abstract
+  base. When several concrete test classes extend the same base and share one cached Spring
+  context (identical `@DynamicPropertySource` values), the first subclass to finish stops the
+  container out from under every sibling still using it. Bitten twice by this exact bug:
+  `rbac.RbacHttpTestSupport` (KH-0.6b, HikariCP pool exhaustion once a second subclass existed)
+  and `shared.web.ErrorEnvelopeTestSupport` (KH-1.6-early, `CannotCreateTransactionException`
+  the moment `OpenApiContractTest` became its second subclass) — see `docs/STATE.md`'s KH-0.6b
+  and KH-1.6-early session entries. The fix both times was the same: start the container once in
+  a manual `static { ... }` initializer and never explicitly stop it — Testcontainers' Ryuk
+  reaper cleans up at JVM exit (the pattern `support.IntegrationTestSupport` used from the
+  start). Write every new shared test-support base this way from the outset; do not wait for a
+  second subclass to prove the bug.
 
 ## 10. Documentation (rule 1)
 - `package-info.java`: module purpose, exposed API, events published/consumed, tables owned.

@@ -72,5 +72,18 @@ public enum AuditAction {
   API_KEY_REVOKED,
 
   /** A user account was created ({@code AdminBootstrap} or a future admin console). */
-  USER_CREATED
+  USER_CREATED,
+
+  /**
+   * A wallet successfully redeemed a claim code ({@code credential} module, KH-1.2.1). {@code
+   * entityRef} is the credential's ref — never the code itself.
+   */
+  CLAIM_CODE_REDEEMED,
+
+  /**
+   * The per-IP claim-redeem throttle tripped (spec FS-1.2.1 D6/D7) — the one failure flavor of
+   * {@code POST /api/v1/claims/redeem} that IS recorded individually. {@code detail} carries the
+   * source IP and the attempt count; never the code.
+   */
+  CLAIM_REDEEM_THROTTLED
 }

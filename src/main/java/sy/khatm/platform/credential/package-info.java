@@ -1,11 +1,13 @@
 /**
  * Credential module — core lifecycle of verifiable credentials.
  *
- * <p><b>Responsibilities:</b> issue, verify, consume (atomic single-use decrement), and revoke
- * credentials. Stores only cryptographic proofs and status metadata — never document content or PII
- * (P1 rule). Enforces the atomic-consume invariant: consumption is a single-transaction conditional
- * {@code UPDATE ... WHERE uses_remaining > 0 AND NOT revoked} so that exactly one consumer wins
- * under concurrent load.
+ * <p><b>Responsibilities:</b> issue, verify, consume (atomic single-use decrement), revoke, and
+ * redeem a one-time wallet claim code for a credential. Stores only cryptographic proofs and status
+ * metadata — never document content or PII (P1 rule). Enforces the atomic-consume invariant:
+ * consumption is a single-transaction conditional {@code UPDATE ... WHERE uses_remaining > 0 AND
+ * NOT revoked} so that exactly one consumer wins under concurrent load; claim-code redemption is
+ * the analogous single-shot invariant for delivery ({@code SELECT ... FOR UPDATE}, spec FS-1.2.1
+ * D2).
  *
  * <p><b>SD-JWT (spec FS-0.4):</b> issuance builds a Selective Disclosure JWT, not a plain JWT. Two
  * decisions are worth calling out specifically because they change what "P1" and {@code sd_fields}
@@ -35,18 +37,30 @@
  *
  * <p><b>Tables owned:</b> {@code credential}, {@code consumption_event}, {@code claim_code}
  *
+ * <p><b>Claim delivery (spec FS-1.2.1):</b> {@code ClaimRedemptionService#redeem} is the on-claim
+ * half of the {@code disclosures_enc} zeroing contract FS-0.2 §3.7 opened — the other half,
+ * expiry-zeroing, is {@code ClaimCodeExpiryWorker} (ADR-09). Together they close that blocker
+ * permanently: every {@code disclosures_enc} row ends up {@code NULL} either the moment a wallet
+ * claims it or the moment it expires unclaimed, never later, never both, never neither. {@code
+ * credential.web.ClaimController}'s {@code POST /api/v1/claims/redeem} authenticates by possession
+ * of the claim code alone (spec §9) — {@code rbac.security.SecurityConfig}'s third public endpoint,
+ * guarded instead by {@code ClaimRedeemThrottleService}'s per-IP fixed window (D6).
+ *
  * <p><b>Cross-module dependencies:</b> {@code key :: api} ({@link
  * sy.khatm.platform.key.api.KeySigner} for signing, {@link sy.khatm.platform.key.api.KeyVerifier}
  * for strict-by-{@code kid} verification, no fallback); {@code schema :: api}, {@code holder ::
  * api}, {@code status :: api}, {@code consumer :: api} — issuing/consuming a credential must
  * resolve the schema, holder, status-list allocation, and consuming party its foreign keys point at
- * (KH-0.2.1 baseline schema, spec FS-0.2 §3.6/§3.9); {@code shared} (its open root package — {@link
- * sy.khatm.platform.shared.TenantContext}, {@link sy.khatm.platform.shared.Uuidv7}); {@code shared
- * :: error} (spec FS-0.6a — {@code KhatmException} subtypes to throw, {@code VerifyReason} for
- * {@code CredentialService#verify}'s domain results); {@code shared :: web} (spec FS-0.6a — {@code
- * ErrorEnvelope}, referenced only from this module's OpenAPI error-response annotations); {@code
- * shared :: audit} (spec FS-0.6b — {@code AuditService}; {@code CredentialService} records {@code
- * CREDENTIAL_ISSUED}/{@code CREDENTIAL_CONSUMED}/{@code CREDENTIAL_REVOKED}).
+ * (KH-0.2.1 baseline schema, spec FS-0.2 §3.6/§3.9; claim-code redemption resolves the schema too,
+ * for the delivered {@code ClaimSchemaRef} display shape); {@code shared} (its open root package —
+ * {@link sy.khatm.platform.shared.TenantContext}, {@link sy.khatm.platform.shared.Uuidv7}); {@code
+ * shared :: error} (spec FS-0.6a — {@code KhatmException} subtypes to throw, {@code VerifyReason}
+ * for {@code CredentialService#verify}'s domain results); {@code shared :: web} (spec FS-0.6a —
+ * {@code ErrorEnvelope}, referenced only from this module's OpenAPI error-response annotations);
+ * {@code shared :: audit} (spec FS-0.6b — {@code AuditService}; {@code CredentialService} records
+ * {@code CREDENTIAL_ISSUED}/{@code CREDENTIAL_CONSUMED}/{@code CREDENTIAL_REVOKED}, {@code
+ * ClaimRedemptionService}/{@code ClaimRedeemThrottleService} record {@code
+ * CLAIM_CODE_REDEEMED}/{@code CLAIM_REDEEM_THROTTLED}).
  */
 @org.springframework.modulith.ApplicationModule(
     allowedDependencies = {
