@@ -82,6 +82,8 @@ class WorkerProfileSecurityBootTest {
         .isInstanceOf(NoSuchBeanDefinitionException.class);
     assertThatThrownBy(() -> context.getBean("jwksController"))
         .isInstanceOf(NoSuchBeanDefinitionException.class);
+    assertThatThrownBy(() -> context.getBean("statusListController"))
+        .isInstanceOf(NoSuchBeanDefinitionException.class);
     assertThatThrownBy(() -> context.getBean("keyBootstrap"))
         .isInstanceOf(NoSuchBeanDefinitionException.class);
     assertThatThrownBy(() -> context.getBean("adminBootstrap"))

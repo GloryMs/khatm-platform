@@ -384,6 +384,16 @@
           "revoked" : {
             "type" : "boolean"
           },
+          "statusListChecked" : {
+            "type" : "boolean"
+          },
+          "statusListUri" : {
+            "type" : "string"
+          },
+          "statusListVersion" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
           "usesRemaining" : {
             "format" : "int32",
             "type" : "integer"
@@ -1036,6 +1046,86 @@
         "summary" : "Fetch a credential schema's detail",
         "tags" : [ "schema" ]
       }
+    },
+    "/sl/{tenantSlug}/{listCode}" : {
+      "get" : {
+        "description" : "The public, unauthenticated source of revocation truth for offline verifiers (spec FS-1.3 D2, SAD §6). Returns the list's signed bitstring as a compact JWS (application/jose) — a verifier validates its signature against the platform's JWKS, then base64url-decodes and gunzips the `bits` claim to read the per-credential revocation bit at the index named in the credential's `status` claim. The ETag is the list's `version`; a matching If-None-Match returns 304 with no body, so periodic polls stay cheap until a revoke bumps the version. Cached for 60s, matching NFR-06's revoke-to-publish budget.",
+        "operationId" : "getStatusList",
+        "parameters" : [ {
+          "description" : "the tenant's slug",
+          "in" : "path",
+          "name" : "tenantSlug",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "description" : "the status list's code",
+          "in" : "path",
+          "name" : "listCode",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "header",
+          "name" : "If-None-Match",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/jose" : {
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            },
+            "description" : "The signed status-list artifact",
+            "headers" : {
+              "Cache-Control" : {
+                "description" : "max-age=60",
+                "schema" : {
+                  "type" : "string"
+                },
+                "style" : "simple"
+              },
+              "ETag" : {
+                "description" : "The list's version, quoted — weak entity tag for revalidation",
+                "schema" : {
+                  "type" : "string"
+                },
+                "style" : "simple"
+              }
+            }
+          },
+          "304" : {
+            "content" : {
+              "application/jose" : {
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            },
+            "description" : "The client's If-None-Match matched the current version — body omitted"
+          },
+          "404" : {
+            "content" : {
+              "application/jose" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No status list at this tenantSlug/listCode, or the tenantSlug is unknown (KH-STS-0404)"
+          }
+        },
+        "summary" : "Fetch a signed status-list artifact",
+        "tags" : [ "status" ]
+      }
     }
   },
   "tags" : [ {
@@ -1044,6 +1134,9 @@
   }, {
     "description" : "Public JSON Web Key Set for signature verification",
     "name" : "jwks"
+  }, {
+    "description" : "Signed status-list revocation artifacts",
+    "name" : "status"
   }, {
     "description" : "Wallet claim-code delivery",
     "name" : "claim"

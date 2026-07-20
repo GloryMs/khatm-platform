@@ -15,6 +15,7 @@ import sy.khatm.platform.shared.audit.AuditAction;
 import sy.khatm.platform.shared.audit.AuditService;
 import sy.khatm.platform.shared.error.ErrorCode;
 import sy.khatm.platform.shared.error.NotFoundException;
+import sy.khatm.platform.status.api.StatusListLookup;
 
 /**
  * Hands a freshly issued credential to a wallet exactly once, then destroys the platform's only
@@ -50,6 +51,7 @@ public class ClaimRedemptionService {
   private final CredentialRepository credentials;
   private final ClaimsEncryptionService claimsEncryption;
   private final SchemaCatalog schemas;
+  private final StatusListLookup statusLookup;
   private final AuditService audit;
 
   public ClaimRedemptionService(
@@ -57,11 +59,13 @@ public class ClaimRedemptionService {
       CredentialRepository credentials,
       ClaimsEncryptionService claimsEncryption,
       SchemaCatalog schemas,
+      StatusListLookup statusLookup,
       AuditService audit) {
     this.claimCodes = claimCodes;
     this.credentials = credentials;
     this.claimsEncryption = claimsEncryption;
     this.schemas = schemas;
+    this.statusLookup = statusLookup;
     this.audit = audit;
   }
 
@@ -118,6 +122,15 @@ public class ClaimRedemptionService {
                             + " references a missing schema — the schema_id foreign key should"
                             + " make this impossible"));
 
+    // KH-1.3 D7: the real public status-list URL (replacing the pre-KH-1.3 placeholder — the raw
+    // status list id). The FK guarantees the list exists; an empty result is treated as impossible,
+    // falling back to the id only defensively so a redeem never fails to ship a URI.
+    String statusListUri =
+        statusLookup
+            .findRef(credential.getStatusListId())
+            .map(sy.khatm.platform.status.api.StatusListRef::uri)
+            .orElseGet(() -> credential.getStatusListId().toString());
+
     return new ClaimRedeemResult(
         credential.getRef(),
         credential.getSignedPayload(),
@@ -125,7 +138,7 @@ public class ClaimRedemptionService {
         schema.id(),
         schema.nameI18n(),
         schema.version(),
-        credential.getStatusListId().toString(),
+        statusListUri,
         credential.getCreatedAt());
   }
 

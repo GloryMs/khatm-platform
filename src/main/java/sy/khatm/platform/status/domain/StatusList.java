@@ -44,6 +44,18 @@ public class StatusList {
   @Column(name = "signed_artifact_ref")
   private String signedArtifactRef;
 
+  /** The compact JWS itself (spec FS-1.3 D1/D4) — {@code null} until the first publish. */
+  @Column(name = "signed_artifact", columnDefinition = "text")
+  private String signedArtifact;
+
+  /**
+   * The {@code version} this list had when {@link #signedArtifact} was last built. The KH-1.3
+   * worker republishes exactly when this falls behind {@link #version} (spec D5's catch-up
+   * condition); {@code 0} until the first publish.
+   */
+  @Column(name = "artifact_version", nullable = false)
+  private long artifactVersion;
+
   @Column(name = "published_at")
   private Instant publishedAt;
 
@@ -112,6 +124,22 @@ public class StatusList {
 
   public void setSignedArtifactRef(String signedArtifactRef) {
     this.signedArtifactRef = signedArtifactRef;
+  }
+
+  public String getSignedArtifact() {
+    return signedArtifact;
+  }
+
+  public void setSignedArtifact(String signedArtifact) {
+    this.signedArtifact = signedArtifact;
+  }
+
+  public long getArtifactVersion() {
+    return artifactVersion;
+  }
+
+  public void setArtifactVersion(long artifactVersion) {
+    this.artifactVersion = artifactVersion;
   }
 
   public Instant getPublishedAt() {

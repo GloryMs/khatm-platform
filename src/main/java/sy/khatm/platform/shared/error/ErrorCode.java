@@ -45,6 +45,12 @@ import org.springframework.http.HttpStatus;
  * state-conflict code existed until minting a claim code needed to reject a revoked/expired
  * credential explicitly.
  *
+ * <p><b>{@code KH_STS_0404}</b> (KH-1.3, spec FS-1.3 D2): {@code GET /sl/{tenantSlug}/{listCode}}
+ * is the first {@code status} lookup exposed over HTTP — every prior {@code
+ * StatusListAllocator}/{@code StatusListRevoker}/{@code StatusListLookup} caller resolves by an
+ * internal FK id that always exists, so no not-found code was needed until an external caller could
+ * name an arbitrary, possibly-wrong {@code listCode}.
+ *
  * <p>{@code docs/error-codes.md} is generated from this enum by a test ({@code
  * ErrorCodesDocGenerationTest}) — never hand-edited (CLAUDE.md work rule 1).
  */
@@ -106,7 +112,10 @@ public enum ErrorCode {
    * The per-IP claim-redeem throttle tripped (spec FS-1.2.1 D6) — too many {@code POST
    * /api/v1/claims/redeem} attempts from the same address within the fixed window.
    */
-  KH_CLM_0429(HttpStatus.TOO_MANY_REQUESTS, "error.clm.throttled");
+  KH_CLM_0429(HttpStatus.TOO_MANY_REQUESTS, "error.clm.throttled"),
+
+  /** A requested status list ({@code tenantSlug}/{@code listCode}) does not exist. */
+  KH_STS_0404(HttpStatus.NOT_FOUND, "status.not-found");
 
   private final HttpStatus httpStatus;
   private final String messageKey;

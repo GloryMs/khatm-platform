@@ -22,7 +22,8 @@ import sy.khatm.platform.shared.LocalizedText;
  * @param schemaId the credential's schema id
  * @param schemaNameI18n the schema's bilingual display name
  * @param schemaVersion the schema version
- * @param statusListUri the credential's status-list reference (placeholder shape, spec FS-0.4 D3)
+ * @param statusListUri the credential's fully-qualified public status-list URL (spec FS-1.3 D7 —
+ *     the real {@code GET /sl/{tenantSlug}/{listCode}} value, replacing the pre-KH-1.3 placeholder)
  * @param issuedAt when the underlying credential was issued
  */
 public record ClaimRedeemResult(

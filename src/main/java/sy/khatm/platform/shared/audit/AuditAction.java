@@ -92,5 +92,13 @@ public enum AuditAction {
    * {@code POST /api/v1/claims/redeem} that IS recorded individually. {@code detail} carries the
    * source IP and the attempt count; never the code.
    */
-  CLAIM_REDEEM_THROTTLED
+  CLAIM_REDEEM_THROTTLED,
+
+  /**
+   * A status list's signed bitstring artifact was (re)published ({@code status} module, KH-1.3,
+   * spec FS-1.3 D7). Actor is always SYSTEM (published from a worker consumer or sweep, never a
+   * request thread). {@code entityRef} is the list's {@code list_code}; {@code detail.version}
+   * carries the version just published — never the bitstring or the artifact itself (SEC §9).
+   */
+  STATUS_LIST_PUBLISHED
 }

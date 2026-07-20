@@ -48,6 +48,12 @@ spring:
 
 khatm:
   issuer-did: "did:web:khatm.sy:demo"
+  platform:
+    # KH-1.3 (spec FS-1.3 D2/D7): the externally-reachable base URL used to build the public
+    # GET /sl/{tenantSlug}/{listCode} status-list URI. Not a secret — same non-secret,
+    # always-has-a-default treatment as khatm.issuer-did above, no per-profile override needed.
+    # A real deployment sets KHATM_PLATFORM_BASE_URL; localhost is fine for local/test/compose.
+    base-url: ${KHATM_PLATFORM_BASE_URL:http://localhost:8080}
   keys:
     # KH-0.5 (spec FS-0.5 §7): SOFT today; KMS/PKCS11 later are a config change only (D3).
     provider: SOFT
@@ -103,6 +109,15 @@ khatm:
     claim-code:
       # FS-0.2 §3.7 expiry-zeroing sweep interval. Default 300000 ms = 5 minutes (task step 5a).
       expiry-sweep-ms: 300000
+  status:
+    publish:
+      # KH-1.3 (spec FS-1.3 D5/§3): periodic catch-up sweep interval — republishes any status list
+      # whose signed artifact has fallen behind (or never existed). Complements the event-driven
+      # StatusListChangedHandler (near-real-time path, bounded by khatm.worker.stream.poll-interval-ms
+      # above) the same way ClaimCodeExpiryWorker complements ClaimRedemptionService's on-claim
+      # zeroing — a safety net, not the only path. Default 2000ms comfortably clears NFR-06's ≤60s
+      # revoke-to-publish budget; tests configure it short to assert the latency bound directly.
+      debounce: 2000
 
 logging:
   level:
