@@ -115,7 +115,10 @@ class CredentialController {
         reasonMessage,
         result.claims(),
         result.usesRemaining(),
-        result.revoked());
+        result.revoked(),
+        result.statusListChecked(),
+        result.statusListVersion(),
+        result.statusListUri());
   }
 
   @Operation(

@@ -1,19 +1,21 @@
 /**
- * Status module — credential status list management.
+ * Status module — credential status list management (spec FS-1.3).
  *
- * <p><b>Responsibilities:</b> maintain per-credential status bits in a compact Status List 2021
- * bitstring, expose the status list endpoint, publish status-change events to the ledger.
+ * <p><b>Responsibilities:</b> maintain per-credential status bits in a compact, gzip-compressed
+ * bitstring; flip a bit and bump the list version inside a revoke transaction; sign and publish the
+ * bitstring as a compact JWS artifact; serve the public status-list endpoint.
  *
  * <p><b>Exposed API:</b> {@code api/} sub-package — {@link
- * sy.khatm.platform.status.api.StatusListAllocator#allocate} atomically reserves a {@code
- * (status_list_id, status_idx)} pair for a credential being issued (KH-0.2.1).
+ * sy.khatm.platform.status.api.StatusListAllocator#allocate} (KH-0.2.1), {@link
+ * sy.khatm.platform.status.api.StatusListRevoker#revoke} + {@link
+ * sy.khatm.platform.status.api.StatusListLookup#findRef} (KH-1.3).
  *
- * <p><b>Published events:</b> {@code CredentialStatusChanged} (future — KH-1.3)
+ * <p><b>Published events:</b> {@link sy.khatm.platform.status.events.StatusListChanged} (KH-1.3) —
+ * fired inside the revoke transaction's bit-flip, externalized to the {@code
+ * khatm.credential.events} stream.
  *
- * <p><b>Tables owned:</b> {@code status_list}
- *
- * <p><b>Status:</b> minimal persistence + atomic bit allocation (KH-0.2.1); bitstring publication,
- * revoke-time bit flipping, capacity rollover deferred to KH-1.3.
+ * <p><b>Tables owned:</b> {@code status_list} (V1 + V3's {@code signed_artifact}/{@code
+ * artifact_version} columns).
  */
 @org.springframework.modulith.ApplicationModule
 package sy.khatm.platform.status;

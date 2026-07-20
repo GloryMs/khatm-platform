@@ -37,14 +37,16 @@ import sy.khatm.platform.shared.audit.AuditService;
  * within one chain — hence two chains, matched by request shape rather than URL pattern (the same
  * endpoint, e.g. {@code /issue}, can legitimately be called either way).
  *
- * <p><b>Public endpoints (D9, extended KH-1.2.1):</b> {@code POST /api/v1/credentials/verify},
- * {@code GET /.well-known/jwks.json}, and {@code POST /api/v1/claims/redeem} — exactly three,
- * enforced identically on both chains via {@link #configureAuthorization}. The third authenticates
- * by possession of a one-time claim code rather than a session or API key (spec FS-1.2.1 §9) — its
- * own per-IP throttle ({@code credential.domain.ClaimRedeemThrottleService}) is what keeps it from
- * being an open door, not this class. Every other endpoint requires at least a valid session or API
- * key; {@link ScopeGuard}'s per-route rules layer the specific scope/actor-kind requirement spec §3
- * names explicitly on top.
+ * <p><b>Public endpoints (D9, extended KH-1.2.1 and KH-1.3):</b> {@code POST
+ * /api/v1/credentials/verify}, {@code GET /.well-known/jwks.json}, {@code POST
+ * /api/v1/claims/redeem}, and {@code GET /sl/{tenantSlug}/{listCode}} — exactly four, enforced
+ * identically on both chains via {@link #configureAuthorization}. The third authenticates by
+ * possession of a one-time claim code rather than a session or API key (spec FS-1.2.1 §9) — its own
+ * per-IP throttle ({@code credential.domain.ClaimRedeemThrottleService}) is what keeps it from
+ * being an open door, not this class. The fourth is the public signed status-list artifact (spec
+ * FS-1.3 D2) — a read-only public resource exactly like JWKS, never behind auth. Every other
+ * endpoint requires at least a valid session or API key; {@link ScopeGuard}'s per-route rules layer
+ * the specific scope/actor-kind requirement spec §3 names explicitly on top.
  *
  * <p><b>API versioning (KH-1.6-early):</b> every business and auth endpoint lives under {@code
  * /api/v1/**} — the one breaking path change this platform ever makes with a straight face, done
@@ -108,6 +110,7 @@ class SecurityConfig {
 
   private static final String VERIFY_PATH = "/api/v1/credentials/verify";
   private static final String JWKS_PATH = "/.well-known/jwks.json";
+  private static final String STATUS_LIST_PATH = "/sl/**";
   private static final String LOGIN_PATH = "/api/v1/auth/login";
   private static final String ISSUE_PATH = "/api/v1/credentials/issue";
   private static final String CONSUME_PATH = "/api/v1/credentials/consume";
@@ -178,6 +181,8 @@ class SecurityConfig {
     auth.requestMatchers(HttpMethod.POST, VERIFY_PATH)
         .permitAll()
         .requestMatchers(HttpMethod.GET, JWKS_PATH)
+        .permitAll()
+        .requestMatchers(HttpMethod.GET, STATUS_LIST_PATH)
         .permitAll()
         .requestMatchers(HttpMethod.POST, LOGIN_PATH)
         .permitAll()

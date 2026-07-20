@@ -3,17 +3,25 @@
 
 ## Current phase / task
 - Phase 0 — Production Foundation, fully closed (see prior sessions). Phase 1 underway.
-- Current task: **KH-1.2.2** — expose claim-code minting (`POST
+- Current task: **KH-1.3** — signed status list (`GET /sl/{tenantSlug}/{listCode}`), spec FS-1.3
+  D1–D7 pre-approved. `mvn verify` green, 142/142 tests (18 new). PR open against `main`, **not
+  merged**. See "Last completed" → Session KH-1.3 for the full breakdown. **Completes the `status`
+  module** — issuance-time bit allocation (KH-0.2.1), revoke-time bit flip + publish (this
+  session), and the public artifact endpoint (this session) are all now real; nothing about status
+  lists is a placeholder anymore.
+- Prev task: **KH-1.2.2** — expose claim-code minting (`POST
   /api/v1/credentials/{id}/claim-code`), spec FS-1.2.1 D2's "issuer re-issues a claim code"
   recovery path realized over HTTP (no separate spec doc — the session brief itself was the spec,
-  same precedent as KH-1.6-early). `mvn verify` green (see "Last completed" → Session KH-1.2.2 for
-  the test count and full breakdown). PR open against `main`, **not merged**.
+  same precedent as KH-1.6-early). `mvn verify` green, 124/124 tests (12 new). DONE & MERGED via
+  PR #22 (2026-07-19, merge commit `871c51b`); branch `feat/KH-1.2.2-claim-code-endpoint` deleted.
+  **Corrects a stale claim this file carried** ("PR open, not yet merged" — written mid-session,
+  never updated after the merge happened later the same session; caught at the start of the KH-1.3
+  session by checking `git log` directly instead of trusting this file blindly — the third time
+  this exact lesson has been flagged, after KH-1.6-early and the KH-1.2.2 session's own note about
+  KH-1.2.1). See "Last completed" → Session KH-1.2.2 for the full breakdown.
 - Prev task: **KH-1.2.1** — claim delivery (`POST /api/v1/claims/redeem`), spec FS-1.2.1, D1–D8
   pre-approved. `mvn verify` green, 112/112 tests (14 new). DONE & MERGED via PR #21 (2026-07-19,
-  merge commit `165b022`); branch `feat/KH-1.2.1-claim-delivery` deleted. **Corrects a stale claim
-  this file carried** ("PR open, not yet merged" — written before merge, never updated after; caught
-  at the start of the KH-1.2.2 session by checking `git log` directly instead of trusting this file
-  blindly, the same lesson KH-1.6-early's session already flagged once). See "Last completed" →
+  merge commit `165b022`); branch `feat/KH-1.2.1-claim-delivery` deleted. See "Last completed" →
   Session KH-1.2.1 for the full breakdown. **Closes the `disclosures_enc` blocker for good** — see
   "Open decisions / blockers" below, now empty of it.
 - Prev task: **KH-1.6-early** — `/api/v1` path migration (the platform's one breaking contract
@@ -93,13 +101,123 @@
   "Last completed" → Session chore/swagger-and-flagged-fixes for details.
 
 ## Last completed
+- 2026-07-20: KH-1.3 — signed status list, spec FS-1.3, D1–D7 pre-approved. `mvn verify` green,
+  142/142 tests (18 new, up from 124). PR open against `main`, **not merged** (session
+  instruction). Branch `feat/KH-1.3-status-list`; first commit (from the prior session) mirrors
+  the spec into `docs/specs/`.
+  - **`status.domain.BitstringCodec`** (new, module-private): MSB-first bit-level `flipBit`/`isSet`
+    over the gzip-compressed bitstring `StatusList.bitstring` already stores (KH-0.2.1) — inflate,
+    touch one bit, deflate; the same compressed bytes get base64url-encoded verbatim into a
+    published artifact's `bits` claim, so no double compression anywhere in the pipeline.
+  - **`status.domain.StatusListRevokerService`** (new, implements the new `status.api
+    .StatusListRevoker`): the D3 atomic bit-flip — `StatusListRepository#findByIdForUpdate`
+    (`SELECT ... FOR UPDATE`, new) locks the row, flips the bit, bumps `version`, publishes a new
+    `status.events.StatusListChanged` application event, all inside the caller's own transaction
+    (`CredentialService#revoke` calls this from inside its existing revoke transaction — the
+    bitstring truth and the fast-path `revoked` column now commit or roll back together, closing
+    the "revoked=true but bit still 0" window the pre-KH-1.3 placeholder left open). The row lock
+    is what DoD #5's two-concurrent-revokes-same-list test verifies never loses an update.
+  - **`status.domain.StatusListLookupService`** (new, implements the new `status.api
+    .StatusListLookup`): plain read-only `(version, uri)` resolution — no lock, safe on every
+    `/verify` call per spec D6's "cheap locally" framing. Three callers pick it up (D7's promised
+    placeholder-to-real swap, all additive value changes, no shape changes): `CredentialService
+    #verify` gains three new additive response fields (`statusListChecked`/`statusListVersion`/
+    `statusListUri`, D6 — `false`/`null`/`null` in every early-exit branch that never reached a
+    credential row, populated once the row is in hand); `ClaimRedemptionService#redeem`'s
+    `statusListUri` becomes the real `/sl/{tenantSlug}/{listCode}` URL, replacing the raw
+    status-list UUID FS-1.2.1 §5 promised would resolve here; and — the one the "Next up" note
+    from the KH-1.2.1/2 sessions specifically flagged — `CredentialService#issue` itself now bakes
+    the real URL into the SD-JWT's own `status.status_list.uri` claim (spec FS-0.4 D3) at issuance
+    time, not just into API responses. This last one matters most: an *offline* verifier (the
+    whole point of KH-1.3, spec §1) only ever has what the token itself carries, so if this claim
+    had stayed a bare UUID, offline verification would still have had nothing to resolve against.
+  - **`status.domain.StatusListPublisher`** (new, public within the module — cross-sub-package
+    same-module access, the `CredentialService` rationale): the one routine that signs
+    (`KeySigner`, ES256, same signer/`kid` machinery SD-JWTs already use) and stores the compact
+    JWS artifact (D1 payload: `list`/`ver`/`cap`/`bits`/`iat`), and the one place that decides a
+    publish is actually needed — `publishIfStale` republishes only when `signedArtifact IS NULL`
+    or `artifactVersion < version`, re-reading the row fresh under the same row lock every time.
+    This single condition is D5's entire debounce mechanism: a storm of N rapid revokes on one
+    list produces N `StatusListChanged` events, but every dispatch after whichever one first
+    catches the list up to its latest version finds nothing stale left to do — DoD #4's 25-revoke
+    storm test confirms exactly one publish, one audit row, and a final artifact reflecting all 25
+    flipped bits.
+  - **Publish has two paths to the same `publishIfStale` call, event-driven and periodic** — same
+    complementary shape as `ClaimRedemptionService#redeem` (on-claim) vs. `ClaimCodeExpiryWorker`
+    (periodic sweep) already established: `status.worker.StatusListChangedHandler` (new,
+    implements `shared.events.StreamEventHandler`, worker-role only) consumes `StatusListChanged`
+    off the **existing** `khatm.credential.events` stream — deliberately not a new stream, since
+    `shared.events.RedisStreamConsumer` only polls one configured stream today and a second would
+    mean a second poller/group/DLQ for no MVP benefit (documented as a deliberate call in the
+    event's own Javadoc, flagged for a future session if per-stream isolation is ever actually
+    needed). `status.worker.StatusListPublishSweepWorker` (new, worker-role only, mirrors
+    `ClaimCodeExpiryWorker`'s exact `@Scheduled` shape) is the safety net —
+    `StatusListRepository#findStaleIds` (new query) finds every list with `signedArtifact IS NULL
+    OR artifactVersion < version` and republishes each; interval `khatm.status.publish.debounce`
+    (default 2000ms, comfortably inside NFR-06's ≤60s budget).
+  - **`status.web.StatusListController`** (new): `GET /sl/{tenantSlug}/{listCode}` — public,
+    `application/jose`, `ETag` = quoted version, `Cache-Control: max-age=60` (D2). **Lazy-publish
+    fallback**: if a list has never been published (fresh allocation, sweep hasn't reached it yet),
+    the request thread calls the same `publishIfStale` inline before serving, so the endpoint is
+    never a 404 waiting on a scheduler tick — reuses the publisher verbatim, no JWS-construction
+    duplication. `tenantSlug` is checked against `TenantContext.currentSlug()` and 404s on
+    mismatch (single-tenant MVP; real per-request tenant resolution is KH-2.1). New
+    `KH-STS-0404`/`status.not-found` (the first `status` lookup exposed over HTTP that can
+    actually fail) in both message bundles.
+  - **`rbac.security.SecurityConfig`**: `/sl/**` added to the public list — **now four** entries
+    (`/verify`, JWKS, `/claims/redeem`, `/sl/**`), enforced identically on both filter chains via
+    the existing `configureAuthorization`; `PublicEndpointsNoCredentialsTest` extended to match.
+    `WorkerProfileSecurityBootTest`'s absence-list gained `statusListController` (worker role must
+    never serve business REST, ADR-09 — same pattern every prior controller addition follows).
+  - **New `AuditAction.STATUS_LIST_PUBLISHED`** (actor always SYSTEM — published from a worker
+    consumer or sweep tick, never a request thread; `entityRef` = `list_code`, `detail.version` —
+    never the bitstring or the artifact itself, SEC §9) recorded once per actual publish, not once
+    per `StatusListChanged` event, which is exactly what the DoD #4 storm test's single-audit-row
+    assertion pins.
+  - **`V3__status_list_artifact.sql`** — the second post-baseline migration (append-only, V1/V2
+    untouched): `status_list` gains `signed_artifact text` (the JWS itself) and `artifact_version
+    bigint NOT NULL DEFAULT 0`. The pre-existing `signed_artifact_ref` column (V1, Phase-2 external
+    storage pointer) is untouched and still unused. `MigrationImmutabilityTest`/clean-boot green;
+    checksum appended to `db/migration-checksums.lock`.
+  - **New `khatm.platform.base-url` config** (`status.domain.StatusListUriBuilder`, new) — not a
+    secret, always has a default (`http://localhost:8080`, env `KHATM_PLATFORM_BASE_URL`), same
+    treatment as `khatm.issuer-did`; builds the fully-qualified public `/sl/{tenantSlug}/{listCode}`
+    URL every `StatusListRef` carries.
+  - **Tests (18 new)**: `status.domain.StatusListDomainTest` (3 — BitstringCodec round-trip,
+    revoke flips bit + bumps version + resolves via lookup, DoD #5's two-concurrent-revokes-
+    same-list real-thread race), `status.domain.StatusListPublishTest` (3 — DoD #2
+    sign/store/audit + idempotency, DoD #4's 25-revoke storm → one publish with every bit
+    reflected, sweep catch-up), `status.domain.NoBitstringContentInLogsTest` (1 — DoD #9, the
+    published artifact string never appears in a log line across an allocate→revoke→publish
+    cycle), `status.web.StatusListControllerHttpTest` (4 — DoD #3: 200 with zero credentials +
+    valid JWS claims, matching `If-None-Match` → 304 no body, unknown list → 404, wrong tenant
+    slug → 404), `status.worker.StatusListChangedWorkerTest` (1 — DoD #3's event-driven half
+    specifically: real outbox→stream→consumer-group round trip with the periodic sweep interval
+    set to an hour, so only the event path could have produced the publish asserted on),
+    `credential.domain.StatusListVerifyAndRedeemIntegrationTest` (5 — DoD #6: `/verify`'s three
+    additive fields on a valid credential, on a revoked one with version strictly advanced, and
+    absent on a malformed presentation; redeem's `statusListUri` is a real URL, not the old
+    bare-UUID placeholder; the SD-JWT's own embedded `status.status_list.uri` claim at issuance is
+    real too — the offline-verification case D7 actually exists for). `rbac
+    .PublicEndpointsNoCredentialsTest` extended to four endpoints (+1);
+    `shared.events.WorkerProfileSecurityBootTest`'s existing test extended with the
+    `statusListController` absence check (no new test method, so no count change there).
+    `OpenApiContractTest` regenerated the published contract additively (the new
+    `/sl/{tenantSlug}/{listCode}` path) — confirmed via the test's own freshness gate.
+  - **Side note (test-writing snag, resolved)**: `StatusListAllocatorService#allocate` bumps
+    `status_list.version` on every allocation too (pre-existing KH-0.2.1 behavior, not something
+    this session changed) — several new tests initially hardcoded an absolute post-revoke version
+    and failed until rewritten to assert the version *delta* the revoke itself produced, the same
+    lesson `ClaimCodeMintServiceTest`'s `valid_to > valid_from` CHECK-constraint snag taught last
+    session in a different shape: don't assume a fixture's starting state, read it.
+  - **Arabic-speaker review gate (spec FS-0.6a §4)** for `status.not-found`: **pending** — flag in
+    the PR body before merge, same as every other session's new-key set.
 - 2026-07-19: KH-1.2.2 — expose claim-code minting, `POST /api/v1/credentials/{id}/claim-code`
   (spec FS-1.2.1 D2's re-issue recovery path exposed over HTTP; no separate spec doc — the session
   brief itself was the spec, same precedent as KH-1.6-early). `mvn verify` green, 124/124 tests (12
   new, up from 112 — 6 service-level `ClaimCodeMintServiceTest`, 5 HTTP scope-gate
-  `ClaimCodeMintScopeGateTest`, 1 `NoDisclosureContentInLogsTest` extension). PR open against
-  `main`, **not merged** (session instruction). Branch
-  `feat/KH-1.2.2-claim-code-endpoint`.
+  `ClaimCodeMintScopeGateTest`, 1 `NoDisclosureContentInLogsTest` extension). DONE & MERGED via PR
+  #22 (2026-07-19, merge commit `871c51b`); branch `feat/KH-1.2.2-claim-code-endpoint` deleted.
   - **`CredentialService#mintClaimCode`** (new, public — same module-privacy rationale as every
     other `CredentialService` method): finds the credential (else `NotFoundException`
     `KH-CRD-0404`, same code/message `GET`/`revoke` already use — no new "foreign-tenant" handling

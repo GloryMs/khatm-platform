@@ -68,6 +68,9 @@ import sy.khatm.platform.shared.error.NotFoundException;
 import sy.khatm.platform.shared.error.VerifyReason;
 import sy.khatm.platform.status.api.StatusAllocation;
 import sy.khatm.platform.status.api.StatusListAllocator;
+import sy.khatm.platform.status.api.StatusListLookup;
+import sy.khatm.platform.status.api.StatusListRef;
+import sy.khatm.platform.status.api.StatusListRevoker;
 
 /**
  * Core credential lifecycle service.
@@ -109,6 +112,8 @@ public class CredentialService {
   private final SchemaCatalog schemas;
   private final HolderDirectory holders;
   private final StatusListAllocator statusLists;
+  private final StatusListRevoker statusRevoker;
+  private final StatusListLookup statusLookup;
   private final ConsumingPartyRegistry consumingParties;
   private final StringRedisTemplate redis;
   private final CredentialMapper mapper;
@@ -128,6 +133,8 @@ public class CredentialService {
       SchemaCatalog schemas,
       HolderDirectory holders,
       StatusListAllocator statusLists,
+      StatusListRevoker statusRevoker,
+      StatusListLookup statusLookup,
       ConsumingPartyRegistry consumingParties,
       StringRedisTemplate redis,
       CredentialMapper mapper,
@@ -142,6 +149,8 @@ public class CredentialService {
     this.schemas = schemas;
     this.holders = holders;
     this.statusLists = statusLists;
+    this.statusRevoker = statusRevoker;
+    this.statusLookup = statusLookup;
     this.consumingParties = consumingParties;
     this.redis = redis;
     this.mapper = mapper;
@@ -167,6 +176,15 @@ public class CredentialService {
         schemas.ensurePublished(buildSchemaDefinition(schemaCode, claims, sdFields, maxUses));
     HolderRef holderRef = holders.ensureHolder(holderPseudoRef);
     StatusAllocation allocation = statusLists.allocate(DEFAULT_STATUS_LIST_CODE);
+    // KH-1.3 D7: the allocate() call above always creates-or-finds the list row first, so a
+    // lookup right after it can never come back empty — the real, resolvable public URL an
+    // offline verifier needs baked into the SD-JWT itself, replacing the pre-KH-1.3 placeholder
+    // (the raw status_list_id) that spec FS-0.4 D3 originally shipped as a shape-only stand-in.
+    String statusListUri =
+        statusLookup
+            .findRef(allocation.statusListId())
+            .map(StatusListRef::uri)
+            .orElseGet(() -> allocation.statusListId().toString());
 
     Instant now = Instant.now();
     Instant exp = now.plus(Duration.ofMinutes(validMinutes));
@@ -184,7 +202,7 @@ public class CredentialService {
     sdBuilder.putClaim("iss", issuerDid);
     sdBuilder.putClaim("vct", vct);
     sdBuilder.putClaim("ref", ref);
-    sdBuilder.putClaim("status", statusClaim(allocation));
+    sdBuilder.putClaim("status", statusClaim(allocation, statusListUri));
     sdBuilder.putClaim("iat", now.getEpochSecond());
     sdBuilder.putClaim("nbf", now.getEpochSecond());
     sdBuilder.putClaim("exp", exp.getEpochSecond());
@@ -393,13 +411,41 @@ public class CredentialService {
       return result(true, VerifyReason.VALID_SIGNATURE_UNKNOWN_REF, structural, null, false);
     }
     Credential c = maybe.get();
+
+    // KH-1.3 D6: now that the credential row is in hand, resolve its status list and surface the
+    // additive verify-time fields. statusListChecked=true here means this result is backed by the
+    // platform's live status list (we have the row + resolved the list) — by D3 the bitstring bit
+    // and the `revoked` column are always consistent, so `revoked` below is the bitstring-grounded
+    // truth. The early-exit branches above never reached a row, so they carry
+    // statusListChecked=false.
+    Optional<StatusListRef> statusRef = statusLookup.findRef(c.getStatusListId());
+    boolean statusListChecked = statusRef.isPresent();
+    Long statusListVersion = statusRef.map(StatusListRef::version).orElse(null);
+    String statusListUri = statusRef.map(StatusListRef::uri).orElse(null);
+
     if (c.isRevoked()) {
-      return result(false, VerifyReason.REVOKED, structural, c.getUsesRemaining(), true);
+      return result(
+          false,
+          VerifyReason.REVOKED,
+          structural,
+          c.getUsesRemaining(),
+          true,
+          statusListChecked,
+          statusListVersion,
+          statusListUri);
     }
 
     // D8: _sd_alg must be sha-256.
     if (!SD_ALG.equals(rawClaims.get("_sd_alg"))) {
-      return result(false, VerifyReason.BAD_SD_ALG, structural, c.getUsesRemaining(), false);
+      return result(
+          false,
+          VerifyReason.BAD_SD_ALG,
+          structural,
+          c.getUsesRemaining(),
+          false,
+          statusListChecked,
+          statusListVersion,
+          statusListUri);
     }
     List<?> sdDigests = rawClaims.get("_sd") instanceof List<?> list ? list : List.of();
 
@@ -409,11 +455,25 @@ public class CredentialService {
       String claimName = d.getClaimName();
       if (claimName == null || !sdDigests.contains(d.digest())) {
         return result(
-            false, VerifyReason.FORGED_DISCLOSURE, structural, c.getUsesRemaining(), false);
+            false,
+            VerifyReason.FORGED_DISCLOSURE,
+            structural,
+            c.getUsesRemaining(),
+            false,
+            statusListChecked,
+            statusListVersion,
+            statusListUri);
       }
       if (disclosed.containsKey(claimName)) {
         return result(
-            false, VerifyReason.DUPLICATE_DISCLOSURE, structural, c.getUsesRemaining(), false);
+            false,
+            VerifyReason.DUPLICATE_DISCLOSURE,
+            structural,
+            c.getUsesRemaining(),
+            false,
+            statusListChecked,
+            statusListVersion,
+            statusListUri);
       }
       disclosed.put(claimName, d.getClaimValue());
     }
@@ -428,20 +488,34 @@ public class CredentialService {
               VerifyReason.WITHHELD_MANDATORY_CLAIM,
               structural,
               c.getUsesRemaining(),
-              false);
+              false,
+              statusListChecked,
+              statusListVersion,
+              statusListUri);
         }
       }
     }
 
     Map<String, Object> verifiedClaims = new LinkedHashMap<>(structural);
     verifiedClaims.putAll(disclosed);
-    return result(true, VerifyReason.VALID, verifiedClaims, c.getUsesRemaining(), false);
+    return result(
+        true,
+        VerifyReason.VALID,
+        verifiedClaims,
+        c.getUsesRemaining(),
+        false,
+        statusListChecked,
+        statusListVersion,
+        statusListUri);
   }
 
   /**
-   * Build a {@link VerifyResponse} carrying {@code reason}'s wire code. {@code reasonMessage} is
-   * left {@code null} — localizing it needs the request locale, which is a web-layer concern; the
-   * controller resolves and fills it in via {@code MessageSource} (spec FS-0.6a §3).
+   * Build a {@link VerifyResponse} carrying {@code reason}'s wire code. {@code reasonMessage} and
+   * the three status-list fields are left at their defaults — localizing the message needs the
+   * request locale (a web-layer concern; the controller resolves it via {@code MessageSource}, spec
+   * FS-0.6a §3), and the status fields are {@code false}/{@code null} for every early-exit branch
+   * that never reached a credential row (spec FS-1.3 D6). Post-row branches pass the resolved
+   * values explicitly.
    */
   private static VerifyResponse result(
       boolean valid,
@@ -449,7 +523,29 @@ public class CredentialService {
       Map<String, Object> claims,
       Integer usesRemaining,
       boolean revoked) {
-    return new VerifyResponse(valid, reason.code(), null, claims, usesRemaining, revoked);
+    return result(valid, reason, claims, usesRemaining, revoked, false, null, null);
+  }
+
+  /** Full-arity builder for the post-credential-row branches that carry status-list metadata. */
+  private static VerifyResponse result(
+      boolean valid,
+      VerifyReason reason,
+      Map<String, Object> claims,
+      Integer usesRemaining,
+      boolean revoked,
+      boolean statusListChecked,
+      Long statusListVersion,
+      String statusListUri) {
+    return new VerifyResponse(
+        valid,
+        reason.code(),
+        null,
+        claims,
+        usesRemaining,
+        revoked,
+        statusListChecked,
+        statusListVersion,
+        statusListUri);
   }
 
   // ── Consume (atomic — the double-spend guard) ─────────────────────────────
@@ -511,6 +607,12 @@ public class CredentialService {
     c.setRevoked(true);
     c.setRevokedAt(Instant.now());
     credentials.save(c);
+    // KH-1.3 D3: flip the status-list bit inside this same transaction, so the bitstring truth and
+    // the fast-path `revoked` column commit or roll back together — no window where revoked=true
+    // but
+    // the bit is still 0. The bit flip raises the list's version and publishes a StatusListChanged
+    // event (externalized after commit) for the worker to re-sign and republish the artifact.
+    statusRevoker.revoke(c.getStatusListId(), c.getStatusIdx());
     audit.record(AuditAction.CREDENTIAL_REVOKED, "credential", id.toString(), null);
     return true;
   }
@@ -530,14 +632,16 @@ public class CredentialService {
 
   /**
    * Build the {@code status} claim's value (spec FS-0.4 D3): the IETF Token Status List shape
-   * ({@code status.status_list.{idx,uri}}). {@code uri} is a provisional placeholder — the raw
-   * status list id, not yet a resolvable URL — until KH-1.3 publishes the real signed bitstring
-   * artifact endpoint. This method fixes the claim's *shape* now, per spec FS-0.4 §7.
+   * ({@code status.status_list.{idx,uri}}). {@code uri} is the real, resolvable {@code GET
+   * /sl/{tenantSlug}/{listCode}} URL (KH-1.3 D7) baked into the SD-JWT itself at issuance — this is
+   * what makes offline verification possible at all, since an offline verifier only ever has what
+   * the token carries.
    */
-  private static Map<String, Object> statusClaim(StatusAllocation allocation) {
+  private static Map<String, Object> statusClaim(
+      StatusAllocation allocation, String statusListUri) {
     Map<String, Object> statusList = new LinkedHashMap<>();
     statusList.put("idx", allocation.idx());
-    statusList.put("uri", allocation.statusListId().toString());
+    statusList.put("uri", statusListUri);
     Map<String, Object> status = new LinkedHashMap<>();
     status.put("status_list", statusList);
     return status;
