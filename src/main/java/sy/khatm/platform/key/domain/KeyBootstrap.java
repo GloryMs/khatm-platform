@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import sy.khatm.platform.shared.TenantContext;
 
@@ -32,9 +33,19 @@ import sy.khatm.platform.shared.TenantContext;
  * auto-provisioning on first boot is only acceptable while there is a single platform-default
  * tenant and no console/RBAC to gate it. Do not extend this class to provision additional tenants;
  * that path should go through the future ceremony instead.
+ *
+ * <p><b>{@code @Order(0)} (discovered KH-1.4.3, fixed here):</b> {@code credential.seed.DemoSeeder}
+ * needs an {@code ACTIVE} issuer key to issue its demo credential, and gaining its own explicit
+ * {@code @Order(1)} that same session (to run ahead of {@code rbac.seed.DemoApiKeySeeder}) meant it
+ * now sorted ahead of this <em>unordered</em> {@code ApplicationRunner} too — Spring treats
+ * unordered beans as lowest precedence relative to any explicitly {@code @Order}ed one, not "same
+ * as before." Confirmed via a real `docker compose up`: {@code DemoSeeder} logged "No ACTIVE issuer
+ * key for tenant" and skipped. This explicit {@code @Order(0)} restores "bootstraps first" without
+ * relying on incidental bean-registration order the way the pre-KH-1.4.3 code implicitly did.
  */
 @Component
 @ConditionalOnProperty(name = "khatm.web.enabled", havingValue = "true", matchIfMissing = true)
+@Order(0)
 class KeyBootstrap implements ApplicationRunner {
 
   private static final Logger log = LoggerFactory.getLogger(KeyBootstrap.class);

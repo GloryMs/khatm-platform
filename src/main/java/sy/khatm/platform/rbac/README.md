@@ -8,8 +8,9 @@ Console session auth, API keys, and role-based access control (spec FS-0.6b).
 lands here in KH-0.6b), `api_key` (new, `V2__auth_api_keys.sql`).
 
 **Shape (spec FS-0.6b §3):**
-- `api/` — `CurrentActor` + `CurrentActorResolver`. The *only* cross-module surface; forward-
-  looking (no consumer yet — KH-1.4.3 will be the first).
+- `api/` — `CurrentActor` + `CurrentActorResolver`. The *only* cross-module surface;
+  `credential.domain.CredentialService#consume` (KH-1.4.3) is the first real consumer, reading
+  `CurrentActor#ownerId()` to enforce `consuming_party_schema` scoping.
 - `domain/` — module-private:
   - `AppUser` / `Role` / `ApiKey` — JPA entities matching V1 + V2.
   - `AuthService` — login/logout support: argon2id password check, the Redis-TTL lockout counter
@@ -37,12 +38,16 @@ lands here in KH-0.6b), `api_key` (new, `V2__auth_api_keys.sql`).
     these denials.
 - `web/` — `AuthController`: `POST /api/v1/auth/login` · `POST /api/v1/auth/logout` · `GET
   /api/v1/auth/me` · `POST /api/v1/admin/api-keys` · `POST /api/v1/admin/api-keys/{id}/revoke`.
-- `seed/` — `DemoApiKeySeeder` (`local`/`dev` only): a demo `CONSUMING_PARTY` API key, logged once
-  in full so a developer can exercise `/consume` without a real onboarding flow (KH-1.4.3). The
-  console admin itself needs no separate demo seeder — `AdminBootstrap` already provisions one in
-  every profile, `local` included.
+- `seed/` — `DemoApiKeySeeder` (`local`/`dev` only, `@Order(2)`): a demo `CONSUMING_PARTY` API key,
+  logged once in full so a developer can exercise `/consume` without a real onboarding flow.
+  KH-1.4.3: also allowlists the demo party for `credential.seed.DemoSeeder`'s demo schema
+  (`CriminalRecordExtract/v1`, resolved via `SchemaCatalog#listAll` by code) — `DemoSeeder` runs
+  first (`@Order(1)`) so that schema always exists by the time this seeder needs it. The console
+  admin itself needs no separate demo seeder — `AdminBootstrap` already provisions one in every
+  profile, `local` included.
 
 **Scope catalog (D5, unchanged from V1's seed):** `issue`, `verify`, `consume`, `revoke`, `admin`.
 
-**Status:** KH-0.6b — completes Phase 0. Full admin console (user/role management UI) is KH-2.2;
-`allowed_schemas` enforcement building on the `CONSUMING_PARTY` API-key principal is KH-1.4.3.
+**Status:** KH-0.6b — completes Phase 0. Full admin console (user/role management UI) is KH-2.2.
+`consuming_party_schema` enforcement building on the `CONSUMING_PARTY` API-key principal is done
+(KH-1.4.3, lives in `credential.domain.CredentialService#consume` + `consumer :: api`).

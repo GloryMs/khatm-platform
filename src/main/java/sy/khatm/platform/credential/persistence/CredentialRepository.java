@@ -41,4 +41,13 @@ public interface CredentialRepository extends JpaRepository<Credential, UUID> {
           """,
       nativeQuery = true)
   int consumeOne(@Param("id") UUID id);
+
+  /**
+   * A credential's {@code schema_id} alone, by primary key (KH-1.4.3) — {@code
+   * CredentialService#consume}'s schema-allowlist pre-check reads only this one column rather than
+   * the whole entity (which also carries {@code signed_payload}), keeping the common/allowed path
+   * to exactly one lean indexed read ahead of the atomic {@link #consumeOne} update.
+   */
+  @Query(value = "SELECT schema_id FROM credential WHERE id = :id", nativeQuery = true)
+  Optional<UUID> findSchemaId(@Param("id") UUID id);
 }

@@ -27,3 +27,13 @@ metadata; see `rbac.security.SecurityConfig`'s Javadoc for the explicit decision
 new `SchemaCatalog` methods, `#listAll`/`#findDetailById`, and two new list/detail-view DTOs,
 `SchemaSummary`/`SchemaDetail` — `SchemaRef` itself is unchanged (still what `credential` depends
 on). New `KH-SCH-0404` error code for the first schema lookup that can actually fail.
+
+KH-1.4.3 (schema response enrichment): `SchemaSummary` gains `code` — the value `POST
+/api/v1/credentials/issue`'s `schemaCode` field expects, closing a console issue-screen contract
+gap (the console had no way to discover valid `schemaCode` values). `SchemaDetail` gains `code`,
+`sdFields`, `defaultMaxUses` (both already stored, just not surfaced), and `defaultValidity` — an
+ISO-8601 duration string (e.g. `P90D`) read from the `default_validity` Postgres `interval` column
+via a scalar `EXTRACT(epoch FROM ...)` native query (`CredentialSchemaRepository
+#findDefaultValiditySeconds`) rather than mapping `interval` into any JPA/Hibernate Java type
+directly — `null` if the schema has no configured default. Additive-only; `SchemaRef` (what
+`credential` actually depends on for issuance) is unchanged.

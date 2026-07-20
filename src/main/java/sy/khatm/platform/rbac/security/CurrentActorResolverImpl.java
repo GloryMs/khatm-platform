@@ -33,6 +33,7 @@ class CurrentActorResolverImpl implements CurrentActorResolver {
       }
     }
     return Optional.of(
-        new CurrentActor(principal.kind(), principal.id(), principal.tenantId(), scopes));
+        new CurrentActor(
+            principal.kind(), principal.id(), principal.tenantId(), scopes, principal.ownerId()));
   }
 }

@@ -18,3 +18,4 @@
 | `KH-CLM-0404` | 404 | `error.clm.invalid_or_expired` |
 | `KH-CLM-0429` | 429 | `error.clm.throttled` |
 | `KH-STS-0404` | 404 | `status.not-found` |
+| `KH-CNS-0403` | 403 | `consumer.schema-not-allowed` |

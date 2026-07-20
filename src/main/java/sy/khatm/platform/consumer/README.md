@@ -12,4 +12,13 @@ deriving the row's id deterministically from `(tenant, code)` so the same code a
 to the same row. KH-0.6b removed the KH-0.2.1 stand-in `api_key_hash` column entirely
 (`V2__auth_api_keys.sql`) — real API-key authentication for a consuming party now lives in
 `rbac`'s `api_key` table (`owner_type = CONSUMING_PARTY`), unrelated to this find-or-create path.
-Per-party quotas and schema scoping via `consuming_party_schema` remain KH-1.4.3.
+
+**Schema scoping (KH-1.4.3):** `ConsumingPartyRegistry#isSchemaAllowed`/`#allowSchema` back the
+`consuming_party_schema` join table (no JPA entity — a bare composite-key join table, same
+treatment `rbac`'s `user_role` gets). `credential.domain.CredentialService#consume` calls
+`#isSchemaAllowed` before its atomic update: a `CONSUMING_PARTY`-authenticated caller may only
+consume a credential whose `schema_id` has a `consuming_party_schema` row for their own party —
+deny-by-default, so a party with an empty (or entirely absent) allowlist can consume nothing.
+`rbac.seed.DemoApiKeySeeder` calls `#allowSchema` to scope the demo consuming party to the demo
+schema, otherwise every local demo consume would 403 under this default. Per-party quotas remain
+future work.

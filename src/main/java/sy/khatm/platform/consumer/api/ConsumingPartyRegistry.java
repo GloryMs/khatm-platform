@@ -1,5 +1,7 @@
 package sy.khatm.platform.consumer.api;
 
+import java.util.UUID;
+
 /**
  * SPI for resolving consuming parties (verifiers) by code.
  *
@@ -22,4 +24,27 @@ public interface ConsumingPartyRegistry {
    * @return an opaque reference to the (possibly newly registered) consuming party
    */
   ConsumingPartyRef ensure(String code);
+
+  /**
+   * Whether {@code partyId} is permitted to consume credentials issued against {@code schemaId}
+   * (KH-1.4.3, spec SEC §7) — backed by the {@code consuming_party_schema} join table.
+   *
+   * <p>Deny-by-default: a party with no {@code consuming_party_schema} row for this schema is
+   * denied, exactly the same outcome as a party with no rows at all — there is no separate "empty
+   * allowlist" representation to check.
+   *
+   * @param partyId the consuming party's id; must not be {@code null}
+   * @param schemaId the schema to check; must not be {@code null}
+   * @return {@code true} if {@code partyId} is scoped to {@code schemaId}
+   */
+  boolean isSchemaAllowed(UUID partyId, UUID schemaId);
+
+  /**
+   * Scope {@code partyId} to consume credentials issued against {@code schemaId} (KH-1.4.3) —
+   * idempotent; allowing the same pair twice has no additional effect.
+   *
+   * @param partyId the consuming party to scope; must already exist ({@link #ensure})
+   * @param schemaId the schema to allow
+   */
+  void allowSchema(UUID partyId, UUID schemaId);
 }

@@ -9,9 +9,11 @@
  * /verify} and the JWKS endpoint are the only two endpoints that stay open).
  *
  * <p><b>Exposed API:</b> {@code api/} — {@link sy.khatm.platform.rbac.api.CurrentActor} + {@link
- * sy.khatm.platform.rbac.api.CurrentActorResolver}, a forward-looking way for a future module to
- * ask "who is making this call" (KH-1.4.3's {@code allowed_schemas} enforcement will be the first
- * real consumer, spec §9) without depending on Spring Security types directly.
+ * sy.khatm.platform.rbac.api.CurrentActorResolver}, a way for another module to ask "who is making
+ * this call" without depending on Spring Security types directly — {@code
+ * credential.domain.CredentialService#consume} (KH-1.4.3, spec §9) is the first real consumer,
+ * reading {@link sy.khatm.platform.rbac.api.CurrentActor#ownerId()} to enforce {@code
+ * consuming_party_schema} scoping.
  *
  * <p><b>Published events:</b> none.
  *
@@ -30,7 +32,9 @@
  * security.SecurityEnvelopeWriter} for the pre-{@code DispatcherServlet} filter-chain denials);
  * {@code consumer :: api} ({@code ConsumingPartyRegistry} — {@code seed.DemoApiKeySeeder}'s {@code
  * local}/{@code dev}-only demo {@code CONSUMING_PARTY} API key needs a real consuming party to own
- * it).
+ * it, and — KH-1.4.3 — allowlists that party for the demo schema); {@code schema :: api} ({@code
+ * SchemaCatalog#listAll}, KH-1.4.3 — {@code seed.DemoApiKeySeeder} resolves the demo schema's id by
+ * code to allowlist it, same local/dev-only seeder).
  */
 @org.springframework.modulith.ApplicationModule(
     allowedDependencies = {
@@ -38,6 +42,7 @@
       "shared :: error",
       "shared :: audit",
       "shared :: web",
-      "consumer :: api"
+      "consumer :: api",
+      "schema :: api"
     })
 package sy.khatm.platform.rbac;

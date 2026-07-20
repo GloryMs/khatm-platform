@@ -1,5 +1,6 @@
 package sy.khatm.platform.schema.domain;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -47,7 +48,9 @@ class SchemaCatalogService implements SchemaCatalog {
   @Override
   @Transactional(readOnly = true)
   public Optional<SchemaDetail> findDetailById(UUID id) {
-    return schemas.findById(id).map(SchemaCatalogService::toDetail);
+    return schemas
+        .findById(id)
+        .map(schema -> toDetail(schema, schemas.findDefaultValiditySeconds(id)));
   }
 
   @Override
@@ -88,15 +91,40 @@ class SchemaCatalogService implements SchemaCatalog {
 
   private static SchemaSummary toSummary(CredentialSchema schema) {
     return new SchemaSummary(
-        schema.getId(), schema.getNameI18n(), schema.getVersion(), schema.getStatus());
+        schema.getId(),
+        schema.getCode(),
+        schema.getNameI18n(),
+        schema.getVersion(),
+        schema.getStatus());
   }
 
-  private static SchemaDetail toDetail(CredentialSchema schema) {
+  private static SchemaDetail toDetail(CredentialSchema schema, Long defaultValiditySeconds) {
     return new SchemaDetail(
         schema.getId(),
+        schema.getCode(),
         schema.getNameI18n(),
         schema.getVersion(),
         schema.getStatus(),
-        schema.getClaimsDefJson());
+        schema.getClaimsDefJson(),
+        List.of(schema.getSdFields()),
+        schema.getDefaultMaxUses(),
+        toIso8601Duration(defaultValiditySeconds));
+  }
+
+  /**
+   * Render a total-seconds interval as an ISO-8601 duration string — {@code "P{n}D"} for a
+   * whole-day interval (the common case for a schema's default validity, e.g. {@code "P90D"}),
+   * falling back to {@link Duration#toString()}'s {@code PT}-based form for anything finer-grained.
+   * Both forms are valid ISO-8601; there is no single Java type that renders every interval in the
+   * calendar-style {@code PnD} form, so this picks the readable form when it applies exactly.
+   */
+  private static String toIso8601Duration(Long totalSeconds) {
+    if (totalSeconds == null) {
+      return null;
+    }
+    if (totalSeconds % 86400 == 0) {
+      return "P" + (totalSeconds / 86400) + "D";
+    }
+    return Duration.ofSeconds(totalSeconds).toString();
   }
 }

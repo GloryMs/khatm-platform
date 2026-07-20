@@ -72,5 +72,22 @@ the only place that builds an error response. `IssueRequest.holderRef` and `Veri
 gained `@NotBlank`.
 
 **Cross-module dependencies:** `key :: api`, `schema :: api`, `holder :: api`,
-`status :: api`, `consumer :: api`, `shared` (open root package), `shared :: error`
-(`KhatmException` subtypes, `VerifyReason`), `shared :: web` (`ErrorEnvelope`, OpenAPI-only).
+`status :: api`, `consumer :: api`, `rbac :: api` (KH-1.4.3 — `CurrentActorResolver`), `shared`
+(open root package), `shared :: error` (`KhatmException` subtypes, `VerifyReason`), `shared :: web`
+(`ErrorEnvelope`, OpenAPI-only).
+
+**Schema-scoped consumption (KH-1.4.3, spec SEC §7):** `CredentialController#consume` calls
+`CredentialService#enforceSchemaAllowlist` *before* `#consume` itself — deliberately outside
+`#consume`'s `@Transactional` boundary, the same shape `ClaimRedeemThrottleService#enforce` uses
+ahead of `ClaimRedemptionService#redeem`, and for the identical reason: the denial-path audit row
+must commit on its own, not roll back alongside the exception that's about to unwind the stack
+(discovered empirically — nesting the check inside `#consume` silently discarded every
+`CONSUME_SCHEMA_DENIED` row). A `CONSUMING_PARTY` API key may only consume a credential whose
+schema is in its own `consuming_party_schema` allowlist (`consumer :: api #isSchemaAllowed`) —
+deny-by-default, so an unconfigured party can consume nothing. Denial is a new `KH-CNS-0403`
+(deliberately distinct from the generic `KH-RBC-0403` — "authenticated but this schema isn't
+yours" is its own, support-relevant situation) and a new `CONSUME_SCHEMA_DENIED` audit row
+(`entityRef` = the credential's ref, `detail` = `schemaId` + `party`, never claims material).
+`SecurityConfig`'s existing `ScopeGuard.requireScopeAndConsumingPartyKey("consume")` rule already
+rejects a `TENANT` key here regardless of scope — this session only adds the explicit test proving
+it, no new enforcement code was needed for that half.

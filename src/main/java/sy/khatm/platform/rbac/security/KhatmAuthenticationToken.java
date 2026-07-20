@@ -17,9 +17,14 @@ class KhatmAuthenticationToken extends AbstractAuthenticationToken {
   private final KhatmPrincipal principal;
 
   KhatmAuthenticationToken(
-      CurrentActor.ActorKind kind, UUID id, UUID tenantId, String label, Set<String> scopes) {
+      CurrentActor.ActorKind kind,
+      UUID id,
+      UUID tenantId,
+      String label,
+      Set<String> scopes,
+      UUID ownerId) {
     super(KhatmAuthorities.build(kind, scopes));
-    this.principal = new KhatmPrincipal(kind, id, tenantId, label);
+    this.principal = new KhatmPrincipal(kind, id, tenantId, label, ownerId);
     setAuthenticated(true);
   }
 

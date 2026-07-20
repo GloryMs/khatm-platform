@@ -12,7 +12,10 @@ import java.util.Map;
  * them ever appears as a plaintext value in the stored, signed payload.
  *
  * @param schemaCode credential type code (e.g. {@code CriminalRecordExtract/v1}); defaults to
- *     {@code GenericDocument/v1} if null
+ *     {@code GenericDocument/v1} if null. Valid values are the {@code code} field of any entry
+ *     {@code GET /api/v1/schemas} returns (KH-1.4.3) — an unrecognized code is not rejected here;
+ *     {@link sy.khatm.platform.credential.domain.CredentialService#issue} finds-or-creates a schema
+ *     for it (KH-0.2.1's stand-in path, still active until schema authoring is console-driven)
  * @param holderRef pseudonymous holder identifier; never a real name or national ID. Mandatory
  *     (spec FS-0.6a §5 DoD #3 exercises this field's Bean Validation) — a credential must always
  *     name who it was issued to, even pseudonymously.

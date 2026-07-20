@@ -8,6 +8,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Profile;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import sy.khatm.platform.credential.api.IssueRequest;
 import sy.khatm.platform.credential.api.IssueResponse;
@@ -22,10 +23,15 @@ import sy.khatm.platform.credential.domain.CredentialService;
  * FS-0.4 D2): {@code result} is <em>not</em> in {@code sdFields}, so every presentation must
  * disclose it; {@code caseNumber} and {@code issuedAt} are withholdable at the holder's choice.
  *
+ * <p><b>Ordered ahead of {@code rbac.seed.DemoApiKeySeeder}</b> ({@code @Order(1)} vs. that class's
+ * {@code @Order(2)}, KH-1.4.3): the demo schema must exist before the other seeder can scope the
+ * demo consuming party to it via {@code consuming_party_schema}.
+ *
  * <p>Active only in {@code local} and {@code dev} Spring profiles. Never runs in production.
  */
 @Component
 @Profile({"local", "dev"})
+@Order(1)
 class DemoSeeder implements CommandLineRunner {
 
   private static final Logger log = LoggerFactory.getLogger(DemoSeeder.class);
