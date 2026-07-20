@@ -195,8 +195,9 @@
       needed no change — `enforceSchemaAllowlist` no-ops when `CurrentActorResolver#resolve()` is
       empty, by design, since `SecurityConfig` already guarantees every real HTTP caller here has an
       actor.
-  - **Arabic-speaker review gate (spec FS-0.6a §4)** for `consumer.schema-not-allowed`: **pending**
-    — flag in the PR body before merge, same as every other session's new-key set.
+  - **Arabic-speaker review gate (spec FS-0.6a §4)** for `consumer.schema-not-allowed`: confirmed
+    by the user (Majd) directly before merge, no wording changes needed — same pattern as every
+    prior session's new-key set.
   - **`docs/api/openapi.json`/`docs/error-codes.md`**: both regenerated via their own tests'
     failure-message "paste this in" content (`OpenApiContractTest`/`ErrorCodesDocGenerationTest`),
     not hand-edited — confirmed additive-only (new `SchemaSummary`/`SchemaDetail` fields, new
