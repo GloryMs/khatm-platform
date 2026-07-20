@@ -14,6 +14,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 import sy.khatm.platform.rbac.SessionTestSupport.AuthenticatedSession;
 import sy.khatm.platform.rbac.domain.ApiKeyOwnerType;
 import sy.khatm.platform.rbac.domain.ApiKeyService;
@@ -33,6 +34,7 @@ class SchemaReadEndpointsTest extends RbacHttpTestSupport {
 
   @Autowired private SchemaCatalog catalog;
   @Autowired private ApiKeyService apiKeyService;
+  @Autowired private JdbcTemplate jdbc;
 
   @Test
   void list_withSession_returnsRegisteredSchema() throws Exception {
@@ -47,6 +49,7 @@ class SchemaReadEndpointsTest extends RbacHttpTestSupport {
     assertThat(entries.isArray()).isTrue();
     JsonNode match = findById(entries, schema.id());
     assertThat(match).as("expected schema %s in the list", schema.id()).isNotNull();
+    assertThat(match.get("code").asText()).isEqualTo("SchemaListProbe/v1");
     assertThat(match.get("nameI18n").get("en").asText()).isEqualTo("List Probe");
     assertThat(match.get("nameI18n").get("ar").asText()).isEqualTo("فحص القائمة");
     assertThat(match.get("version").asInt()).isEqualTo(1);
@@ -65,10 +68,38 @@ class SchemaReadEndpointsTest extends RbacHttpTestSupport {
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
     JsonNode body = JSON.readTree(response.getBody());
     assertThat(body.get("id").asText()).isEqualTo(schema.id().toString());
+    assertThat(body.get("code").asText()).isEqualTo("SchemaDetailProbe/v1");
     // The claims_def column round-trips through Postgres jsonb, which re-serializes whitespace
     // (e.g. "[]" -> "[ ]"); compare parsed JSON, not the raw string.
     assertThat(JSON.readTree(body.get("claimsDefJson").asText()))
         .isEqualTo(JSON.readTree(schema.claimsDefJson()));
+    assertThat(body.get("sdFields").isArray()).isTrue();
+    assertThat(body.get("sdFields")).isEmpty();
+    assertThat(body.get("defaultMaxUses").asInt()).isEqualTo(1);
+    // ensureProbeSchema never sets default_validity — the column stays NULL (no DB default).
+    assertThat(body.get("defaultValidity").isNull()).isTrue();
+  }
+
+  @Test
+  void get_withDefaultValiditySet_returnsIso8601DurationString() throws Exception {
+    SchemaRef schema = ensureProbeSchema("SchemaValidityProbe/v1", "Validity Probe");
+    // SchemaCatalog has no authoring path for default_validity yet (KH-1.x); set it directly to
+    // exercise CredentialSchemaRepository#findDefaultValiditySeconds' EXTRACT(epoch FROM ...)
+    // conversion end-to-end, the same direct-JDBC pattern other suites use for columns no service
+    // method writes yet.
+    jdbc.update(
+        "UPDATE credential_schema SET default_validity = ?::interval WHERE id = ?",
+        "90 days",
+        schema.id());
+    AuthenticatedSession session =
+        SessionTestSupport.login(rest, BOOTSTRAP_ADMIN_USERNAME, BOOTSTRAP_ADMIN_PASSWORD);
+
+    ResponseEntity<String> response =
+        SessionTestSupport.get(rest, "/api/v1/schemas/" + schema.id(), session);
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+    JsonNode body = JSON.readTree(response.getBody());
+    assertThat(body.get("defaultValidity").asText()).isEqualTo("P90D");
   }
 
   @Test

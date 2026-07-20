@@ -52,13 +52,17 @@
  * api}, {@code status :: api}, {@code consumer :: api} — issuing/consuming a credential must
  * resolve the schema, holder, status-list allocation, and consuming party its foreign keys point at
  * (KH-0.2.1 baseline schema, spec FS-0.2 §3.6/§3.9; claim-code redemption resolves the schema too,
- * for the delivered {@code ClaimSchemaRef} display shape); {@code shared} (its open root package —
- * {@link sy.khatm.platform.shared.TenantContext}, {@link sy.khatm.platform.shared.Uuidv7}); {@code
- * shared :: error} (spec FS-0.6a — {@code KhatmException} subtypes to throw, {@code VerifyReason}
- * for {@code CredentialService#verify}'s domain results); {@code shared :: web} (spec FS-0.6a —
- * {@code ErrorEnvelope}, referenced only from this module's OpenAPI error-response annotations);
- * {@code shared :: audit} (spec FS-0.6b — {@code AuditService}; {@code CredentialService} records
- * {@code CREDENTIAL_ISSUED}/{@code CREDENTIAL_CONSUMED}/{@code CREDENTIAL_REVOKED}, {@code
+ * for the delivered {@code ClaimSchemaRef} display shape); {@code rbac :: api} ({@link
+ * sy.khatm.platform.rbac.api.CurrentActorResolver}, KH-1.4.3 — {@code
+ * CredentialService#enforceSchemaAllowlist} resolves the authenticated actor to enforce {@code
+ * consuming_party_schema} scoping, called by the controller ahead of {@code #consume}); {@code
+ * shared} (its open root package — {@link sy.khatm.platform.shared.TenantContext}, {@link
+ * sy.khatm.platform.shared.Uuidv7}); {@code shared :: error} (spec FS-0.6a — {@code KhatmException}
+ * subtypes to throw, {@code VerifyReason} for {@code CredentialService#verify}'s domain results);
+ * {@code shared :: web} (spec FS-0.6a — {@code ErrorEnvelope}, referenced only from this module's
+ * OpenAPI error-response annotations); {@code shared :: audit} (spec FS-0.6b — {@code
+ * AuditService}; {@code CredentialService} records {@code CREDENTIAL_ISSUED}/{@code
+ * CREDENTIAL_CONSUMED}/{@code CREDENTIAL_REVOKED}/{@code CONSUME_SCHEMA_DENIED}, {@code
  * ClaimRedemptionService}/{@code ClaimRedeemThrottleService} record {@code
  * CLAIM_CODE_REDEEMED}/{@code CLAIM_REDEEM_THROTTLED}).
  */
@@ -69,6 +73,7 @@
       "holder :: api",
       "status :: api",
       "consumer :: api",
+      "rbac :: api",
       "shared",
       "shared :: error",
       "shared :: web",

@@ -21,8 +21,11 @@ import sy.khatm.platform.shared.audit.AuditPrincipal;
  * @param tenantId the actor's tenant
  * @param label a human-readable identifier for logging (username, or the key's prefix) — never a
  *     secret
+ * @param ownerId the owning {@code consuming_party} row's id ({@link
+ *     CurrentActor.ActorKind#API_KEY_CONSUMING_PARTY} only, KH-1.4.3); {@code null} otherwise
  */
-record KhatmPrincipal(CurrentActor.ActorKind kind, UUID id, UUID tenantId, String label)
+record KhatmPrincipal(
+    CurrentActor.ActorKind kind, UUID id, UUID tenantId, String label, UUID ownerId)
     implements AuditPrincipal, Serializable {
 
   @Override

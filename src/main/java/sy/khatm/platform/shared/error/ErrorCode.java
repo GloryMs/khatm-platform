@@ -51,6 +51,13 @@ import org.springframework.http.HttpStatus;
  * internal FK id that always exists, so no not-found code was needed until an external caller could
  * name an arbitrary, possibly-wrong {@code listCode}.
  *
+ * <p><b>{@code KH_CNS_0403}</b> (KH-1.4.3, SEC §7): the first {@code CNS} (consumer module) code —
+ * a valid {@code CONSUMING_PARTY} API key attempted {@code POST /api/v1/credentials/consume}
+ * against a credential whose schema is not in its {@code consuming_party_schema} allowlist.
+ * Deliberately its own code rather than reusing {@link #KH_RBC_0403}: "authenticated but this
+ * schema isn't yours" is a materially different, support-relevant situation from a generic
+ * missing-scope 403.
+ *
  * <p>{@code docs/error-codes.md} is generated from this enum by a test ({@code
  * ErrorCodesDocGenerationTest}) — never hand-edited (CLAUDE.md work rule 1).
  */
@@ -115,7 +122,13 @@ public enum ErrorCode {
   KH_CLM_0429(HttpStatus.TOO_MANY_REQUESTS, "error.clm.throttled"),
 
   /** A requested status list ({@code tenantSlug}/{@code listCode}) does not exist. */
-  KH_STS_0404(HttpStatus.NOT_FOUND, "status.not-found");
+  KH_STS_0404(HttpStatus.NOT_FOUND, "status.not-found"),
+
+  /**
+   * A {@code CONSUMING_PARTY} API key attempted to consume a credential whose schema is not in its
+   * {@code consuming_party_schema} allowlist (spec SEC §7, KH-1.4.3, deny-by-default).
+   */
+  KH_CNS_0403(HttpStatus.FORBIDDEN, "consumer.schema-not-allowed");
 
   private final HttpStatus httpStatus;
   private final String messageKey;

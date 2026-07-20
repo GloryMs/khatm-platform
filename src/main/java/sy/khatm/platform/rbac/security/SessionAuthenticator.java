@@ -51,7 +51,8 @@ public class SessionAuthenticator {
             result.userId(),
             TenantContext.current(),
             result.username(),
-            result.scopes());
+            result.scopes(),
+            null);
     SecurityContext context = SecurityContextHolder.createEmptyContext();
     context.setAuthentication(token);
     SecurityContextHolder.setContext(context);

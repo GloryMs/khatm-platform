@@ -100,5 +100,14 @@ public enum AuditAction {
    * request thread). {@code entityRef} is the list's {@code list_code}; {@code detail.version}
    * carries the version just published — never the bitstring or the artifact itself (SEC §9).
    */
-  STATUS_LIST_PUBLISHED
+  STATUS_LIST_PUBLISHED,
+
+  /**
+   * A {@code CONSUMING_PARTY}-authenticated {@code POST /api/v1/credentials/consume} call was
+   * denied because the credential's schema is not in the caller's {@code consuming_party_schema}
+   * allowlist ({@code consumer} module, KH-1.4.3, deny-by-default). {@code entityRef} is the
+   * credential's ref; {@code detail} carries {@code schemaId} and {@code party} — never claims
+   * material.
+   */
+  CONSUME_SCHEMA_DENIED
 }

@@ -71,7 +71,8 @@ class ApiKeyAuthFilter extends OncePerRequestFilter {
             verified.apiKeyId(),
             verified.tenantId(),
             verified.apiKeyId().toString(),
-            verified.scopes());
+            verified.scopes(),
+            verified.ownerId());
     SecurityContextHolder.getContext().setAuthentication(token);
   }
 

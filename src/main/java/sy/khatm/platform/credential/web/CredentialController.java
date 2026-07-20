@@ -127,7 +127,10 @@ class CredentialController {
           "The atomic double-spend guard: a single-transaction conditional UPDATE decrements the"
               + " remaining uses only if the credential is still ACTIVE and unexpired, so exactly"
               + " one caller wins under concurrency. Requires the consume scope and a"
-              + " CONSUMING_PARTY API key (a console session is always 403 here). An optional"
+              + " CONSUMING_PARTY API key (a console session, or a TENANT key even with the"
+              + " consume scope, is always 403 here). The caller's consuming party must also be"
+              + " scoped to the credential's schema via consuming_party_schema (KH-1.4.3,"
+              + " deny-by-default — an unconfigured party can consume nothing). An optional"
               + " idempotencyKey makes repeated calls with the same key return the first outcome"
               + " without re-running the UPDATE.",
       responses = {
@@ -143,12 +146,17 @@ class CredentialController {
         @ApiResponse(
             responseCode = "403",
             description =
-                "Missing the consume scope, or called with a console session instead of"
-                    + " a CONSUMING_PARTY API key",
+                "Missing the consume scope, called with a console session or a TENANT API key"
+                    + " instead of a CONSUMING_PARTY key (KH-RBC-0403), or the credential's schema"
+                    + " is not in the calling party's allowlist (KH-CNS-0403, KH-1.4.3)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
       })
   @PostMapping("/consume")
   ConsumeResponse consume(@RequestBody ConsumeRequest req) {
+    // KH-1.4.3: deliberately called before, not from inside, service.consume(req) — see
+    // CredentialService#enforceSchemaAllowlist's Javadoc for why the denial-path audit row needs
+    // its own, non-nested transaction.
+    service.enforceSchemaAllowlist(req.id());
     return service.consume(req);
   }
 

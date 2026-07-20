@@ -53,4 +53,16 @@ class ConsumingPartyRegistryService implements ConsumingPartyRegistry {
     consumingParties.save(party);
     return new ConsumingPartyRef(party.getId(), code);
   }
+
+  @Override
+  @Transactional(readOnly = true)
+  public boolean isSchemaAllowed(UUID partyId, UUID schemaId) {
+    return consumingParties.existsAllowedSchema(partyId, schemaId);
+  }
+
+  @Override
+  @Transactional
+  public void allowSchema(UUID partyId, UUID schemaId) {
+    consumingParties.insertAllowedSchema(partyId, schemaId);
+  }
 }

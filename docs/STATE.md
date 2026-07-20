@@ -2,13 +2,21 @@
 > Updated at the end of EVERY Claude Code session. This file is the session anchor.
 
 ## Current phase / task
-- Phase 0 — Production Foundation, fully closed (see prior sessions). Phase 1 underway.
-- Current task: **KH-1.3** — signed status list (`GET /sl/{tenantSlug}/{listCode}`), spec FS-1.3
-  D1–D7 pre-approved. `mvn verify` green, 142/142 tests (18 new). PR open against `main`, **not
-  merged**. See "Last completed" → Session KH-1.3 for the full breakdown. **Completes the `status`
-  module** — issuance-time bit allocation (KH-0.2.1), revoke-time bit flip + publish (this
-  session), and the public artifact endpoint (this session) are all now real; nothing about status
-  lists is a placeholder anymore.
+- Phase 0 — Production Foundation, fully closed (see prior sessions).
+- **Platform v1 is COMPLETE as of this session** (session `feat/KH-1.4.3-and-schema-contract`,
+  2026-07-20): auth (KH-0.6b), claim delivery + minting (KH-1.2.1/1.2.2), signed status list
+  (KH-1.3), and consumption hardening (KH-1.4.3, this session) are all real; the published contract
+  (`docs/api/openapi.json`) is versioned and additive-only since KH-1.6-early. `mvn verify` green,
+  146/146 tests (4 new, up from 142). PR open against `main`, **not merged** (session instruction).
+  See "Last completed" → Session KH-1.4.3-and-schema-contract for the full two-part breakdown.
+- Prev task: **KH-1.3** — signed status list (`GET /sl/{tenantSlug}/{listCode}`), spec FS-1.3 D1–D7
+  pre-approved. `mvn verify` green, 142/142 tests (18 new). DONE & MERGED via PR #23 (2026-07-20,
+  merge commit `9220780`); branch `feat/KH-1.3-status-list` deleted. **Corrects a stale claim this
+  file carried** ("PR open, not yet merged" — written before merge, never updated after; caught at
+  the start of the KH-1.4.3 session by checking `git log` directly per this file's now-repeated
+  own lesson, same as the KH-1.2.2/KH-1.6-early sessions before it). **Completes the `status`
+  module** — issuance-time bit allocation (KH-0.2.1), revoke-time bit flip + publish, and the
+  public artifact endpoint are all real; nothing about status lists is a placeholder anymore.
 - Prev task: **KH-1.2.2** — expose claim-code minting (`POST
   /api/v1/credentials/{id}/claim-code`), spec FS-1.2.1 D2's "issuer re-issues a claim code"
   recovery path realized over HTTP (no separate spec doc — the session brief itself was the spec,
@@ -101,10 +109,102 @@
   "Last completed" → Session chore/swagger-and-flagged-fixes for details.
 
 ## Last completed
+- 2026-07-20: KH-1.4.3-and-schema-contract — two-part session, brief itself was the spec (no
+  separate spec doc, same precedent as KH-1.6-early/KH-1.2.2): Part A schema response enrichment
+  (console-blocking contract gap) + Part B KH-1.4.3 `allowed_schemas` enforcement on `/consume`.
+  `mvn verify` green, 146/146 tests (4 new, up from 142). PR open against `main`, **not merged**
+  (session instruction). Branch `feat/KH-1.4.3-and-schema-contract`. Confirmed `main` included PR
+  #23 (KH-1.3) and KH-1.2.2 at session start via `git log` directly, per protocol.
+  - **Part A — schema response enrichment**: `SchemaSummary` gains `code` (the value `POST
+    /api/v1/credentials/issue`'s `schemaCode` field expects — closes the console issue screen's
+    "how do I know what schemaCode values are valid" gap). `SchemaDetail` gains `code`, `sdFields`,
+    `defaultMaxUses` (both already stored on `CredentialSchema`, just not surfaced), and
+    `defaultValidity` — an ISO-8601 duration string (e.g. `P90D`), `null` if unset. `default_validity`
+    is a Postgres `interval` column that was deliberately left unmapped on the entity since KH-0.2.1;
+    rather than fighting Hibernate/JDBC `interval` type mapping, `CredentialSchemaRepository
+    #findDefaultValiditySeconds` reads it as a scalar `EXTRACT(epoch FROM ...)::bigint` native query,
+    and `SchemaCatalogService#toIso8601Duration` renders whole-day intervals as `PnD` (the readable,
+    calendar-style form) and anything finer-grained via `Duration#toString()`'s `PT`-based form —
+    both are valid ISO-8601. `IssueRequest.schemaCode`'s Javadoc gained the explicit cross-reference
+    to `GET /api/v1/schemas`'s `.code` field the brief asked for. Additive only; `SchemaRef` (what
+    `credential` actually depends on for issuance) is unchanged. New test:
+    `SchemaReadEndpointsTest#get_withDefaultValiditySet_returnsIso8601DurationString` (direct-JDBC
+    `?::interval` cast to set the column, since no service method writes it yet); existing list/detail
+    tests extended with `code`/`sdFields`/`defaultMaxUses`/`defaultValidity` assertions.
+  - **Part B — KH-1.4.3, `allowed_schemas` enforcement**: found the session brief's own hard
+    constraint factually wrong before writing anything — there is no `allowed_schemas uuid[]` column
+    anywhere in the schema; V1 always had a `consuming_party_schema` join table for exactly this
+    purpose (the codebase's own `consumer/README.md`, `rbac/package-info.java`, and `CurrentActor`'s
+    Javadoc already pointed at it as "KH-1.4.3 will use this"). Implemented against the join table
+    instead — same deny-by-default semantics (no rows = deny all), no migration needed either way,
+    so the "no migrations" hard constraint still held.
+    - **B.1 (TENANT key → 403) needed no new code.** `rbac.security.SecurityConfig`'s existing
+      `ScopeGuard.requireScopeAndConsumingPartyKey("consume")` rule already rejects a TENANT key
+      here regardless of scope — confirmed by reading it, not assumed. This session only adds the
+      explicit test (`ConsumeApiKeyGateTest#consume_withTenantKeyHavingConsumeScope_returns403`)
+      the brief asked for to close the documented ambiguity.
+    - **B.2 (schema scoping) is genuinely new.** `rbac.api.CurrentActor` gained `ownerId` (the
+      owning `consuming_party` row's id for an `API_KEY_CONSUMING_PARTY` actor; `null` otherwise) —
+      threaded through `KhatmPrincipal`/`KhatmAuthenticationToken`/`ApiKeyAuthFilter`/
+      `SessionAuthenticator`/`CurrentActorResolverImpl`. `credential`'s `@ApplicationModule` gained
+      `rbac :: api` as an allowed dependency (verified acyclic via `ModulithBoundariesTest` — `rbac`
+      never depends on `credential`); `rbac`'s own module gained `schema :: api` (needed by
+      `DemoApiKeySeeder`, below). `consumer.api.ConsumingPartyRegistry` gained
+      `isSchemaAllowed`/`allowSchema`, backed by two new native queries on `ConsumingPartyRepository`
+      against `consuming_party_schema` — no JPA entity for that table, the same bare-composite-key
+      join-table treatment `rbac.persistence.RoleRepository` already gives `user_role`. New
+      `KH-CNS-0403` (`consumer.schema-not-allowed`, both bundles) — deliberately its own code, not a
+      reuse of `KH-RBC-0403` (the brief's own framing: "authenticated but this schema isn't yours" is
+      support-relevant). New `AuditAction.CONSUME_SCHEMA_DENIED` (`entityRef` = credential ref,
+      `detail` = `schemaId` + `party`).
+    - **Snag, resolved (the one worth remembering):** the first implementation nested the
+      allowlist check (audit-then-throw) inside `CredentialService#consume`'s own `@Transactional`
+      boundary. Every `CONSUME_SCHEMA_DENIED` audit row was silently discarded — Spring rolls back
+      the whole transaction on the unchecked `AuthorizationException`, taking the just-written audit
+      insert down with it. Caught by `ConsumeApiKeyGateTest`'s own audit-row-count assertion, not by
+      inspection. Fixed the same way `ClaimRedeemThrottleService#enforce` already solves the
+      identical problem ahead of `ClaimRedemptionService#redeem`: the check
+      (`CredentialService#enforceSchemaAllowlist`) is deliberately **not** `@Transactional`, and
+      `CredentialController#consume` calls it *before* `service.consume(req)`, not from inside it —
+      so the denial-path audit row commits on its own. One lean indexed read
+      (`CredentialRepository#findSchemaId`, `schema_id` only) on the common/allowed path; a second
+      read (full entity, for `ref`) only on the rare denial path — the hard constraint's "one indexed
+      read, no N+1" satisfied for the path that actually matters.
+    - **Second snag, resolved (a real regression, caught by manually re-running the demo flow, not
+      by the test suite):** giving `credential.seed.DemoSeeder`/`rbac.seed.DemoApiKeySeeder` explicit
+      `@Order(1)`/`@Order(2)` (so the schema exists before the party is allowlisted for it) had a
+      side effect neither test suite catches — Spring sorts an *unordered* `CommandLineRunner`/
+      `ApplicationRunner` as lowest precedence relative to any explicitly `@Order`ed one, not "same
+      as before." `key.domain.KeyBootstrap` and `rbac.domain.AdminBootstrap` had no `@Order` (nothing
+      did, before this session), so `DemoSeeder`'s new `@Order(1)` jumped it ahead of `KeyBootstrap`
+      — a real `docker compose up` showed `DemoSeeder` logging "No ACTIVE issuer key for tenant" and
+      skipping entirely. Fixed by giving both bootstraps an explicit `@Order(0)`. Re-verified via a
+      second clean `docker compose down -v && up --build`: correct order (`KeyBootstrap` →
+      `AdminBootstrap` → `DemoSeeder` → `DemoApiKeySeeder`, no warning), then a real `/consume` call
+      with the demo party's logged key against the demo credential returned `{"consumed":true,...}`,
+      and a second call correctly reported `already_consumed` (proving the schema-allowlist fix
+      didn't disturb the existing atomic-consume domain-result shape). This is why "PR CI green" and
+      "ran it locally against a live stack" both matter — neither test suite alone would have caught
+      this ordering regression.
+    - **Tests (4 new):** `ConsumeApiKeyGateTest` gained
+      `consume_withSchemaNotInPartyAllowlist_returns403WithNewCode_andRecordsAudit`,
+      `consume_withEmptyAllowlist_returns403`, `consume_withTenantKeyHavingConsumeScope_returns403`;
+      the existing `consume_withValidConsumingPartyKey_works_andRecordsAuditRow` adapted (seeded
+      party allowlisted via `ConsumingPartyRegistry#allowSchema`) rather than weakened.
+      `ConcurrentConsumeTest` (direct `credentialService.consume()` call, no HTTP/security context)
+      needed no change — `enforceSchemaAllowlist` no-ops when `CurrentActorResolver#resolve()` is
+      empty, by design, since `SecurityConfig` already guarantees every real HTTP caller here has an
+      actor.
+  - **Arabic-speaker review gate (spec FS-0.6a §4)** for `consumer.schema-not-allowed`: **pending**
+    — flag in the PR body before merge, same as every other session's new-key set.
+  - **`docs/api/openapi.json`/`docs/error-codes.md`**: both regenerated via their own tests'
+    failure-message "paste this in" content (`OpenApiContractTest`/`ErrorCodesDocGenerationTest`),
+    not hand-edited — confirmed additive-only (new `SchemaSummary`/`SchemaDetail` fields, new
+    `/consume` 403 description text, one new `KH-CNS-0403` row).
 - 2026-07-20: KH-1.3 — signed status list, spec FS-1.3, D1–D7 pre-approved. `mvn verify` green,
-  142/142 tests (18 new, up from 124). PR open against `main`, **not merged** (session
-  instruction). Branch `feat/KH-1.3-status-list`; first commit (from the prior session) mirrors
-  the spec into `docs/specs/`.
+  142/142 tests (18 new, up from 124). DONE & MERGED via PR #23 (2026-07-20, merge commit
+  `9220780`); branch `feat/KH-1.3-status-list` deleted. First commit (from the prior session)
+  mirrors the spec into `docs/specs/`.
   - **`status.domain.BitstringCodec`** (new, module-private): MSB-first bit-level `flipBit`/`isSet`
     over the gzip-compressed bitstring `StatusList.bitstring` already stores (KH-0.2.1) — inflate,
     touch one bit, deflate; the same compressed bytes get base64url-encoded verbatim into a
@@ -1485,24 +1585,36 @@
   this blocker.
 
 ## Next up (ordered)
-1. KH-1.3 — Status List: publish the real signed bitstring artifact endpoint (the `status` claim's
-   `uri` is a placeholder until then, KH-0.4 D3; KH-1.2.1's `ClaimRedeemResponse.statusListUri`
-   carries the same placeholder shape and will pick up the real value automatically — additive
-   value change, no shape change, per spec FS-1.2.1 §5).
-2. KH-1.4.3 — `allowed_schemas` enforcement for consuming parties, building on the
-   `CONSUMING_PARTY` API-key principal `rbac.security.ApiKeyAuthFilter` now provides (spec FS-0.6b
-   §9 — explicitly no filter changes needed, the principal is already there).
-3. KH-0.3.3 activation — **config, not code**: set the staging secrets in `docs/deploy-staging.md`
+
+**Platform v1 is complete** (auth, claim delivery + minting, signed status list, consumption
+hardening, versioned published contract — see "Current phase / task" above). What follows is not a
+sequential build queue anymore; the platform now enters support mode for the console/wallet lanes.
+
+1. KH-0.3.3 activation — **config, not code**: set the staging secrets in `docs/deploy-staging.md`
    and the `release.yml` deploy job runs on the next push to `main`. (The publish half is already
    live; only the gated deploy half waits on a host — Majd.)
-4. KH-1.6-remainder — **KH-1.6-early closed the path-versioning break, full endpoint annotation
-   coverage, the published/freshness-gated `docs/api/openapi.json`, and the two read-only schema
-   endpoints.** Nothing else was identified as outstanding under the KH-1.6 umbrella — if a future
-   session finds more (e.g. a typed schema-authoring API, additional read endpoints console/wallet
-   need), it folds in here rather than reopening KH-1.6-early's scope.
-5. KH-2.2 — full RBAC (replaces D5's lean `role.scopes text[]` with real Permission tables, admin
+2. **Platform enters support mode.** No more platform-v1 backend lanes are queued for their own
+   sake — future feature epics (KH-1.1's backend halves: schema CRUD/authoring, bulk issuance) are
+   scheduled reactively, when the console's C2 milestone actually needs them, not ahead of that
+   need. Until then, platform sessions should expect to be console/wallet-integration-driven
+   (contract gaps like this session's Part A) rather than new-endpoint-driven.
+3. **KH-1.4.1/1.4.2 (persistent idempotency + concurrency) — status checked this session, reported
+   honestly rather than assumed:** the durable half already exists and is tested —
+   `consumption_event.idempotency_key` is `NOT NULL UNIQUE` (KH-0.2.1 baseline),
+   `db.ConsumptionEventIdempotencyTest` proves a duplicate key violates that constraint at the
+   repository level, and `db.ConcurrentConsumeTest` (50 concurrent callers, real threads) proves
+   the atomic `uses_remaining` UPDATE is the actual double-spend guard. What is **not** yet proven:
+   `CredentialService#consume` has no explicit handling for a `DataIntegrityViolationException` from
+   `events.save(...)` — if two concurrent HTTP calls share an `idempotencyKey` and both miss the
+   Redis fast-path cache (a genuine race window between the GET check and the eventual SET), the
+   loser's DB insert would throw uncaught and surface as a generic `KH-SYS-0500` instead of
+   gracefully returning the winner's outcome. Whether that gap is worth closing (vs. accepting a
+   rare 500 over a rare double-charge, since the atomic consume itself is never at risk) is a
+   product call, not made here — flagged for whoever picks up KH-1.4.1/1.4.2 explicitly, with a
+   concurrency test targeting this exact race (not just the already-covered `uses_remaining` one).
+4. KH-2.2 — full RBAC (replaces D5's lean `role.scopes text[]` with real Permission tables, admin
    console for user/role management) + RBAC-gated REST endpoint for `KeyLifecycleService.rotate()`.
-6. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM.
+5. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM.
 
 ## Standing conventions (promoted to docs/CONVENTIONS.md §7)
 - **Work rules 2 & 3 (error handling & i18n)** → `docs/CONVENTIONS.md §7.1`.

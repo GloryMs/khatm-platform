@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.core.annotation.Order;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -48,9 +49,16 @@ import sy.khatm.platform.shared.audit.AuditService;
  * confirmed empirically via a `compose-smoke` CI failure (not merely theorized). Gated the same way
  * {@code CredentialController}/{@code JwksController}/{@code KeyBootstrap} already are so only the
  * {@code api} role ever runs it, making it a single writer again.
+ *
+ * <p><b>{@code @Order(0)} (discovered KH-1.4.3, fixed here):</b> same fix, same reason as {@code
+ * key.domain.KeyBootstrap}'s own {@code @Order(0)} — an unordered {@code ApplicationRunner} sorts
+ * after any explicitly {@code @Order}ed one, which the KH-1.4.3 demo seeders (now
+ * {@code @Order(1)}/{@code @Order(2)}) became. This class has no seeder depending on it directly
+ * today, but pins the bootstrap group's relative order defensively, alongside {@code KeyBootstrap}.
  */
 @Component
 @ConditionalOnProperty(name = "khatm.web.enabled", havingValue = "true", matchIfMissing = true)
+@Order(0)
 class AdminBootstrap implements ApplicationRunner {
 
   private static final Logger log = LoggerFactory.getLogger(AdminBootstrap.class);

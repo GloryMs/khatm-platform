@@ -7,10 +7,10 @@ import java.util.UUID;
  * The currently authenticated actor — a console user's session, or an API key's owner (spec FS-0.6b
  * §3).
  *
- * <p>Forward-looking cross-module infrastructure: no module consumes this yet (KH-1.4.3's {@code
- * allowed_schemas} enforcement will, building on the {@code CONSUMING_PARTY} kind {@link
- * sy.khatm.platform.rbac.security.ApiKeyAuthFilter} already establishes — spec FS-0.6b §9). Other
- * modules that need to know "who is making this call" depend on {@link CurrentActorResolver}
+ * <p>{@code credential.domain.CredentialService#consume} is the first real consumer (KH-1.4.3's
+ * {@code allowed_schemas} enforcement, spec §9) — it reads {@link #ownerId()} to resolve which
+ * {@code consuming_party} row a {@link ActorKind#API_KEY_CONSUMING_PARTY} caller is scoped to.
+ * Other modules that need to know "who is making this call" depend on {@link CurrentActorResolver}
  * instead of importing Spring Security types directly.
  *
  * @param kind whether this actor is a console user or one of the two API-key owner types
@@ -19,8 +19,11 @@ import java.util.UUID;
  * @param tenantId the actor's tenant
  * @param scopes the actor's effective scopes (a user's roles' union, or an API key's own {@code
  *     scopes} column)
+ * @param ownerId the owning {@code consuming_party} row's id ({@link
+ *     ActorKind#API_KEY_CONSUMING_PARTY} only, KH-1.4.3); {@code null} for every other actor kind
  */
-public record CurrentActor(ActorKind kind, UUID id, UUID tenantId, Set<String> scopes) {
+public record CurrentActor(
+    ActorKind kind, UUID id, UUID tenantId, Set<String> scopes, UUID ownerId) {
 
   /** Which kind of principal authenticated this request (spec FS-0.6b §3). */
   public enum ActorKind {

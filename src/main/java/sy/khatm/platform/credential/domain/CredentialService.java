@@ -53,6 +53,8 @@ import sy.khatm.platform.key.api.KeySigner;
 import sy.khatm.platform.key.api.KeyVerifier;
 import sy.khatm.platform.key.api.PublicKeyHandle;
 import sy.khatm.platform.key.api.SignResult;
+import sy.khatm.platform.rbac.api.CurrentActor;
+import sy.khatm.platform.rbac.api.CurrentActorResolver;
 import sy.khatm.platform.schema.api.SchemaCatalog;
 import sy.khatm.platform.schema.api.SchemaDefinition;
 import sy.khatm.platform.schema.api.SchemaRef;
@@ -61,6 +63,7 @@ import sy.khatm.platform.shared.TenantContext;
 import sy.khatm.platform.shared.Uuidv7;
 import sy.khatm.platform.shared.audit.AuditAction;
 import sy.khatm.platform.shared.audit.AuditService;
+import sy.khatm.platform.shared.error.AuthorizationException;
 import sy.khatm.platform.shared.error.ConflictException;
 import sy.khatm.platform.shared.error.ErrorCode;
 import sy.khatm.platform.shared.error.IntegrityException;
@@ -120,6 +123,7 @@ public class CredentialService {
   private final ClaimsEncryptionService claimsEncryption;
   private final ApplicationEventPublisher eventPublisher;
   private final AuditService audit;
+  private final CurrentActorResolver currentActorResolver;
 
   @Value("${khatm.issuer-did:did:web:khatm.sy:demo}")
   private String issuerDid;
@@ -140,7 +144,8 @@ public class CredentialService {
       CredentialMapper mapper,
       ClaimsEncryptionService claimsEncryption,
       ApplicationEventPublisher eventPublisher,
-      AuditService audit) {
+      AuditService audit,
+      CurrentActorResolver currentActorResolver) {
     this.credentials = credentials;
     this.events = events;
     this.claimCodes = claimCodes;
@@ -157,6 +162,7 @@ public class CredentialService {
     this.claimsEncryption = claimsEncryption;
     this.eventPublisher = eventPublisher;
     this.audit = audit;
+    this.currentActorResolver = currentActorResolver;
   }
 
   // ── Issue ────────────────────────────────────────────────────────────────
@@ -593,6 +599,68 @@ public class CredentialService {
             ? "consumed"
             : (remaining != null && remaining <= 0 ? "already_consumed" : "not_consumable");
     return new ConsumeResponse(consumed, reason, remaining);
+  }
+
+  /**
+   * KH-1.4.3 pre-check (spec SEC §7): a {@code CONSUMING_PARTY}-authenticated caller may only
+   * consume a credential whose schema is in its own {@code consuming_party_schema} allowlist —
+   * deny-by-default, so an unconfigured or wrongly-scoped party can consume nothing. {@code
+   * SecurityConfig}'s {@code ScopeGuard.requireScopeAndConsumingPartyKey("consume")} rule already
+   * guarantees every real HTTP {@code /consume} caller authenticates as exactly this actor kind
+   * before this method ever runs, so this check no-ops (by design, not by accident) for a direct
+   * in-JVM service call with no security context at all — e.g. {@code ConcurrentConsumeTest}'s
+   * atomicity probe, which has nothing to do with this authorization concern.
+   *
+   * <p><b>Deliberately not {@code @Transactional}, and called by {@code
+   * credential.web.CredentialController} before {@link #consume}, not from inside it</b> — the
+   * exact shape {@code ClaimRedeemThrottleService#enforce} already uses ahead of {@code
+   * ClaimRedemptionService#redeem}, and for the identical reason: the {@link AuditService#record}
+   * call on the denial path must commit independently, not roll back alongside the {@link
+   * AuthorizationException} that's about to unwind the stack. Nesting this inside {@link
+   * #consume}'s own {@code @Transactional} boundary was tried first and silently discarded every
+   * {@code CONSUME_SCHEMA_DENIED} audit row along with the (correctly rolled-back) denial — caught
+   * by {@code ConsumeApiKeyGateTest}'s own audit-row assertion, not by inspection.
+   *
+   * <p>One lean indexed read ({@link CredentialRepository#findSchemaId}, {@code schema_id} only) on
+   * the common/allowed path; an unknown or malformed credential id is left for {@link #consume}
+   * itself to report as it always has (this check cannot violate an allowlist for a schema it can't
+   * resolve). A second read (the full entity, for its {@code ref}) only happens on the rare denial
+   * path, to attribute the audit row correctly.
+   *
+   * @param rawCredentialId the request's raw {@code id} field, exactly as {@link #consume} receives
+   *     it — a malformed value is silently ignored here since {@link #consume} reports {@code
+   *     bad_id} as its own domain result
+   * @throws AuthorizationException {@link ErrorCode#KH_CNS_0403} if the resolved actor is a
+   *     consuming party whose allowlist does not cover this credential's schema
+   */
+  public void enforceSchemaAllowlist(String rawCredentialId) {
+    UUID credentialId;
+    try {
+      credentialId = UUID.fromString(rawCredentialId);
+    } catch (IllegalArgumentException e) {
+      return;
+    }
+
+    Optional<CurrentActor> actor = currentActorResolver.resolve();
+    if (actor.isEmpty() || actor.get().kind() != CurrentActor.ActorKind.API_KEY_CONSUMING_PARTY) {
+      return;
+    }
+    Optional<UUID> schemaId = credentials.findSchemaId(credentialId);
+    if (schemaId.isEmpty()) {
+      return;
+    }
+    UUID partyId = actor.get().ownerId();
+    if (partyId != null && consumingParties.isSchemaAllowed(partyId, schemaId.get())) {
+      return;
+    }
+    String ref =
+        credentials.findById(credentialId).map(Credential::getRef).orElse(credentialId.toString());
+    audit.record(
+        AuditAction.CONSUME_SCHEMA_DENIED,
+        "credential",
+        ref,
+        Map.of("schemaId", schemaId.get().toString(), "party", String.valueOf(partyId)));
+    throw new AuthorizationException(ErrorCode.KH_CNS_0403, "consumer.schema-not-allowed");
   }
 
   // ── Revoke ────────────────────────────────────────────────────────────────
