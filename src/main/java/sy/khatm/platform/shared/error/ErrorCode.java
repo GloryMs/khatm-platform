@@ -128,7 +128,39 @@ public enum ErrorCode {
    * A {@code CONSUMING_PARTY} API key attempted to consume a credential whose schema is not in its
    * {@code consuming_party_schema} allowlist (spec SEC §7, KH-1.4.3, deny-by-default).
    */
-  KH_CNS_0403(HttpStatus.FORBIDDEN, "consumer.schema-not-allowed");
+  KH_CNS_0403(HttpStatus.FORBIDDEN, "consumer.schema-not-allowed"),
+
+  /**
+   * A {@code POST}/{@code PUT} schema-authoring request (KH-1.1.1, {@code schema.web
+   * .SchemaController}'s create/update/version endpoints) failed a business-level check Bean
+   * Validation alone cannot express — an unsupported claim field type, a {@code label_i18n}/{@code
+   * nameI18n} missing {@code en} or {@code ar}, a duplicate claim field name, or an {@code
+   * sdFields} entry not among the submitted claim field names. One code for every flavor (the
+   * offending reason is always substituted into the message via {@code {0}}), the same collapsing
+   * judgment call {@link #KH_CLM_0404} already made for a different reason (there, anti-probing;
+   * here, simply that these are all "the request body doesn't describe a valid schema" and don't
+   * warrant a code each).
+   */
+  KH_SCH_0400(HttpStatus.BAD_REQUEST, "schema.validation-failed"),
+
+  /**
+   * {@code PUT /api/v1/schemas/{id}} was called on a schema that is not {@code DRAFT} — publishing
+   * is KH-1.1.1's immutability line: a {@code PUBLISHED} schema's authoring fields can never be
+   * mutated in place, only superseded by a new version ({@code POST
+   * /api/v1/schemas/{id}/versions}).
+   */
+  KH_SCH_0409(HttpStatus.CONFLICT, "schema.immutable-after-publish"),
+
+  /**
+   * A schema lifecycle action was attempted from a status that does not allow it: publishing a
+   * schema that is not {@code DRAFT}, archiving one that is not {@code PUBLISHED}, versioning one
+   * that is not {@code PUBLISHED}, or — the one case with no dedicated management endpoint of its
+   * own — {@code CredentialService#issue} resolving an existing schema (by code/version) that is
+   * {@code DRAFT} or {@code ARCHIVED} rather than {@code PUBLISHED}. All four are the same shape of
+   * conflict ("this action needs the schema in a different lifecycle state than it's actually in"),
+   * so they share one code rather than one each.
+   */
+  KH_SCH_1409(HttpStatus.CONFLICT, "schema.invalid-transition");
 
   private final HttpStatus httpStatus;
   private final String messageKey;

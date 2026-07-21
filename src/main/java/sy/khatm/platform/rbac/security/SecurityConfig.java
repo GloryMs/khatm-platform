@@ -90,6 +90,22 @@ import sy.khatm.platform.shared.audit.AuditService;
  * definition needed to render an issue form) that every authenticated actor kind is entitled to
  * see, so layering a scope requirement on top would add friction with no security benefit.
  *
+ * <p><b>Schema authoring endpoints (KH-1.1.1):</b> every {@code POST}/{@code PUT} under {@code
+ * /api/v1/schemas/**} (create, update, publish, version, archive) requires the {@code admin} scope
+ * — the same {@link ScopeGuard#requireScope} rule {@code /api/v1/admin/**} uses, any actor kind. A
+ * real per-permission {@code schema:manage} scope waits for KH-2.2's full RBAC; {@code admin} is
+ * the deliberate stand-in named in this task's own brief, not a silent default.
+ *
+ * <p><b>Credential search (KH-1.1.4):</b> {@code GET /api/v1/credentials} (list/search, distinct
+ * from {@code GET /api/v1/credentials/{id}}'s single-record lookup, which stays under the generic
+ * {@code anyRequest().authenticated()} fallback) requires a console session specifically — {@link
+ * ScopeGuard#requireUserSession}, {@code ACTOR_USER} only, no scope, no API key of any kind. Every
+ * console operator role may search/list credentials, so — like the schema read endpoints — gating
+ * on a specific scope would add friction with no security benefit; unlike them, an API key caller
+ * is deliberately excluded here (a search/list surface over every credential's summary data is a
+ * console operator's tool, not something a {@code TENANT}/{@code CONSUMING_PARTY} integration
+ * needs).
+ *
  * <p><b>Worker role:</b> this configuration class loads in every profile (nothing here is
  * conditional on {@code khatm.web.enabled}) — the worker image runs no business REST endpoints
  * regardless (ADR-09's {@code @ConditionalOnProperty} on the controllers themselves), so
@@ -119,6 +135,7 @@ class SecurityConfig {
   private static final String ADMIN_PATH = "/api/v1/admin/**";
   private static final String SCHEMAS_PATH = "/api/v1/schemas/**";
   private static final String CLAIMS_REDEEM_PATH = "/api/v1/claims/redeem";
+  private static final String CREDENTIALS_LIST_PATH = "/api/v1/credentials";
   private static final String[] SWAGGER_PATHS = {
     "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html"
   };
@@ -200,6 +217,12 @@ class SecurityConfig {
         .access(ScopeGuard.requireScope("admin"))
         .requestMatchers(HttpMethod.GET, SCHEMAS_PATH)
         .authenticated()
+        .requestMatchers(HttpMethod.POST, SCHEMAS_PATH)
+        .access(ScopeGuard.requireScope("admin"))
+        .requestMatchers(HttpMethod.PUT, SCHEMAS_PATH)
+        .access(ScopeGuard.requireScope("admin"))
+        .requestMatchers(HttpMethod.GET, CREDENTIALS_LIST_PATH)
+        .access(ScopeGuard.requireUserSession())
         .anyRequest()
         .authenticated();
   }

@@ -60,6 +60,19 @@ final class ScopeGuard {
                 && hasAuthority(authentication, KhatmAuthorities.ACTOR_API_KEY_CONSUMING_PARTY));
   }
 
+  /**
+   * A console session, any scope — no API key of any kind (KH-1.1.4, {@code GET
+   * /api/v1/credentials}'s "session-authenticated, any operator" requirement). Unlike {@link
+   * #requireScopeAndUserSession}, this couples no specific scope to the actor-kind check: every
+   * console operator role may search/list credentials, so gating on a scope here would add friction
+   * with no security benefit, the same judgment call the schema read endpoints already made for
+   * their own "any authenticated actor" rule.
+   */
+  static AuthorizationManager<RequestAuthorizationContext> requireUserSession() {
+    return (authentication, context) ->
+        decide(hasAuthority(authentication, KhatmAuthorities.ACTOR_USER));
+  }
+
   private static String scopeAuthority(String scope) {
     return "SCOPE_" + scope;
   }

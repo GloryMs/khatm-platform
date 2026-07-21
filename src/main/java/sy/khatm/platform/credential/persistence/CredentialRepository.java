@@ -2,6 +2,8 @@ package sy.khatm.platform.credential.persistence;
 
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -50,4 +52,31 @@ public interface CredentialRepository extends JpaRepository<Credential, UUID> {
    */
   @Query(value = "SELECT schema_id FROM credential WHERE id = :id", nativeQuery = true)
   Optional<UUID> findSchemaId(@Param("id") UUID id);
+
+  /**
+   * KH-1.1.4 — {@code GET /api/v1/credentials}'s search/list query: every filter is optional and
+   * AND-combined (a {@code null} parameter matches every row), sorted by {@code createdAt} DESC
+   * (the {@code credential_tenant_created} index, added alongside this method in {@code
+   * V4__schema_archive_and_credential_search_index.sql}, drives both the base tenant-scoped scan
+   * and its sort). {@code pseudoRef} is resolved to a {@code holderId} by the caller ({@link
+   * sy.khatm.platform.holder.api.HolderDirectory#findByPseudoRef}, a cross-module lookup this
+   * repository cannot perform itself) before this query runs.
+   */
+  @Query(
+      """
+      SELECT c FROM Credential c
+       WHERE c.tenantId = :tenantId
+         AND (:ref IS NULL OR c.ref = :ref)
+         AND (:holderId IS NULL OR c.holderId = :holderId)
+         AND (:schemaId IS NULL OR c.schemaId = :schemaId)
+         AND (:revoked IS NULL OR c.revoked = :revoked)
+       ORDER BY c.createdAt DESC
+      """)
+  Page<Credential> search(
+      @Param("tenantId") UUID tenantId,
+      @Param("ref") String ref,
+      @Param("holderId") UUID holderId,
+      @Param("schemaId") UUID schemaId,
+      @Param("revoked") Boolean revoked,
+      Pageable pageable);
 }

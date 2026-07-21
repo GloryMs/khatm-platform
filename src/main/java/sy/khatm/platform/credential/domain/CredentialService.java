@@ -32,6 +32,9 @@ import java.util.concurrent.ThreadLocalRandom;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,6 +42,8 @@ import sy.khatm.platform.consumer.api.ConsumingPartyRef;
 import sy.khatm.platform.consumer.api.ConsumingPartyRegistry;
 import sy.khatm.platform.credential.api.ConsumeRequest;
 import sy.khatm.platform.credential.api.ConsumeResponse;
+import sy.khatm.platform.credential.api.CredentialPage;
+import sy.khatm.platform.credential.api.CredentialSummary;
 import sy.khatm.platform.credential.api.CredentialView;
 import sy.khatm.platform.credential.api.IssueRequest;
 import sy.khatm.platform.credential.api.IssueResponse;
@@ -104,6 +109,8 @@ public class CredentialService {
   private static final String DEFAULT_STATUS_LIST_CODE = "default";
   private static final int DEFAULT_CLAIM_CODE_TTL_MINUTES = 15;
   private static final String SD_ALG = "sha-256";
+  private static final int DEFAULT_SEARCH_PAGE_SIZE = 20;
+  private static final int MAX_SEARCH_PAGE_SIZE = 100;
   private static final ObjectMapper JSON = new ObjectMapper();
   private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
@@ -124,6 +131,7 @@ public class CredentialService {
   private final ApplicationEventPublisher eventPublisher;
   private final AuditService audit;
   private final CurrentActorResolver currentActorResolver;
+  private final AtomicConsumptionRecorder consumptionRecorder;
 
   @Value("${khatm.issuer-did:did:web:khatm.sy:demo}")
   private String issuerDid;
@@ -145,7 +153,8 @@ public class CredentialService {
       ClaimsEncryptionService claimsEncryption,
       ApplicationEventPublisher eventPublisher,
       AuditService audit,
-      CurrentActorResolver currentActorResolver) {
+      CurrentActorResolver currentActorResolver,
+      AtomicConsumptionRecorder consumptionRecorder) {
     this.credentials = credentials;
     this.events = events;
     this.claimCodes = claimCodes;
@@ -163,6 +172,7 @@ public class CredentialService {
     this.eventPublisher = eventPublisher;
     this.audit = audit;
     this.currentActorResolver = currentActorResolver;
+    this.consumptionRecorder = consumptionRecorder;
   }
 
   // ── Issue ────────────────────────────────────────────────────────────────
@@ -556,7 +566,22 @@ public class CredentialService {
 
   // ── Consume (atomic — the double-spend guard) ─────────────────────────────
 
-  @Transactional
+  /**
+   * Consume one use of a credential (spec FS-0.2 §3.9's double-spend guard).
+   *
+   * <p><b>Deliberately not {@code @Transactional}</b> — the same shape {@code
+   * enforceSchemaAllowlist} already established, for a related but distinct reason (KH-1.4.1/
+   * 1.4.2): the eligibility decrement, event insert, and audit row happen inside {@link
+   * AtomicConsumptionRecorder#tryConsume}'s own fresh transaction, on a real separate bean (so
+   * {@code @Transactional} actually applies — a self-invoked method on this instance would bypass
+   * Spring's proxy entirely). If two concurrent callers share an {@code idempotencyKey} and both
+   * miss the Redis fast-path cache, both can legitimately pass the eligibility check when more than
+   * one use remains — but only one can insert the {@code consumption_event} row (the durable {@code
+   * idempotency_key UNIQUE} fallback). The loser's {@code tryConsume} transaction has already
+   * rolled back completely — including its own decrement — by the time the {@link
+   * DataIntegrityViolationException} reaches this method, so this method's own connection is clean
+   * and free to look up the winner's row and answer without ever seeing an aborted transaction.
+   */
   public ConsumeResponse consume(ConsumeRequest req) {
     UUID id;
     try {
@@ -574,19 +599,24 @@ public class CredentialService {
       }
     }
 
-    // Single-statement atomic decrement: 1 = consumed, 0 = rejected.
-    int updated = credentials.consumeOne(id);
-    boolean consumed = updated == 1;
+    String consumerCode = req.consumer() == null ? "unknown-consumer" : req.consumer();
+    ConsumingPartyRef party = consumingParties.ensure(consumerCode);
+    // idempotency_key is NOT NULL + UNIQUE in the baseline schema (the durable fallback for the
+    // double-submit guard); callers who don't supply one still get a unique row.
+    String eventIdemKey = callerWantsIdempotency ? callerIdemKey : Uuidv7.generate().toString();
 
-    if (consumed) {
-      String consumerCode = req.consumer() == null ? "unknown-consumer" : req.consumer();
-      ConsumingPartyRef party = consumingParties.ensure(consumerCode);
-      // idempotency_key is NOT NULL + UNIQUE in the baseline schema (the durable fallback for
-      // the double-submit guard); callers who don't supply one still get a unique row.
-      String eventIdemKey = callerWantsIdempotency ? callerIdemKey : Uuidv7.generate().toString();
-      events.save(
-          new ConsumptionEvent(TenantContext.current(), id, party.id(), eventIdemKey, "ONLINE"));
-      audit.record(AuditAction.CREDENTIAL_CONSUMED, "credential", id.toString(), null);
+    boolean consumed;
+    try {
+      consumed = consumptionRecorder.tryConsume(id, party.id(), eventIdemKey);
+    } catch (DataIntegrityViolationException e) {
+      // KH-1.4.1/1.4.2: a concurrent caller already recorded a consumption_event under this exact
+      // idempotencyKey — a genuine double-submit (the same logical request, retried), not a
+      // double-spend; the atomic decrement itself was never at risk. Confirm the winning row
+      // actually exists (defensive — expected to always succeed given the constraint violation
+      // that brought us here) and answer indistinguishably from the Redis fast-path hit above,
+      // instead of surfacing a raw KH-SYS-0500.
+      events.findByIdempotencyKey(eventIdemKey).orElseThrow(() -> e);
+      return new ConsumeResponse(true, "idempotent_replay", null);
     }
 
     if (callerWantsIdempotency) {
@@ -687,6 +717,65 @@ public class CredentialService {
 
   public Optional<CredentialView> getView(UUID id) {
     return credentials.findById(id).map(mapper::toView);
+  }
+
+  // ── Search (KH-1.1.4) ────────────────────────────────────────────────────
+
+  /**
+   * Search/list credentials for the current tenant (KH-1.1.4, {@code GET /api/v1/credentials}) —
+   * every filter is optional and AND-combined, sorted by {@code issuedAt} descending.
+   *
+   * @param ref exact credential ref match, or {@code null} for no filter
+   * @param pseudoRef exact holder pseudoRef match, or {@code null} for no filter; an unknown
+   *     pseudoRef short-circuits to an empty page rather than querying with a sentinel holder id
+   * @param schemaId exact schema id match, or {@code null} for no filter
+   * @param revoked exact revoked-flag match, or {@code null} for no filter
+   * @param page zero-based page number; negative values are clamped to {@code 0}
+   * @param size requested page size; clamped to {@code [1, 100]}
+   * @return the matching page
+   */
+  @Transactional(readOnly = true)
+  public CredentialPage search(
+      String ref, String pseudoRef, UUID schemaId, Boolean revoked, Integer page, Integer size) {
+    int safePage = page == null ? 0 : Math.max(0, page);
+    int safeSize =
+        Math.max(1, Math.min(size == null ? DEFAULT_SEARCH_PAGE_SIZE : size, MAX_SEARCH_PAGE_SIZE));
+
+    UUID holderId = null;
+    if (pseudoRef != null && !pseudoRef.isBlank()) {
+      Optional<HolderRef> holder = holders.findByPseudoRef(pseudoRef);
+      if (holder.isEmpty()) {
+        return new CredentialPage(List.of(), safePage, safeSize, 0, 0);
+      }
+      holderId = holder.get().id();
+    }
+
+    String exactRef = ref == null || ref.isBlank() ? null : ref;
+    Page<Credential> result =
+        credentials.search(
+            TenantContext.current(),
+            exactRef,
+            holderId,
+            schemaId,
+            revoked,
+            PageRequest.of(safePage, safeSize));
+    List<CredentialSummary> items = result.getContent().stream().map(this::toSummary).toList();
+    return new CredentialPage(
+        items, safePage, safeSize, result.getTotalElements(), result.getTotalPages());
+  }
+
+  private CredentialSummary toSummary(Credential c) {
+    Optional<SchemaRef> schema = schemas.findById(c.getSchemaId());
+    return new CredentialSummary(
+        c.getId().toString(),
+        c.getRef(),
+        schema.map(SchemaRef::code).orElse(null),
+        schema.map(SchemaRef::nameI18n).orElse(null),
+        c.getCreatedAt(),
+        c.getValidTo(),
+        c.getMaxUses(),
+        c.getUsesRemaining(),
+        c.isRevoked());
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

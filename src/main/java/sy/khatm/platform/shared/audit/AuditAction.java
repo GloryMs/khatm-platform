@@ -109,5 +109,38 @@ public enum AuditAction {
    * credential's ref; {@code detail} carries {@code schemaId} and {@code party} — never claims
    * material.
    */
-  CONSUME_SCHEMA_DENIED
+  CONSUME_SCHEMA_DENIED,
+
+  /**
+   * A new {@code DRAFT} credential schema was created ({@code schema} module, KH-1.1.1). {@code
+   * entityRef} is {@code code:version}; {@code detail} is never the full {@code claims_def} — that
+   * belongs to {@code credential_schema} itself, not the audit log.
+   */
+  SCHEMA_CREATED,
+
+  /**
+   * A {@code DRAFT} schema's authoring fields were edited in place ({@code schema} module,
+   * KH-1.1.1, {@code PUT /api/v1/schemas/{id}}). {@code entityRef} is {@code code:version}.
+   */
+  SCHEMA_UPDATED,
+
+  /**
+   * A {@code DRAFT} schema was published, becoming immutable and available for issuance ({@code
+   * schema} module, KH-1.1.1). {@code entityRef} is {@code code:version}.
+   */
+  SCHEMA_PUBLISHED,
+
+  /**
+   * A new {@code DRAFT} version of a {@code PUBLISHED} schema was created ({@code schema} module,
+   * KH-1.1.1, {@code POST /api/v1/schemas/{id}/versions}). {@code entityRef} is the new version's
+   * {@code code:version}.
+   */
+  SCHEMA_VERSION_CREATED,
+
+  /**
+   * A {@code PUBLISHED} schema was archived, stopping new issuance against it — existing
+   * credentials and their verification/consumption are unaffected ({@code schema} module,
+   * KH-1.1.1). {@code entityRef} is {@code code:version}.
+   */
+  SCHEMA_ARCHIVED
 }

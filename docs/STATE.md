@@ -3,11 +3,21 @@
 
 ## Current phase / task
 - Phase 0 — Production Foundation, fully closed (see prior sessions).
-- **Platform v1 is COMPLETE as of this session** (session `feat/KH-1.4.3-and-schema-contract`,
-  2026-07-20): auth (KH-0.6b), claim delivery + minting (KH-1.2.1/1.2.2), signed status list
-  (KH-1.3), and consumption hardening (KH-1.4.3, this session) are all real; the published contract
-  (`docs/api/openapi.json`) is versioned and additive-only since KH-1.6-early. `mvn verify` green,
-  146/146 tests (4 new, up from 142). PR open against `main`, **not merged** (session instruction).
+- **KH-1.1-BE — schema management + credential search + idempotency race closure** (session
+  `feat/KH-1.1-BE-schema-mgmt-and-search`, 2026-07-21): three-part support-mode session, brief
+  itself was the spec (no separate spec doc, same precedent as KH-1.6-early/KH-1.2.2/KH-1.4.3).
+  `mvn verify` green, 181/181 tests (35 new, up from 146). PR open against `main`, **not merged**
+  (session instruction). Confirmed `main` included PR #24 (KH-1.4.3) at session start via `git log`
+  directly, per protocol. See "Last completed" → Session KH-1.1-BE for the full three-part
+  breakdown.
+- Prev task: **KH-1.4.3-and-schema-contract** (session `feat/KH-1.4.3-and-schema-contract`,
+  2026-07-20) — the session that completed platform v1: auth (KH-0.6b), claim delivery + minting
+  (KH-1.2.1/1.2.2), signed status list (KH-1.3), and consumption hardening (KH-1.4.3) are all real;
+  the published contract (`docs/api/openapi.json`) is versioned and additive-only since
+  KH-1.6-early. `mvn verify` green, 146/146 tests (4 new, up from 142). DONE & MERGED via PR #24
+  (2026-07-20, merge commit `2b196d6`); branch `feat/KH-1.4.3-and-schema-contract` deleted.
+  **Corrects a stale claim this file carried** ("PR open, not yet merged" — written mid-session,
+  confirmed merged at the start of the KH-1.1-BE session via `git log` directly, per protocol).
   See "Last completed" → Session KH-1.4.3-and-schema-contract for the full two-part breakdown.
 - Prev task: **KH-1.3** — signed status list (`GET /sl/{tenantSlug}/{listCode}`), spec FS-1.3 D1–D7
   pre-approved. `mvn verify` green, 142/142 tests (18 new). DONE & MERGED via PR #23 (2026-07-20,
@@ -109,6 +119,118 @@
   "Last completed" → Session chore/swagger-and-flagged-fixes for details.
 
 ## Last completed
+- 2026-07-21: KH-1.1-BE — schema management + credential search + idempotency race closure,
+  three-part support-mode session (console C2's needs plus one flagged debt); brief itself was the
+  spec, same precedent as KH-1.6-early/KH-1.2.2/KH-1.4.3. `mvn verify` green, 181/181 tests (35
+  new, up from 146). PR open against `main`, **not merged** (session instruction). Branch
+  `feat/KH-1.1-BE-schema-mgmt-and-search`. Confirmed `main` included PR #24 (KH-1.4.3) at session
+  start via `git log` directly, per protocol.
+  - **Part A — schema management (KH-1.1.1 backend half)**: full authoring lifecycle, all gated by
+    the `admin` scope (`ScopeGuard.requireScope("admin")`, the same rule `/api/v1/admin/**` already
+    used — `schema:manage` still waits for KH-2.2's full RBAC, no role-seed migration this
+    session). New `schema.domain.SchemaAuthoringService` (module-private, `schema.web
+    .SchemaController` in the same module calls it directly): `POST /api/v1/schemas` (create
+    `DRAFT` v1), `PUT /api/v1/schemas/{id}` (`DRAFT`-only in-place edit — `PUBLISHED`/`ARCHIVED` →
+    `KH-SCH-0409`), `POST /api/v1/schemas/{id}/publish` (`DRAFT` → `PUBLISHED`, the immutability
+    line — no general update endpoint exists for a published schema), `POST
+    /api/v1/schemas/{id}/versions` (new `DRAFT` version of a `PUBLISHED` source, same code,
+    version + 1 — the console prefills the body from the source; the server validates it exactly
+    like create, no server-side default-merging), `POST /api/v1/schemas/{id}/archive` (`PUBLISHED`
+    → `ARCHIVED`, stops NEW issuance only — existing credentials/verification unaffected). Any
+    other invalid lifecycle transition (double-publish, archiving a `DRAFT`, versioning a `DRAFT`)
+    is `KH-SCH-1409`. Server-side authoring validation (new `KH-SCH-0400`, one code for every
+    flavor, offending reason substituted via `{0}`): claim field types limited to `text`/`number`/
+    `date`, every `nameI18n`/claim `labelI18n` requires non-blank `en` and `ar`, `claimsDef` must be
+    non-empty with unique field names, `sdFields` must be a subset of the claim field names, `code`
+    must not already be registered at version 1, `defaultMaxUses` must be `>= 1` if given,
+    `defaultValidity` must be a valid ISO-8601 duration if given. `GET /api/v1/schemas` gained an
+    optional `status` query filter (default: all — `SchemaCatalog#listAll` signature changed from
+    no-arg to `listAll(String status)`; its one other caller, `rbac.seed.DemoApiKeySeeder`, updated
+    to pass `null`) so the console's management view can show `DRAFT` rows; the issue-form picker
+    keeps filtering to `PUBLISHED` client-side as before. New `AuditAction`s `SCHEMA_CREATED`/
+    `SCHEMA_UPDATED`/`SCHEMA_PUBLISHED`/`SCHEMA_VERSION_CREATED`/`SCHEMA_ARCHIVED` — `entityRef` is
+    always `code:version`, never a `claims_def` dump.
+    - **Issuance guard (session brief's own explicit ask, previously untested):**
+      `SchemaCatalogService#ensurePublished` (the find-or-create path `CredentialService#issue`
+      calls) now rejects a resolved existing schema that is `DRAFT` or `ARCHIVED` — same
+      `KH-SCH-1409` invalid-transition code — instead of silently issuing against it. This was a
+      real, previously-unreachable gap: `ensurePublished`'s only callers before this session (the
+      demo seeder) always created `PUBLISHED` rows directly, so a non-`PUBLISHED` row could never
+      reach this method until real authoring (this session) made `DRAFT`/`ARCHIVED` reachable.
+      `SchemaRef` (the `schema :: api` DTO `ensurePublished`/`findById` return) gained `nameI18n` —
+      an additive field, needed by Part B's search summary rows, not by this guard.
+    - **Migration `V4__schema_archive_and_credential_search_index.sql`** (the one additive
+      migration the brief authorized, shared with Part B below): widens `credential_schema`'s
+      status `CHECK` from `('DRAFT','PUBLISHED','DEPRECATED')` to add `'ARCHIVED'` — V1's baseline
+      never anticipated an archive lifecycle step. The unnamed constraint's default Postgres name
+      (`credential_schema_status_check`) was confirmed against a scratch container before writing
+      the `DROP CONSTRAINT`/`ADD CONSTRAINT` pair, not guessed.
+  - **Part B — credential search/list (KH-1.1.4 backend half)**: `GET /api/v1/credentials`,
+    gated by a new `ScopeGuard.requireUserSession()` (console session only, `ACTOR_USER`, no
+    specific scope, no API key of any kind — every operator role may search, but this is a console
+    operator's tool, not something a `TENANT`/`CONSUMING_PARTY` integration needs). Filters — `ref`
+    (exact), `pseudoRef` (exact, resolved via `holder :: api`'s new `HolderDirectory
+    #findByPseudoRef`, an unknown pseudoRef short-circuits to an empty page), `schemaId` (exact),
+    `revoked` (exact) — all optional, AND-combined, one paged JPQL query
+    (`CredentialRepository#search`) sorted by `issuedAt` (`created_at`) DESC. `page`/`size` clamp
+    to `[0, ∞)`/`[1, 100]` server-side (no 400 for an out-of-range request, just a silent clamp).
+    New DTOs `CredentialSummary` (id, ref, schemaCode, schemaName, issuedAt, validTo, maxUses,
+    usesRemaining, revoked — proof/status metadata only, no `sdJwt`, no claims, no pseudoRef; P1)
+    and `CredentialPage` (items + page/size/totalElements/totalPages envelope — the platform's
+    first paginated endpoint). Migration `V4` (above) also adds `credential_tenant_created` —
+    V1 already indexed the `schemaId`/pseudoRef-resolved-`holderId` filters
+    (`credential_tenant_schema`/`credential_holder`) and `ref` (globally unique), but the base
+    tenant-scoped, `issuedAt`-sorted scan every call performs had no index of its own until now.
+  - **Part C — idempotency race closure (KH-1.4.1/1.4.2 ruling, `docs/STATE.md`'s "Next up" #3)**:
+    new `credential.domain.AtomicConsumptionRecorder` (module-private) isolates the eligibility
+    decrement + `consumption_event` insert + its audit row into their own fresh transaction, on a
+    real separate bean — required so `@Transactional` actually applies (a self-invoked method on
+    `CredentialService` itself would bypass Spring's proxy) and so a unique-violation there rolls
+    back cleanly (Postgres aborts an entire physical transaction on any statement error) before
+    `CredentialService#consume` — now deliberately **not** `@Transactional` itself, the same shape
+    `enforceSchemaAllowlist` already established — ever sees an aborted connection. On catch,
+    `consume` confirms the winning `consumption_event` row (new `ConsumptionEventRepository
+    #findByIdempotencyKey`) and answers `{consumed:true, reason:"idempotent_replay",
+    usesRemaining:null}` — byte-identical in shape to the existing Redis fast-path hit, never a
+    raw `KH-SYS-0500`. New test `db.ConsumeIdempotencyRaceTest`: two real threads, one shared
+    `idempotencyKey`, a credential seeded with `maxUses=2` specifically (so *both* callers'
+    eligibility decrement can legitimately succeed — proving this is the double-**submit** race,
+    not the double-**spend** one `ConcurrentConsumeTest` already covers with `maxUses=1`), Redis
+    fast-path guaranteed cold (`support.IntegrationTestSupport` wires no Redis container at all, so
+    `safeRedisGet`/`safeRedisSet` silently no-op) — asserts both callers receive `consumed=true`,
+    exactly one `consumption_event` row, and `uses_remaining` decremented exactly once (1, not 0).
+    **Closed.**
+    - **Side discovery, flagged not fixed (out of this session's narrow Part C scope):** writing
+      this test surfaced a real, separate, previously-unreachable race in
+      `consumer.domain.ConsumingPartyRegistryService#ensure` — its find-or-create id is
+      deterministic (`UUID.nameUUIDFromBytes(tenant:code)`, by design, so the same code always
+      resolves to the same row), so two callers racing to `ensure()` a **brand-new** `code`
+      concurrently both see "no existing row" and both attempt an `INSERT` with the identical
+      primary key, throwing `DataIntegrityViolationException` uncaught. Never manifested before
+      because every prior concurrent-caller test (`ConcurrentConsumeTest`) used a distinct consumer
+      code per caller specifically to avoid this; `ConsumeIdempotencyRaceTest` sidesteps it by
+      calling `consumingParties.ensure(consumerCode)` once, synchronously, before spawning the
+      race. Flagged in "Next up" below for whoever next touches `consumer.domain` — the fix shape
+      is almost certainly the same `AtomicConsumptionRecorder`/NESTED-vs-fresh-transaction pattern
+      this session just applied, or a plain `try { ensure() } catch (DataIntegrityViolationException)
+      { re-read }` given `ensure()`'s id is deterministic (unlike `consumption_event`, a retry
+      here can just re-SELECT by the same id and get the winner's row directly).
+  - **Arabic-speaker review gate (spec FS-0.6a §4)** for the three new `schema.*` keys
+    (`schema.validation-failed`, `schema.immutable-after-publish`, `schema.invalid-transition`):
+    **pending** — flag in the PR body before merge, same as every other session's new-key set.
+  - **`docs/api/openapi.json`/`docs/error-codes.md`**: both regenerated via their own tests'
+    failure-message "paste this in" content, not hand-edited — confirmed additive-only (new schema
+    authoring paths/DTOs, the new `GET /api/v1/credentials` path/DTOs, three new `KH-SCH-*` rows).
+  - **Tests (35 new):** `schema.domain.SchemaAuthoringServiceTest` (15 — create/update/publish/
+    version/archive happy paths + audit rows, every validation-failure flavor, every invalid-
+    transition flavor, `defaultValidity` ISO-8601 round-trip), `credential.domain
+    .IssuanceSchemaGuardTest` (3 — issuance rejects `DRAFT`, rejects `ARCHIVED`, accepts
+    `PUBLISHED`), `rbac.SchemaManagementScopeGateTest` (5 — 401/403/200 gate incl. a full HTTP
+    create→update→publish→version→archive lifecycle walk + the immutable-after-publish and
+    double-archive 409s), `credential.domain.CredentialSearchServiceTest` (8 — every filter
+    individually, AND-combination, pagination clamp, size cap, sort order),
+    `rbac.CredentialListScopeGateTest` (3 — 401/403/200, incl. a full-scope API key still 403'd),
+    `db.ConsumeIdempotencyRaceTest` (1 — the race itself, described above).
 - 2026-07-20: KH-1.4.3-and-schema-contract — two-part session, brief itself was the spec (no
   separate spec doc, same precedent as KH-1.6-early/KH-1.2.2): Part A schema response enrichment
   (console-blocking contract gap) + Part B KH-1.4.3 `allowed_schemas` enforcement on `/consume`.
@@ -1588,34 +1710,34 @@
 ## Next up (ordered)
 
 **Platform v1 is complete** (auth, claim delivery + minting, signed status list, consumption
-hardening, versioned published contract — see "Current phase / task" above). What follows is not a
-sequential build queue anymore; the platform now enters support mode for the console/wallet lanes.
+hardening, versioned published contract — see "Current phase / task" above), and support mode is
+now underway (KH-1.1-BE, this session, closed schema management + credential search + the
+idempotency race — see "Last completed" for the full breakdown).
 
-1. KH-0.3.3 activation — **config, not code**: set the staging secrets in `docs/deploy-staging.md`
+1. **C2 (console, other repo)** — the console team's active milestone; this session's schema
+   management/credential search endpoints exist specifically to unblock it.
+2. KH-1.1.3-BE — bulk issuance endpoint, scheduled reactively when C2's issue wizard actually needs
+   it (same "support mode, not ahead of need" stance KH-1.1-BE's own session brief restated).
+3. KH-0.3.3 activation — **config, not code**: set the staging secrets in `docs/deploy-staging.md`
    and the `release.yml` deploy job runs on the next push to `main`. (The publish half is already
    live; only the gated deploy half waits on a host — Majd.)
-2. **Platform enters support mode.** No more platform-v1 backend lanes are queued for their own
-   sake — future feature epics (KH-1.1's backend halves: schema CRUD/authoring, bulk issuance) are
-   scheduled reactively, when the console's C2 milestone actually needs them, not ahead of that
-   need. Until then, platform sessions should expect to be console/wallet-integration-driven
-   (contract gaps like this session's Part A) rather than new-endpoint-driven.
-3. **KH-1.4.1/1.4.2 (persistent idempotency + concurrency) — status checked this session, reported
-   honestly rather than assumed:** the durable half already exists and is tested —
-   `consumption_event.idempotency_key` is `NOT NULL UNIQUE` (KH-0.2.1 baseline),
-   `db.ConsumptionEventIdempotencyTest` proves a duplicate key violates that constraint at the
-   repository level, and `db.ConcurrentConsumeTest` (50 concurrent callers, real threads) proves
-   the atomic `uses_remaining` UPDATE is the actual double-spend guard. What is **not** yet proven:
-   `CredentialService#consume` has no explicit handling for a `DataIntegrityViolationException` from
-   `events.save(...)` — if two concurrent HTTP calls share an `idempotencyKey` and both miss the
-   Redis fast-path cache (a genuine race window between the GET check and the eventual SET), the
-   loser's DB insert would throw uncaught and surface as a generic `KH-SYS-0500` instead of
-   gracefully returning the winner's outcome. Whether that gap is worth closing (vs. accepting a
-   rare 500 over a rare double-charge, since the atomic consume itself is never at risk) is a
-   product call, not made here — flagged for whoever picks up KH-1.4.1/1.4.2 explicitly, with a
-   concurrency test targeting this exact race (not just the already-covered `uses_remaining` one).
-4. KH-2.2 — full RBAC (replaces D5's lean `role.scopes text[]` with real Permission tables, admin
+4. **`consumer.domain.ConsumingPartyRegistryService#ensure`'s find-or-create race — discovered,
+   not fixed, this session (KH-1.1-BE Part C's own concurrency test surfaced it as a side effect,
+   not a deliberate probe):** its id is deterministic (`UUID.nameUUIDFromBytes(tenant:code)`, by
+   design — the same code must always resolve to the same row), so two callers racing to `ensure()`
+   a **brand-new** code concurrently both see "no existing row" and both attempt an `INSERT` with
+   the identical primary key; the loser's `DataIntegrityViolationException` is uncaught, surfacing
+   as `KH-SYS-0500`. Every existing concurrent-caller test used a distinct consumer code per
+   caller specifically (dodging this without anyone noticing); `ConsumeIdempotencyRaceTest`
+   sidesteps it by pre-creating the row synchronously before racing. Low real-world likelihood (two
+   *never-before-seen* consumer codes racing on their very first call) but a real gap. Fix shape:
+   almost certainly a plain `try { ensure() } catch (DataIntegrityViolationException) { re-SELECT
+   by the same deterministic id }` — simpler than `AtomicConsumptionRecorder`'s separate-bean/fresh-
+   transaction pattern, since a retry here can just re-read the winner's row directly rather than
+   needing to roll back a partial decrement first.
+5. KH-2.2 — full RBAC (replaces D5's lean `role.scopes text[]` with real Permission tables, admin
    console for user/role management) + RBAC-gated REST endpoint for `KeyLifecycleService.rotate()`.
-5. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM.
+6. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM.
 
 ## Standing conventions (promoted to docs/CONVENTIONS.md §7)
 - **Work rules 2 & 3 (error handling & i18n)** → `docs/CONVENTIONS.md §7.1`.

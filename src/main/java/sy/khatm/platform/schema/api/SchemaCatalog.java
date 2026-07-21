@@ -36,14 +36,16 @@ public interface SchemaCatalog {
   Optional<SchemaRef> findById(UUID id);
 
   /**
-   * List every schema for the current tenant, list-view shape (KH-1.6-early, {@code GET
-   * /api/v1/schemas}).
+   * List schemas for the current tenant, list-view shape (KH-1.6-early, {@code GET
+   * /api/v1/schemas}), optionally filtered by lifecycle status (KH-1.1.1 — the console's schema
+   * management view needs to see {@code DRAFT} rows too, unlike the issue-form picker, which keeps
+   * filtering to {@code PUBLISHED} client-side as before).
    *
-   * <p>Read-only tenant metadata; full schema authoring/versioning stays KH-1.1's backend half.
-   *
-   * @return every schema registered for the current tenant
+   * @param status one of {@code DRAFT}/{@code PUBLISHED}/{@code DEPRECATED}/{@code ARCHIVED}, or
+   *     {@code null} to return every status
+   * @return every matching schema registered for the current tenant
    */
-  List<SchemaSummary> listAll();
+  List<SchemaSummary> listAll(String status);
 
   /**
    * Look up a schema by its internal id, detail-view shape — {@link SchemaSummary}'s fields plus

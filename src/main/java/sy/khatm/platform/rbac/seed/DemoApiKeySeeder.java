@@ -71,7 +71,7 @@ class DemoApiKeySeeder implements CommandLineRunner {
           apiKeyService.create(ApiKeyOwnerType.CONSUMING_PARTY, party.id(), Set.of("consume"));
 
       Optional<UUID> demoSchemaId =
-          schemas.listAll().stream()
+          schemas.listAll(null).stream()
               .filter(schema -> DEMO_SCHEMA_CODE.equals(schema.code()))
               .map(SchemaSummary::id)
               .findFirst();

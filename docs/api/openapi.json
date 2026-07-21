@@ -28,6 +28,24 @@
         },
         "type" : "object"
       },
+      "ClaimFieldRequest" : {
+        "properties" : {
+          "labelI18n" : {
+            "additionalProperties" : {
+              "type" : "string"
+            },
+            "type" : "object"
+          },
+          "name" : {
+            "type" : "string"
+          },
+          "type" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "labelI18n", "name", "type" ],
+        "type" : "object"
+      },
       "ClaimRedeemRequest" : {
         "description" : "Request to redeem a one-time wallet claim code",
         "properties" : {
@@ -143,6 +161,69 @@
             "type" : "string"
           },
           "rawKey" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "CredentialPage" : {
+        "properties" : {
+          "items" : {
+            "items" : {
+              "$ref" : "#/components/schemas/CredentialSummary"
+            },
+            "type" : "array"
+          },
+          "page" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "size" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "totalElements" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "totalPages" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "CredentialSummary" : {
+        "properties" : {
+          "id" : {
+            "type" : "string"
+          },
+          "issuedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "maxUses" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "ref" : {
+            "type" : "string"
+          },
+          "revoked" : {
+            "type" : "boolean"
+          },
+          "schemaCode" : {
+            "type" : "string"
+          },
+          "schemaName" : {
+            "$ref" : "#/components/schemas/LocalizedText"
+          },
+          "usesRemaining" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "validTo" : {
+            "format" : "date-time",
             "type" : "string"
           }
         },
@@ -313,6 +394,71 @@
             "type" : "string"
           }
         },
+        "type" : "object"
+      },
+      "SchemaAuthoringRequest" : {
+        "properties" : {
+          "claimsDef" : {
+            "items" : {
+              "$ref" : "#/components/schemas/ClaimFieldRequest"
+            },
+            "type" : "array"
+          },
+          "defaultMaxUses" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "defaultValidity" : {
+            "type" : "string"
+          },
+          "nameI18n" : {
+            "additionalProperties" : {
+              "type" : "string"
+            },
+            "type" : "object"
+          },
+          "sdFields" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          }
+        },
+        "required" : [ "claimsDef", "nameI18n" ],
+        "type" : "object"
+      },
+      "SchemaCreateRequest" : {
+        "properties" : {
+          "claimsDef" : {
+            "items" : {
+              "$ref" : "#/components/schemas/ClaimFieldRequest"
+            },
+            "type" : "array"
+          },
+          "code" : {
+            "type" : "string"
+          },
+          "defaultMaxUses" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "defaultValidity" : {
+            "type" : "string"
+          },
+          "nameI18n" : {
+            "additionalProperties" : {
+              "type" : "string"
+            },
+            "type" : "object"
+          },
+          "sdFields" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          }
+        },
+        "required" : [ "claimsDef", "code", "nameI18n" ],
         "type" : "object"
       },
       "SchemaDetail" : {
@@ -658,6 +804,91 @@
         "tags" : [ "claim" ]
       }
     },
+    "/api/v1/credentials" : {
+      "get" : {
+        "description" : "Console-facing search over this tenant's credentials (KH-1.1.4) — proof/status metadata rows only, never claim content (P1 rule). Every filter is optional and AND-combined: ref (exact), pseudoRef (exact, resolved against the holder who was issued the credential), schemaId (exact), revoked (exact). Sorted by issuedAt descending; page/size are zero-based/1-100, defaulting to 0/20. Requires a console session — no API key of any kind works here (see rbac.security.SecurityConfig's Javadoc).",
+        "operationId" : "list_1",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "ref",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "pseudoRef",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "schemaId",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "revoked",
+          "required" : false,
+          "schema" : {
+            "type" : "boolean"
+          }
+        }, {
+          "in" : "query",
+          "name" : "page",
+          "required" : false,
+          "schema" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "size",
+          "required" : false,
+          "schema" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CredentialPage"
+                }
+              }
+            },
+            "description" : "Matching page of credential summaries"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Authenticated with an API key instead of a console session"
+          }
+        },
+        "summary" : "Search/list credentials",
+        "tags" : [ "credential" ]
+      }
+    },
     "/api/v1/credentials/consume" : {
       "post" : {
         "description" : "The atomic double-spend guard: a single-transaction conditional UPDATE decrements the remaining uses only if the credential is still ACTIVE and unexpired, so exactly one caller wins under concurrency. Requires the consume scope and a CONSUMING_PARTY API key (a console session, or a TENANT key even with the consume scope, is always 403 here). The caller's consuming party must also be scoped to the credential's schema via consuming_party_schema (KH-1.4.3, deny-by-default — an unconfigured party can consume nothing). An optional idempotencyKey makes repeated calls with the same key return the first outcome without re-running the UPDATE.",
@@ -987,8 +1218,16 @@
     },
     "/api/v1/schemas" : {
       "get" : {
-        "description" : "Read-only tenant metadata (id, display name, version, status) — every authenticated actor kind may call this, no specific scope required (a deliberate, documented decision: see rbac.security.SecurityConfig's Javadoc). Full schema authoring is KH-1.1's backend half.",
+        "description" : "Read-only tenant metadata (id, display name, version, status) — every authenticated actor kind may call this, no specific scope required (a deliberate, documented decision: see rbac.security.SecurityConfig's Javadoc). The optional status filter (KH-1.1.1) lets the console's schema management view show DRAFT rows too; the issue-form picker keeps filtering to PUBLISHED client-side, as before.",
         "operationId" : "list",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "status",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
         "responses" : {
           "200" : {
             "content" : {
@@ -1001,7 +1240,7 @@
                 }
               }
             },
-            "description" : "Every schema registered for the tenant"
+            "description" : "Every matching schema registered for the tenant"
           },
           "401" : {
             "content" : {
@@ -1015,6 +1254,64 @@
           }
         },
         "summary" : "List credential schemas",
+        "tags" : [ "schema" ]
+      },
+      "post" : {
+        "description" : "Requires the admin scope. Server-side validation rejects an empty claimsDef, a claim field with an unsupported type (text/number/date), a nameI18n or claim labelI18n missing en or ar, an sdFields entry not among the claim field names, or a code already registered at version 1 — all as KH-SCH-0400. The schema starts DRAFT and unavailable for issuance until POST /{id}/publish.",
+        "operationId" : "create",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/SchemaCreateRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SchemaDetail"
+                }
+              }
+            },
+            "description" : "Schema created (DRAFT)"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Bean Validation failed, or a business-level check (KH-SCH-0400)"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the admin scope"
+          }
+        },
+        "summary" : "Create a new DRAFT credential schema (version 1)",
         "tags" : [ "schema" ]
       }
     },
@@ -1063,6 +1360,316 @@
           }
         },
         "summary" : "Fetch a credential schema's detail",
+        "tags" : [ "schema" ]
+      },
+      "put" : {
+        "description" : "Requires the admin scope. DRAFT only — fixes mistakes before publish. Validated identically to POST /api/v1/schemas.",
+        "operationId" : "update",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/SchemaAuthoringRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SchemaDetail"
+                }
+              }
+            },
+            "description" : "Schema updated"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Bean Validation failed, or a business-level check (KH-SCH-0400)"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the admin scope"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No schema with this id (KH-SCH-0404)"
+          },
+          "409" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "The schema is not DRAFT (KH-SCH-0409)"
+          }
+        },
+        "summary" : "Rewrite a DRAFT schema's authoring fields in place",
+        "tags" : [ "schema" ]
+      }
+    },
+    "/api/v1/schemas/{id}/archive" : {
+      "post" : {
+        "description" : "Requires the admin scope. PUBLISHED -> ARCHIVED — stops NEW issuance against this schema (POST /api/v1/credentials/issue and the internal find-or-create path both reject it, KH-SCH-1409); every credential already issued against it, and its verification/consumption, is completely unaffected.",
+        "operationId" : "archive",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SchemaDetail"
+                }
+              }
+            },
+            "description" : "Schema archived"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the admin scope"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No schema with this id (KH-SCH-0404)"
+          },
+          "409" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "The schema is not PUBLISHED (KH-SCH-1409)"
+          }
+        },
+        "summary" : "Archive a PUBLISHED schema",
+        "tags" : [ "schema" ]
+      }
+    },
+    "/api/v1/schemas/{id}/publish" : {
+      "post" : {
+        "description" : "Requires the admin scope. DRAFT -> PUBLISHED — the immutability line: a published schema's claim fields can never be mutated again (no general update endpoint exists for a PUBLISHED schema); a mistake found later needs a new version (POST /{id}/versions) instead. A PUBLISHED schema becomes a valid issuance target for POST /api/v1/credentials/issue's schemaCode.",
+        "operationId" : "publish",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SchemaDetail"
+                }
+              }
+            },
+            "description" : "Schema published"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the admin scope"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No schema with this id (KH-SCH-0404)"
+          },
+          "409" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "The schema is not DRAFT (KH-SCH-1409)"
+          }
+        },
+        "summary" : "Publish a DRAFT schema",
+        "tags" : [ "schema" ]
+      }
+    },
+    "/api/v1/schemas/{id}/versions" : {
+      "post" : {
+        "description" : "Requires the admin scope. Same code, version + 1. The console is responsible for prefilling the request body from the source schema's current fields — this endpoint validates the submitted body exactly like POST /api/v1/schemas, with no server-side default-merging.",
+        "operationId" : "createVersion",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/SchemaAuthoringRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SchemaDetail"
+                }
+              }
+            },
+            "description" : "New DRAFT version created"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Bean Validation failed, or a business-level check (KH-SCH-0400)"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the admin scope"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No schema with this id (KH-SCH-0404)"
+          },
+          "409" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "The source schema is not PUBLISHED (KH-SCH-1409)"
+          }
+        },
+        "summary" : "Create a new DRAFT version of a PUBLISHED schema",
         "tags" : [ "schema" ]
       }
     },
@@ -1148,11 +1755,11 @@
     }
   },
   "tags" : [ {
-    "description" : "Read-only credential schema (credential type) lookups",
-    "name" : "schema"
-  }, {
     "description" : "Public JSON Web Key Set for signature verification",
     "name" : "jwks"
+  }, {
+    "description" : "Credential schema (credential type) lookups and authoring",
+    "name" : "schema"
   }, {
     "description" : "Signed status-list revocation artifacts",
     "name" : "status"
