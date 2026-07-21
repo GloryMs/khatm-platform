@@ -1,9 +1,9 @@
 package sy.khatm.platform.consumer.domain;
 
-import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import sy.khatm.platform.consumer.api.ConsumingPartyRef;
@@ -13,7 +13,9 @@ import sy.khatm.platform.shared.LocalizedText;
 import sy.khatm.platform.shared.TenantContext;
 
 /**
- * Default {@link ConsumingPartyRegistry} implementation.
+ * Default {@link ConsumingPartyRegistry} implementation — the runtime consume-path SPI (resolve a
+ * party by code, schema-scoping checks, active-status check). Admin-plane management lives in
+ * {@code ConsumingPartyAdminService}.
  *
  * <p>This class is module-private. External code must depend on {@link ConsumingPartyRegistry}, not
  * this class.
@@ -27,18 +29,25 @@ class ConsumingPartyRegistryService implements ConsumingPartyRegistry {
     this.consumingParties = consumingParties;
   }
 
+  /**
+   * Find-or-create by deterministic id (see {@link ConsumingPartyIds}).
+   *
+   * <p><b>Deliberately not {@code @Transactional}</b> (KH-1.4.4 D6): the find-or-create is
+   * inherently racy — two callers can both miss the initial {@code findById} for a brand-new code
+   * and both attempt the {@code INSERT}. By running each repository call in its own transaction (no
+   * enclosing one), a lost race surfaces as a {@link DataIntegrityViolationException} from {@code
+   * saveAndFlush} whose transaction rolls back cleanly on its own — so the follow-up re-read runs
+   * on a clean connection and returns the winner's row, rather than hitting an aborted transaction
+   * the way it would inside one big {@code @Transactional} boundary. The entity forces a true
+   * {@code INSERT} (it is {@link org.springframework.data.domain.Persistable}), so the conflict is
+   * a genuine primary-key violation, never a silent merge/update of the winner's row. The one
+   * caller that reaches this at runtime, {@code CredentialService#consume}, is itself deliberately
+   * non-transactional for the same family of reason.
+   */
   @Override
-  @Transactional
   public ConsumingPartyRef ensure(String code) {
     UUID tenantId = TenantContext.current();
-    // Deterministic (not Uuidv7 — this id must be reproducible from the same (tenant, code) pair
-    // every call, which a time-ordered id can never be) so the same caller-supplied code always
-    // resolves to the same row: find-or-create by id, rather than by a lookup column. KH-0.2.1's
-    // original stand-in used a hash of `code` stored in `api_key_hash`; that column is gone as of
-    // V2__auth_api_keys.sql (spec FS-0.6b D3 — real API-key authentication for a consuming party
-    // now lives in rbac's `api_key` table instead), so this is purely an internal id derivation,
-    // unrelated to authentication.
-    UUID id = UUID.nameUUIDFromBytes((tenantId + ":" + code).getBytes(StandardCharsets.UTF_8));
+    UUID id = ConsumingPartyIds.deterministicId(tenantId, code);
     Optional<ConsumingParty> existing = consumingParties.findById(id);
     if (existing.isPresent()) {
       return new ConsumingPartyRef(id, code);
@@ -47,11 +56,22 @@ class ConsumingPartyRegistryService implements ConsumingPartyRegistry {
     ConsumingParty party = new ConsumingParty();
     party.setId(id);
     party.setTenantId(tenantId);
+    party.setCode(code);
     party.setNameI18n(new LocalizedText(code, code));
-    party.setStatus("ACTIVE");
+    party.setStatus(ConsumingParty.STATUS_ACTIVE);
     party.setCreatedAt(Instant.now());
-    consumingParties.save(party);
-    return new ConsumingPartyRef(party.getId(), code);
+    try {
+      consumingParties.saveAndFlush(party);
+      return new ConsumingPartyRef(id, code);
+    } catch (DataIntegrityViolationException raced) {
+      // Lost the find-or-create race: a concurrent caller committed the row under this exact
+      // deterministic id. Re-read it (fresh transaction — this method holds none) and return the
+      // winner's row directly.
+      return consumingParties
+          .findById(id)
+          .map(winner -> new ConsumingPartyRef(winner.getId(), code))
+          .orElseThrow(() -> raced);
+    }
   }
 
   @Override
@@ -64,5 +84,14 @@ class ConsumingPartyRegistryService implements ConsumingPartyRegistry {
   @Transactional
   public void allowSchema(UUID partyId, UUID schemaId) {
     consumingParties.insertAllowedSchema(partyId, schemaId);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public boolean isActive(UUID partyId) {
+    return consumingParties
+        .findById(partyId)
+        .map(party -> ConsumingParty.STATUS_ACTIVE.equals(party.getStatus()))
+        .orElse(false);
   }
 }

@@ -1,6 +1,28 @@
 {
   "components" : {
     "schemas" : {
+      "AllowSchemaRequest" : {
+        "properties" : {
+          "schemaId" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        },
+        "required" : [ "schemaId" ],
+        "type" : "object"
+      },
+      "AllowedSchema" : {
+        "properties" : {
+          "schemaCode" : {
+            "type" : "string"
+          },
+          "schemaId" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "ClaimCodeMintRequest" : {
         "description" : "Request to mint a fresh wallet claim code for an already-issued credential",
         "properties" : {
@@ -130,6 +152,34 @@
         },
         "type" : "object"
       },
+      "ConsumingPartyView" : {
+        "properties" : {
+          "allowedSchemas" : {
+            "items" : {
+              "$ref" : "#/components/schemas/AllowedSchema"
+            },
+            "type" : "array"
+          },
+          "code" : {
+            "type" : "string"
+          },
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "nameI18n" : {
+            "$ref" : "#/components/schemas/LocalizedText"
+          },
+          "status" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "CreateApiKeyRequest" : {
         "properties" : {
           "ownerId" : {
@@ -164,6 +214,18 @@
             "type" : "string"
           }
         },
+        "type" : "object"
+      },
+      "CreateConsumingPartyRequest" : {
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "nameI18n" : {
+            "$ref" : "#/components/schemas/NameI18nRequest"
+          }
+        },
+        "required" : [ "nameI18n" ],
         "type" : "object"
       },
       "CredentialPage" : {
@@ -394,6 +456,18 @@
             "type" : "string"
           }
         },
+        "type" : "object"
+      },
+      "NameI18nRequest" : {
+        "properties" : {
+          "ar" : {
+            "type" : "string"
+          },
+          "en" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "ar", "en" ],
         "type" : "object"
       },
       "SchemaAuthoringRequest" : {
@@ -666,6 +740,407 @@
         },
         "summary" : "Revoke an API key",
         "tags" : [ "auth" ]
+      }
+    },
+    "/api/v1/admin/consuming-parties" : {
+      "get" : {
+        "description" : "Every consuming party registered for the tenant (newest first), each with its status and resolved schema allowlist. Requires the admin scope.",
+        "operationId" : "list_2",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/ConsumingPartyView"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "The tenant's consuming parties"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the admin scope (KH-RBC-0403)"
+          }
+        },
+        "summary" : "List consuming parties",
+        "tags" : [ "consuming-parties-admin" ]
+      },
+      "post" : {
+        "description" : "Creates a party with the given code and bilingual name. The code is a lowercase slug (^[a-z0-9][a-z0-9-_]{1,62}$); the row's id is derived deterministically from (tenant, code), so this is idempotent by identity — but registering an already-registered code is a conflict (KH-CNS-0409), not a silent overwrite. Requires the admin scope.",
+        "operationId" : "create_1",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CreateConsumingPartyRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ConsumingPartyView"
+                }
+              }
+            },
+            "description" : "Party registered"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Bean Validation failed, or an invalid code format (KH-CNS-0400)"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the admin scope (KH-RBC-0403)"
+          },
+          "409" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "A party with this code already exists (KH-CNS-0409)"
+          }
+        },
+        "summary" : "Register a consuming party",
+        "tags" : [ "consuming-parties-admin" ]
+      }
+    },
+    "/api/v1/admin/consuming-parties/{id}/activate" : {
+      "post" : {
+        "description" : "Flips a SUSPENDED party back to ACTIVE — its API keys authenticate again. Idempotent. Requires the admin scope.",
+        "operationId" : "activate",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ConsumingPartyView"
+                }
+              }
+            },
+            "description" : "Party activated"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the admin scope (KH-RBC-0403)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No party with this id (KH-CNS-0404)"
+          }
+        },
+        "summary" : "Reactivate a consuming party",
+        "tags" : [ "consuming-parties-admin" ]
+      }
+    },
+    "/api/v1/admin/consuming-parties/{id}/allowed-schemas" : {
+      "post" : {
+        "description" : "Scopes the party to consume credentials issued against the given schema (deny-by-default: a party with an empty allowlist can consume nothing). Idempotent. The schema must exist in the tenant (KH-CNS-1404 otherwise). Requires the admin scope.",
+        "operationId" : "allowSchema",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/AllowSchemaRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ConsumingPartyView"
+                }
+              }
+            },
+            "description" : "Schema allowed; updated party view"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the admin scope (KH-RBC-0403)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No such party (KH-CNS-0404) or schema (KH-CNS-1404)"
+          }
+        },
+        "summary" : "Add a schema to a party's allowlist",
+        "tags" : [ "consuming-parties-admin" ]
+      }
+    },
+    "/api/v1/admin/consuming-parties/{id}/allowed-schemas/{schemaId}" : {
+      "delete" : {
+        "description" : "Idempotent — removing a pair that is not allowed (including for an unknown party) is a successful 204 no-op. Requires the admin scope.",
+        "operationId" : "disallowSchema",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "schemaId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "204" : {
+            "description" : "Removed, or nothing to remove"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the admin scope (KH-RBC-0403)"
+          }
+        },
+        "summary" : "Remove a schema from a party's allowlist",
+        "tags" : [ "consuming-parties-admin" ]
+      }
+    },
+    "/api/v1/admin/consuming-parties/{id}/api-keys" : {
+      "post" : {
+        "description" : "Creates a CONSUMING_PARTY-owned API key (scope: consume) for the given party. The response's rawKey is shown exactly once — the platform stores only its SHA-256 hash and prefix (spec FS-0.6b §4). Revoke it later via POST /api/v1/admin/api-keys/{id}/revoke. Requires the admin scope.",
+        "operationId" : "mintKey",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CreateApiKeyResponse"
+                }
+              }
+            },
+            "description" : "Key minted (rawKey shown once)"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the admin scope (KH-RBC-0403)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No party with this id (KH-CNS-0404)"
+          }
+        },
+        "summary" : "Mint an API key for a consuming party",
+        "tags" : [ "consuming-parties-admin" ]
+      }
+    },
+    "/api/v1/admin/consuming-parties/{id}/suspend" : {
+      "post" : {
+        "description" : "Flips the party to SUSPENDED — its API keys immediately stop authenticating (KH-1.4.4 D4), the same outcome as a revoked key. Idempotent. Requires the admin scope.",
+        "operationId" : "suspend",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ConsumingPartyView"
+                }
+              }
+            },
+            "description" : "Party suspended"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the admin scope (KH-RBC-0403)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No party with this id (KH-CNS-0404)"
+          }
+        },
+        "summary" : "Suspend a consuming party",
+        "tags" : [ "consuming-parties-admin" ]
       }
     },
     "/api/v1/auth/login" : {
@@ -1760,6 +2235,9 @@
   }, {
     "description" : "Credential schema (credential type) lookups and authoring",
     "name" : "schema"
+  }, {
+    "description" : "Consuming-party (verifier) administration — registry, status, schema allowlist",
+    "name" : "consuming-parties-admin"
   }, {
     "description" : "Signed status-list revocation artifacts",
     "name" : "status"

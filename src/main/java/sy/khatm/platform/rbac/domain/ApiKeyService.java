@@ -14,6 +14,7 @@ import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import sy.khatm.platform.consumer.api.ConsumingPartyRegistry;
 import sy.khatm.platform.rbac.api.CurrentActor;
 import sy.khatm.platform.rbac.persistence.ApiKeyRepository;
 import sy.khatm.platform.shared.TenantContext;
@@ -53,11 +54,17 @@ public class ApiKeyService {
 
   private final ApiKeyRepository repository;
   private final AuditService audit;
+  private final ConsumingPartyRegistry consumingParties;
   private final String env;
 
-  public ApiKeyService(ApiKeyRepository repository, AuditService audit, Environment environment) {
+  public ApiKeyService(
+      ApiKeyRepository repository,
+      AuditService audit,
+      ConsumingPartyRegistry consumingParties,
+      Environment environment) {
     this.repository = repository;
     this.audit = audit;
+    this.consumingParties = consumingParties;
     this.env = environment.acceptsProfiles(Profiles.of("local", "dev", "test")) ? "test" : "live";
   }
 
@@ -142,6 +149,15 @@ public class ApiKeyService {
       return Optional.empty();
     }
     if (!MessageDigest.isEqual(sha256(secret), key.getKeyHash())) {
+      return Optional.empty();
+    }
+    // KH-1.4.4 D4: a CONSUMING_PARTY key whose owning party is SUSPENDED must fail authentication
+    // exactly like a revoked key — returning empty here funnels it down the same
+    // API_KEY_AUTH_FAILED / KH-RBC-1401 path as any other unverifiable key. A real minted key
+    // always carries its party id; the null guard only tolerates legacy/test keys with no owner.
+    if (key.isConsumingParty()
+        && key.getOwnerId() != null
+        && !consumingParties.isActive(key.getOwnerId())) {
       return Optional.empty();
     }
 

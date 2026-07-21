@@ -19,6 +19,10 @@
 | `KH-CLM-0429` | 429 | `error.clm.throttled` |
 | `KH-STS-0404` | 404 | `status.not-found` |
 | `KH-CNS-0403` | 403 | `consumer.schema-not-allowed` |
+| `KH-CNS-0400` | 400 | `consumer.invalid-code` |
+| `KH-CNS-0404` | 404 | `consumer.party-not-found` |
+| `KH-CNS-1404` | 404 | `consumer.allowlist-schema-not-found` |
+| `KH-CNS-0409` | 409 | `consumer.duplicate-code` |
 | `KH-SCH-0400` | 400 | `schema.validation-failed` |
 | `KH-SCH-0409` | 409 | `schema.immutable-after-publish` |
 | `KH-SCH-1409` | 409 | `schema.invalid-transition` |
