@@ -15,6 +15,8 @@ import sy.khatm.platform.schema.api.SchemaSummary;
 import sy.khatm.platform.schema.persistence.CredentialSchemaRepository;
 import sy.khatm.platform.shared.TenantContext;
 import sy.khatm.platform.shared.Uuidv7;
+import sy.khatm.platform.shared.error.ConflictException;
+import sy.khatm.platform.shared.error.ErrorCode;
 
 /**
  * Default {@link SchemaCatalog} implementation.
@@ -39,10 +41,13 @@ class SchemaCatalogService implements SchemaCatalog {
 
   @Override
   @Transactional(readOnly = true)
-  public List<SchemaSummary> listAll() {
-    return schemas.findAllByTenantId(TenantContext.current()).stream()
-        .map(SchemaCatalogService::toSummary)
-        .toList();
+  public List<SchemaSummary> listAll(String status) {
+    UUID tenantId = TenantContext.current();
+    List<CredentialSchema> rows =
+        status == null
+            ? schemas.findAllByTenantId(tenantId)
+            : schemas.findAllByTenantIdAndStatus(tenantId, status);
+    return rows.stream().map(SchemaCatalogService::toSummary).toList();
   }
 
   @Override
@@ -60,7 +65,17 @@ class SchemaCatalogService implements SchemaCatalog {
     Optional<CredentialSchema> existing =
         schemas.findByTenantIdAndCodeAndVersion(tenantId, definition.code(), definition.version());
     if (existing.isPresent()) {
-      return toRef(existing.get());
+      CredentialSchema schema = existing.get();
+      // KH-1.1.1: real schema authoring (create/publish/archive) exists now, so a resolved
+      // existing row is no longer guaranteed PUBLISHED the way it always was when this method's
+      // only callers were find-or-create ones (e.g. the demo seeder, which always created
+      // PUBLISHED rows directly). Issuing against a DRAFT schema would sign credentials against
+      // claim fields that might still change before publish; issuing against an ARCHIVED one
+      // defeats the whole point of archiving (SEC/KH-1.1.1: archive stops NEW issuance).
+      if (!"PUBLISHED".equals(schema.getStatus())) {
+        throw new ConflictException(ErrorCode.KH_SCH_1409, "schema.invalid-transition");
+      }
+      return toRef(schema);
     }
 
     Instant now = Instant.now();
@@ -80,11 +95,12 @@ class SchemaCatalogService implements SchemaCatalog {
     return toRef(schema);
   }
 
-  private static SchemaRef toRef(CredentialSchema schema) {
+  static SchemaRef toRef(CredentialSchema schema) {
     return new SchemaRef(
         schema.getId(),
         schema.getCode(),
         schema.getVersion(),
+        schema.getNameI18n(),
         schema.getClaimsDefJson(),
         List.of(schema.getSdFields()));
   }
@@ -98,7 +114,7 @@ class SchemaCatalogService implements SchemaCatalog {
         schema.getStatus());
   }
 
-  private static SchemaDetail toDetail(CredentialSchema schema, Long defaultValiditySeconds) {
+  static SchemaDetail toDetail(CredentialSchema schema, Long defaultValiditySeconds) {
     return new SchemaDetail(
         schema.getId(),
         schema.getCode(),

@@ -44,6 +44,14 @@ class HolderDirectoryService implements HolderDirectory {
     return toRef(holder);
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public Optional<HolderRef> findByPseudoRef(String pseudoRef) {
+    return holders
+        .findByTenantIdAndPseudoRef(TenantContext.current(), pseudoRef)
+        .map(HolderDirectoryService::toRef);
+  }
+
   private static HolderRef toRef(Holder holder) {
     return new HolderRef(holder.getId(), holder.getPseudoRef());
   }

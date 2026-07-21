@@ -16,11 +16,13 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import sy.khatm.platform.credential.api.ClaimCodeMintRequest;
 import sy.khatm.platform.credential.api.ClaimCodeMintResponse;
 import sy.khatm.platform.credential.api.ConsumeRequest;
 import sy.khatm.platform.credential.api.ConsumeResponse;
+import sy.khatm.platform.credential.api.CredentialPage;
 import sy.khatm.platform.credential.api.CredentialView;
 import sy.khatm.platform.credential.api.IssueRequest;
 import sy.khatm.platform.credential.api.IssueResponse;
@@ -82,6 +84,39 @@ class CredentialController {
   @PostMapping("/issue")
   ResponseEntity<IssueResponse> issue(@Valid @RequestBody IssueRequest req) {
     return ResponseEntity.ok(service.issue(req));
+  }
+
+  @Operation(
+      summary = "Search/list credentials",
+      description =
+          "Console-facing search over this tenant's credentials (KH-1.1.4) — proof/status"
+              + " metadata rows only, never claim content (P1 rule). Every filter is optional"
+              + " and AND-combined: ref (exact), pseudoRef (exact, resolved against the holder"
+              + " who was issued the credential), schemaId (exact), revoked (exact). Sorted by"
+              + " issuedAt descending; page/size are zero-based/1-100, defaulting to 0/20."
+              + " Requires a console session — no API key of any kind works here (see"
+              + " rbac.security.SecurityConfig's Javadoc).",
+      responses = {
+        @ApiResponse(responseCode = "200", description = "Matching page of credential summaries"),
+        @ApiResponse(
+            responseCode = "401",
+            description = "No valid session",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "403",
+            description = "Authenticated with an API key instead of a console session",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
+      })
+  @GetMapping
+  CredentialPage list(
+      @RequestParam(required = false) String ref,
+      @RequestParam(required = false) String pseudoRef,
+      @RequestParam(required = false) String schemaId,
+      @RequestParam(required = false) Boolean revoked,
+      @RequestParam(required = false) Integer page,
+      @RequestParam(required = false) Integer size) {
+    UUID schemaUuid = schemaId == null ? null : UUID.fromString(schemaId);
+    return service.search(ref, pseudoRef, schemaUuid, revoked, page, size);
   }
 
   @Operation(

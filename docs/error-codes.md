@@ -19,3 +19,6 @@
 | `KH-CLM-0429` | 429 | `error.clm.throttled` |
 | `KH-STS-0404` | 404 | `status.not-found` |
 | `KH-CNS-0403` | 403 | `consumer.schema-not-allowed` |
+| `KH-SCH-0400` | 400 | `schema.validation-failed` |
+| `KH-SCH-0409` | 409 | `schema.immutable-after-publish` |
+| `KH-SCH-1409` | 409 | `schema.invalid-transition` |

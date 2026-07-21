@@ -32,6 +32,20 @@
  * <p><b>Exposed API:</b> {@code api/} sub-package — DTO records only at this stage. Cross-module
  * service interface will be added when another module requires programmatic access (KH-1.x).
  *
+ * <p><b>Search (KH-1.1.4):</b> {@code CredentialService#search} backs {@code GET
+ * /api/v1/credentials} — a console-facing, paginated, filtered list over {@code CredentialSummary}
+ * rows (proof/status metadata only, never claim content). {@code pseudoRef} filtering resolves
+ * against {@code holder :: api}'s {@code HolderDirectory#findByPseudoRef} (added alongside this),
+ * never a direct join across the module boundary.
+ *
+ * <p><b>Idempotency race closure (KH-1.4.1/1.4.2):</b> {@code domain.AtomicConsumptionRecorder}
+ * (new, module-private) isolates the eligibility decrement + {@code consumption_event} insert +
+ * audit row into their own fresh transaction, so a concurrent double-submit sharing one {@code
+ * idempotencyKey} rolls back cleanly on the loser's side (the {@code idempotency_key UNIQUE}
+ * constraint) instead of surfacing a generic {@code KH-SYS-0500} or double-decrementing {@code
+ * uses_remaining}. See {@code CredentialService#consume}'s Javadoc for why this had to be a
+ * separate bean, not a private method.
+ *
  * <p><b>Published events:</b> {@code CredentialIssued}, {@code CredentialConsumed}, {@code
  * CredentialRevoked} (future — KH-1.3)
  *
