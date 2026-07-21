@@ -6,10 +6,11 @@
 - **KH-1.1-BE — schema management + credential search + idempotency race closure** (session
   `feat/KH-1.1-BE-schema-mgmt-and-search`, 2026-07-21): three-part support-mode session, brief
   itself was the spec (no separate spec doc, same precedent as KH-1.6-early/KH-1.2.2/KH-1.4.3).
-  `mvn verify` green, 181/181 tests (35 new, up from 146). PR open against `main`, **not merged**
-  (session instruction). Confirmed `main` included PR #24 (KH-1.4.3) at session start via `git log`
-  directly, per protocol. See "Last completed" → Session KH-1.1-BE for the full three-part
-  breakdown.
+  `mvn verify` green, 181/181 tests (35 new, up from 146). DONE & MERGED via PR #25 (2026-07-21,
+  merge commit `7e5cbc1`, fast-forward — `main` had not diverged); branch
+  `feat/KH-1.1-BE-schema-mgmt-and-search` deleted. Confirmed `main` included PR #24 (KH-1.4.3) at
+  session start via `git log` directly, per protocol. See "Last completed" → Session KH-1.1-BE for
+  the full three-part breakdown.
 - Prev task: **KH-1.4.3-and-schema-contract** (session `feat/KH-1.4.3-and-schema-contract`,
   2026-07-20) — the session that completed platform v1: auth (KH-0.6b), claim delivery + minting
   (KH-1.2.1/1.2.2), signed status list (KH-1.3), and consumption hardening (KH-1.4.3) are all real;
@@ -217,7 +218,8 @@
       here can just re-SELECT by the same id and get the winner's row directly).
   - **Arabic-speaker review gate (spec FS-0.6a §4)** for the three new `schema.*` keys
     (`schema.validation-failed`, `schema.immutable-after-publish`, `schema.invalid-transition`):
-    **pending** — flag in the PR body before merge, same as every other session's new-key set.
+    confirmed by the user (Majd) before PR #25's merge, no wording changes needed — same pattern
+    as every prior session's new-key set.
   - **`docs/api/openapi.json`/`docs/error-codes.md`**: both regenerated via their own tests'
     failure-message "paste this in" content, not hand-edited — confirmed additive-only (new schema
     authoring paths/DTOs, the new `GET /api/v1/credentials` path/DTOs, three new `KH-SCH-*` rows).
