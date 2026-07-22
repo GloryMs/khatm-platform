@@ -10,10 +10,11 @@
   left missing: parties were only ever created by `DemoApiKeySeeder` or implicitly via
   `ConsumingPartyRegistryService#ensure`, and allowlisting was seeder/test-only. `mvn verify` green,
   **208/208 tests (27 new, up from 181)**; the full live-compose e2e (DoD #2) ran for real (create →
-  allow → mint → consume → suspend → 401 → activate → consume). **PR open against `main`, NOT
-  MERGED** (session instruction — Majd merges after the Arabic-review gate). Confirmed `main`
-  included PR #25 (KH-1.1-BE, merge `7e5cbc1`) at session start via `git log` directly, per protocol.
-  See "Last completed" → Session KH-1.4.4-BE for the full breakdown.
+  allow → mint → consume → suspend → 401 → activate → consume). **DONE & MERGED via PR #27**
+  (2026-07-22, merge commit `d4e0c47`); branch `feat/KH-1.4.4-BE-consuming-party-admin` deleted;
+  Arabic-review gate for the four new `consumer.*` keys confirmed by Majd before merge, no wording
+  changes. Confirmed `main` included PR #25 (KH-1.1-BE, merge `7e5cbc1`) at session start via `git
+  log` directly, per protocol. See "Last completed" → Session KH-1.4.4-BE for the full breakdown.
 - **KH-1.1-BE — schema management + credential search + idempotency race closure** (session
   `feat/KH-1.1-BE-schema-mgmt-and-search`, 2026-07-21): three-part support-mode session, brief
   itself was the spec (no separate spec doc, same precedent as KH-1.6-early/KH-1.2.2/KH-1.4.3).
@@ -22,6 +23,11 @@
   `feat/KH-1.1-BE-schema-mgmt-and-search` deleted. Confirmed `main` included PR #24 (KH-1.4.3) at
   session start via `git log` directly, per protocol. See "Last completed" → Session KH-1.1-BE for
   the full three-part breakdown.
+- **KH-1.4.4-BE is DONE & MERGED via PR #27** (2026-07-22, merge commit `d4e0c47`); branch
+  `feat/KH-1.4.4-BE-consuming-party-admin` deleted. Arabic-review gate for the four new `consumer.*`
+  keys **confirmed by Majd** before merge, no wording changes. Recorded via chore branch
+  `chore/state-update-post-pr27` (same pattern as PR #26). See the entry immediately above and
+  "Last completed" → Session KH-1.4.4-BE.
 - Prev task: **KH-1.4.3-and-schema-contract** (session `feat/KH-1.4.3-and-schema-contract`,
   2026-07-20) — the session that completed platform v1: auth (KH-0.6b), claim delivery + minting
   (KH-1.2.1/1.2.2), signed status list (KH-1.3), and consumption hardening (KH-1.4.3) are all real;
@@ -133,9 +139,9 @@
 ## Last completed
 - 2026-07-21: KH-1.4.4-BE — consuming-party admin plane + `ensure()` find-or-create race closure.
   Support-mode session, brief itself was the spec. `mvn verify` green, 208/208 tests (27 new, up
-  from 181). PR open against `main`, **not merged** (session instruction). Branch
-  `feat/KH-1.4.4-BE-consuming-party-admin`. Confirmed `main` included PR #25 at session start via
-  `git log` directly, per protocol.
+  from 181). DONE & MERGED via PR #27 (2026-07-22, merge commit `d4e0c47`); branch
+  `feat/KH-1.4.4-BE-consuming-party-admin` deleted. Confirmed `main` included PR #25 at session
+  start via `git log` directly, per protocol.
   - **Admin plane (D1/D3), `admin` scope, under `/api/v1/admin/consuming-parties`:** new
     `consumer.api.ConsumingPartyAdmin` (impl `consumer.domain.ConsumingPartyAdminService`,
     module-private) + `consumer.web.ConsumingPartyAdminController`: `GET` (list, newest-first, each
@@ -202,8 +208,9 @@
     suspend→401→activate), `AuthSecretsNotLoggedTest` (+1 — mint rawKey never logged).
   - **Arabic-speaker review gate (spec FS-0.6a §4)** for the four new `consumer.*` keys
     (`consumer.invalid-code`, `consumer.party-not-found`, `consumer.allowlist-schema-not-found`,
-    `consumer.duplicate-code`): **pending** — flagged in the PR body, merge blocked on Majd's
-    confirmation, `MessageBundleParityTest` green.
+    `consumer.duplicate-code`): **confirmed by Majd (2026-07-22) before PR #27's merge**, no wording
+    changes needed — same pattern as every prior session's new-key set. `MessageBundleParityTest`
+    green throughout.
 - 2026-07-21: KH-1.1-BE — schema management + credential search + idempotency race closure,
   three-part support-mode session (console C2's needs plus one flagged debt); brief itself was the
   spec, same precedent as KH-1.6-early/KH-1.2.2/KH-1.4.3. `mvn verify` green, 181/181 tests (35
