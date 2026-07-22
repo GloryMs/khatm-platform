@@ -191,7 +191,17 @@ public enum ErrorCode {
    * conflict ("this action needs the schema in a different lifecycle state than it's actually in"),
    * so they share one code rather than one each.
    */
-  KH_SCH_1409(HttpStatus.CONFLICT, "schema.invalid-transition");
+  KH_SCH_1409(HttpStatus.CONFLICT, "schema.invalid-transition"),
+
+  /**
+   * A {@code POST /api/v1/credentials/bulk} request (KH-1.1.3) failed batch-level validation before
+   * any item was processed — an empty {@code items} list or one exceeding the 200-item cap. One
+   * code for both flavors (the offending reason is substituted into the message via {@code {0}}),
+   * the same collapsing judgment call {@link #KH_SCH_0400} already made: both are "the batch
+   * request itself is malformed," not a per-item outcome (those are reported inside {@code
+   * BulkIssueResponse.results}, never as this code).
+   */
+  KH_CRD_0400(HttpStatus.BAD_REQUEST, "credential.bulk-validation-failed");
 
   private final HttpStatus httpStatus;
   private final String messageKey;

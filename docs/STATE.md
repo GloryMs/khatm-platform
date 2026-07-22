@@ -3,6 +3,20 @@
 
 ## Current phase / task
 - Phase 0 — Production Foundation, fully closed (see prior sessions).
+- **KH-1.1.3-BE — bulk issuance + stats endpoint (+ OpenAPI security schemes)** (session
+  `feat/KH-1.1.3-BE-bulk-and-stats`, 2026-07-22): support-mode session, brief itself was the spec
+  (same precedent as KH-1.1-BE/KH-1.6-early/KH-1.2.2/KH-1.4.3/KH-1.4.4-BE). **This was the last
+  planned platform session before V1 closure** — unblocks console C3's bulk-issue CSV wizard and
+  C4's pilot-metrics dashboard (KH-1.5.3 commitment). `mvn verify` green, **230/230 tests (22 new,
+  up from 208)**; the full live-compose e2e (DoD #2) ran for real against the existing
+  `docker compose` stack: bulk-issued 3 items of the demo schema with `mintClaimCodes:true` →
+  redeemed one code → verified it (valid) → consumed it with the demo consuming-party key → `GET
+  /api/v1/stats` reflected all of it (`issued`+3, `claimsRedeemed`+1, `verifyOk`+1, `consumed`+1).
+  PR open against `main`, **not merged** (session instruction — Majd merges after the
+  Arabic-review gate for the new `credential.bulk-validation-failed` key). Branch
+  `feat/KH-1.1.3-BE-bulk-and-stats`. Confirmed `main` included PR #27/#28 (KH-1.4.4-BE, merges
+  `d4e0c47`/`6d8c4ab`) at session start via `git log` directly, per protocol. See "Last completed"
+  → Session KH-1.1.3-BE for the full breakdown.
 - **KH-1.4.4-BE — consuming-party admin plane + `ensure()` race closure** (session
   `feat/KH-1.4.4-BE-consuming-party-admin`, 2026-07-21): support-mode session, brief itself was the
   spec (same precedent as KH-1.1-BE/KH-1.6-early/KH-1.2.2/KH-1.4.3). Gives the console's
@@ -137,6 +151,75 @@
   "Last completed" → Session chore/swagger-and-flagged-fixes for details.
 
 ## Last completed
+- 2026-07-22: KH-1.1.3-BE — bulk issuance + stats endpoint (+ OpenAPI security schemes).
+  Support-mode session, brief itself was the spec. `mvn verify` green, 230/230 tests (22 new, up
+  from 208). PR open against `main`, **not merged** (session instruction). Branch
+  `feat/KH-1.1.3-BE-bulk-and-stats`. Confirmed `main` included PR #27/#28 (KH-1.4.4-BE) at session
+  start via `git log` directly, per protocol.
+  - **D1/D2 — bulk issuance, `POST /api/v1/credentials/bulk`:** new `credential.domain
+    .BulkIssuanceService` (module-private, new bean — deliberately *not* a method on
+    `CredentialService` itself, so each item's call to `CredentialService#issue`/`#mintClaimCode`
+    goes through Spring's real transactional proxy rather than a self-invocation, the same
+    `AtomicConsumptionRecorder` rationale). Up to 200 items, one schema per batch; each item issues
+    independently in its own transaction — one bad row never rolls back the batch. Response:
+    `{total, succeeded, failed, results:[{index, status, id?, ref?, claimCode?, error?}]}`,
+    index-aligned. New `KH-CRD-0400` (`credential.bulk-validation-failed`, `{0}`-substituted
+    reason) for a batch-level empty/oversized rejection — thrown before any item is processed,
+    never counted as a per-item failure. A draft/archived-schema item fails per-item with the
+    *existing* `KH-SCH-1409` guard (`SchemaCatalog#ensurePublished`), reused unchanged — no new
+    schema-status logic.
+  - **D3 — claim codes:** `mintClaimCodes: true` mints a code per successfully issued item via the
+    unchanged `CredentialService#mintClaimCode` path, returned once in that item's result. If the
+    mint call itself fails after a successful issue, the row is reported `FAILED` even though the
+    underlying credential was already committed (an accepted edge case, documented on
+    `BulkIssuanceService`'s Javadoc — not exercised by the batch's own transaction boundary).
+  - **D5/D6 — stats endpoint, `GET /api/v1/stats`:** new `shared.web.StatsController` (stays
+    inside the `shared` module — it only depends on `shared.audit`, a same-module named interface,
+    so no new Modulith dependency edge). A plain `GROUP BY action` aggregation
+    (`AuditService#countActionsInWindow`, new) over `audit_log`, session-gated
+    (`ScopeGuard#requireUserSession`, same stance as credential search) — `?from=&to=` optional
+    ISO-8601 instants, default last 30 days, `[from, to)` semantics. **D6 verify-against-the-code
+    finding:** `CREDENTIAL_VERIFY_OK`/`CREDENTIAL_VERIFY_FAILED` did not exist — added both new
+    `AuditAction`s, recorded by `CredentialController#verify` *after* `CredentialService#verify`
+    returns, deliberately outside that method's own `readOnly = true` transaction (a read-only
+    transaction cannot accept the write; `ref` is read from the already-decoded `claims` map's
+    `"ref"` entry, never re-parsed). Every one of D5's seven counters now has a real data source —
+    no counter had to fall back to a hardcoded `0`.
+  - **`V6__audit_log_stats_index.sql`** (the one additive migration, verified necessary — no prior
+    index existed on `audit_log` besides its identity PK): `(tenant_id, occurred_at)`, backing the
+    stats aggregation's range scan. `MigrationImmutabilityTest` green; checksum appended to
+    `db/migration-checksums.lock`.
+  - **D7 — OpenAPI security schemes:** `shared.config.OpenApiConfig` gained
+    `components.securitySchemes`: `sessionCookie` (apiKey-in-cookie, `KHATM_SESSION`) and
+    `apiKeyBearer` (http bearer, format `khk_...`) — closes the C2b-flagged docs gap (the published
+    contract declared no security schemes at all). **Scope decision (brief's own escape hatch
+    invoked):** scheme declarations + descriptions only, no per-operation `@SecurityRequirement`
+    wiring — auditing every endpoint's exact auth story individually was judged more than this
+    additive docs-gap fix needed for one session. Purely additive; no path or existing schema
+    changed.
+  - **`docs/api/openapi.json` + `docs/error-codes.md`** regenerated via their own tests
+    (`OpenApiContractTest`, `ErrorCodesDocGenerationTest`), not hand-edited — additive-only (new
+    `/bulk` and `/stats` paths + DTOs + security schemes, one new `KH-CRD-0400` row).
+    `credential/README.md`, `credential/package-info.java`, `shared/README.md`,
+    `shared/package-info.java` updated. `rbac.security.SecurityConfig`'s Javadoc gained the two new
+    per-endpoint decisions (`/bulk` reuses `/issue`'s gate verbatim; `/stats` reuses credential
+    search's gate verbatim).
+  - **Tests (22 new):** `credential.domain.BulkIssuanceServiceTest` (7 — happy path + per-item
+    audit rows, `mintClaimCodes` one-time code + its own audit row, mixed-batch per-item failure
+    with index alignment and the batch audit row still recorded, draft-schema-item and
+    archived-schema-item both failing with the reused `KH-SCH-1409`, empty-batch and
+    too-many-items both `ValidationException`), `rbac.BulkIssueScopeGateTest` (5 — 401/403
+    CONSUMING_PARTY key/403 TENANT key missing scope/200 TENANT key with scope/200
+    ISSUER_OPERATOR session), `shared.audit.AuditStatsTest` (3 — group-by-action counting via
+    direct JDBC-seeded rows with controlled `occurred_at`, window exclusion, `[from, to)`
+    exclusive-upper-bound — every assertion is a delta, not a bare count, since this shared-context
+    suite's `audit_log` accumulates rows from every other test class), `rbac.StatsScopeGateTest`
+    (5 — 401/403 full-scope key/200 session with counters envelope/200 explicit window
+    echoed/400 malformed window param), `rbac.CredentialVerifyAuditTest` (2 — valid presentation
+    records `CREDENTIAL_VERIFY_OK` with the resolved ref and no claim content in `detail`;
+    malformed presentation records `CREDENTIAL_VERIFY_FAILED` with no resolved ref).
+  - **Arabic-speaker review gate (spec FS-0.6a §4)** for `credential.bulk-validation-failed`:
+    **pending** — flag in the PR body before merge, same as every other session's new-key set.
 - 2026-07-21: KH-1.4.4-BE — consuming-party admin plane + `ensure()` find-or-create race closure.
   Support-mode session, brief itself was the spec. `mvn verify` green, 208/208 tests (27 new, up
   from 181). DONE & MERGED via PR #27 (2026-07-22, merge commit `d4e0c47`); branch
@@ -1805,14 +1888,20 @@
 **Platform v1 is complete** (auth, claim delivery + minting, signed status list, consumption
 hardening, versioned published contract — see "Current phase / task" above), and support mode is
 now underway (KH-1.1-BE closed schema management + credential search + the consume idempotency race;
-KH-1.4.4-BE, this session, added the consuming-party admin plane + closed the `ensure()` race — see
-"Last completed" for the full breakdowns).
+KH-1.4.4-BE added the consuming-party admin plane + closed the `ensure()` race; KH-1.1.3-BE, this
+session — **the last planned platform session before V1 closure** — added bulk issuance + the stats
+endpoint + OpenAPI security schemes, unblocking C3/C4 — see "Last completed" for the full
+breakdowns).
 
-1. **C2 / C2b (console, other repo)** — the console team's active milestone; this session's
-   consuming-parties admin endpoints (plus KH-1.1-BE's schema management/credential search) exist
-   specifically to unblock the consuming-parties screen + consume simulator.
-2. KH-1.1.3-BE — bulk issuance endpoint + a stats/counters endpoint, scheduled reactively when C2's
-   issue wizard actually needs them (same "support mode, not ahead of need" stance).
+1. **C2 / C2b / C3 / C4 (console, other repo)** — the console team's active milestone; this
+   session's bulk-issue + stats endpoints (plus KH-1.4.4-BE's consuming-parties admin plane and
+   KH-1.1-BE's schema management/credential search) exist specifically to unblock the console's
+   remaining screens (issue wizard, pilot-metrics dashboard, consuming-parties screen, consume
+   simulator). No further platform-side work is scheduled ahead of a concrete console ask.
+2. ~~KH-1.1.3-BE — bulk issuance endpoint + a stats/counters endpoint~~ — **CLOSED (this
+   session):** `POST /api/v1/credentials/bulk` + `GET /api/v1/stats`, both scope-gated, both
+   backed by the reused single-issue path / `audit_log` aggregation respectively — no new
+   bookkeeping. See "Last completed" → Session KH-1.1.3-BE for the full breakdown.
 3. KH-0.3.3 activation — **config, not code**: set the staging secrets in `docs/deploy-staging.md`
    and the `release.yml` deploy job runs on the next push to `main`. (The publish half is already
    live; only the gated deploy half waits on a host — Majd.)

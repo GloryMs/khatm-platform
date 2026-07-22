@@ -106,6 +106,17 @@ import sy.khatm.platform.shared.audit.AuditService;
  * console operator's tool, not something a {@code TENANT}/{@code CONSUMING_PARTY} integration
  * needs).
  *
+ * <p><b>Bulk issuance (KH-1.1.3):</b> {@code POST /api/v1/credentials/bulk} reuses {@code /issue}'s
+ * exact {@link ScopeGuard#requireScopeNotConsumingPartyKey} rule verbatim — it is the same C3
+ * wizard's batch-shaped counterpart to single issuance, not a materially different operation, so it
+ * gets the identical session-or-TENANT-key gate.
+ *
+ * <p><b>Stats/counters (KH-1.1.3):</b> {@code GET /api/v1/stats} uses the exact same rule as
+ * credential search — {@link ScopeGuard#requireUserSession}, no specific scope, no API key of any
+ * kind. The console's C4 pilot-metrics dashboard is an operator's tool over an aggregation of the
+ * audit trail, the same "any operator role, no integration use case" judgment call credential
+ * search already made.
+ *
  * <p><b>Worker role:</b> this configuration class loads in every profile (nothing here is
  * conditional on {@code khatm.web.enabled}) — the worker image runs no business REST endpoints
  * regardless (ADR-09's {@code @ConditionalOnProperty} on the controllers themselves), so
@@ -129,6 +140,7 @@ class SecurityConfig {
   private static final String STATUS_LIST_PATH = "/sl/**";
   private static final String LOGIN_PATH = "/api/v1/auth/login";
   private static final String ISSUE_PATH = "/api/v1/credentials/issue";
+  private static final String BULK_ISSUE_PATH = "/api/v1/credentials/bulk";
   private static final String CONSUME_PATH = "/api/v1/credentials/consume";
   private static final String REVOKE_PATH = "/api/v1/credentials/*/revoke";
   private static final String CLAIM_CODE_PATH = "/api/v1/credentials/*/claim-code";
@@ -136,6 +148,7 @@ class SecurityConfig {
   private static final String SCHEMAS_PATH = "/api/v1/schemas/**";
   private static final String CLAIMS_REDEEM_PATH = "/api/v1/claims/redeem";
   private static final String CREDENTIALS_LIST_PATH = "/api/v1/credentials";
+  private static final String STATS_PATH = "/api/v1/stats";
   private static final String[] SWAGGER_PATHS = {
     "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html"
   };
@@ -207,6 +220,8 @@ class SecurityConfig {
         .permitAll()
         .requestMatchers(HttpMethod.POST, ISSUE_PATH)
         .access(ScopeGuard.requireScopeNotConsumingPartyKey("issue"))
+        .requestMatchers(HttpMethod.POST, BULK_ISSUE_PATH)
+        .access(ScopeGuard.requireScopeNotConsumingPartyKey("issue"))
         .requestMatchers(HttpMethod.POST, CLAIM_CODE_PATH)
         .access(ScopeGuard.requireScopeNotConsumingPartyKey("issue"))
         .requestMatchers(HttpMethod.POST, CONSUME_PATH)
@@ -222,6 +237,8 @@ class SecurityConfig {
         .requestMatchers(HttpMethod.PUT, SCHEMAS_PATH)
         .access(ScopeGuard.requireScope("admin"))
         .requestMatchers(HttpMethod.GET, CREDENTIALS_LIST_PATH)
+        .access(ScopeGuard.requireUserSession())
+        .requestMatchers(HttpMethod.GET, STATS_PATH)
         .access(ScopeGuard.requireUserSession())
         .anyRequest()
         .authenticated();

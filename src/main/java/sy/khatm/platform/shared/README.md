@@ -41,6 +41,15 @@ producer, structured logging, the `name_i18n` / `label_i18n` JSONB convention (`
 - **`docs/error-codes.md`** is generated from the `ErrorCode` enum by
   `ErrorCodesDocGenerationTest` — never hand-edited (CLAUDE.md work rule 1).
 
+**Stats/counters (KH-1.1.3):** `web.StatsController` serves `GET /api/v1/stats` — the console's
+C4 pilot-metrics dashboard — as a `GROUP BY action` read over `audit_log` via
+`AuditService#countActionsInWindow` (new), session-gated (`ScopeGuard#requireUserSession`, same
+as credential search). `audit_log_tenant_occurred_idx` (`V6`) backs the `(tenant_id,
+occurred_at)` range scan the aggregation performs. `AuditAction` gained
+`CREDENTIALS_BULK_ISSUED`/`CREDENTIAL_VERIFY_OK`/`CREDENTIAL_VERIFY_FAILED` (written by
+`credential`, not this module) so the dashboard has real counters for bulk issuance and online
+verification outcomes, which had no audit trail before this session.
+
 **For future sessions:** adding a new user-facing string or throw site now means extending
 `ErrorCode`/`VerifyReason` and *both* message bundles in the same commit — `MessageBundleParityTest`
 and `ErrorCodesDocGenerationTest` fail the build otherwise. This is deliberate (spec FS-0.6a): the
