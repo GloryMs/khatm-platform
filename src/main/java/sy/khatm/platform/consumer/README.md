@@ -20,5 +20,17 @@ treatment `rbac`'s `user_role` gets). `credential.domain.CredentialService#consu
 consume a credential whose `schema_id` has a `consuming_party_schema` row for their own party —
 deny-by-default, so a party with an empty (or entirely absent) allowlist can consume nothing.
 `rbac.seed.DemoApiKeySeeder` calls `#allowSchema` to scope the demo consuming party to the demo
-schema, otherwise every local demo consume would 403 under this default. Per-party quotas remain
-future work.
+schema, otherwise every local demo consume would 403 under this default.
+
+**Admin plane (KH-1.4.4):** `ConsumingPartyAdmin` (behind `/api/v1/admin/consuming-parties`, `admin`
+scope) registers parties, flips `ACTIVE`↔`SUSPENDED`, and manages the schema allowlist. `V5` adds a
+`code` column (deterministic id derivation was always `UUID.nameUUIDFromBytes("tenant:code")`, but
+the code itself was never persisted); `create` produces the same row `#ensure` would, so explicit
+creation and implicit ensure never diverge — a duplicate code is `KH-CNS-0409`, not a second row.
+A `SUSPENDED` party's keys fail authentication (`ConsumingPartyRegistry#isActive`, consulted by
+`rbac`'s `ApiKeyService#verify`), exactly like a revoked key. Key minting (`POST /{id}/api-keys`)
+lives in `rbac.web`, not here — only `rbac` may create `api_key` rows, and `consumer → rbac` would
+form a module cycle. `#ensure`'s find-or-create race is closed (KH-1.4.4 D6): the entity forces a
+true INSERT (`Persistable`), and a lost race re-reads the winner's row (the method holds no
+enclosing transaction, so the failed insert never poisons the follow-up SELECT). Per-party quotas
+and rate limits remain future work.

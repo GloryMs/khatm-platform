@@ -142,5 +142,35 @@ public enum AuditAction {
    * credentials and their verification/consumption are unaffected ({@code schema} module,
    * KH-1.1.1). {@code entityRef} is {@code code:version}.
    */
-  SCHEMA_ARCHIVED
+  SCHEMA_ARCHIVED,
+
+  /**
+   * A consuming party was registered via the admin plane ({@code consumer} module, KH-1.4.4, {@code
+   * POST /api/v1/admin/consuming-parties}). {@code entityRef} is the party's {@code code}.
+   */
+  CONSUMING_PARTY_CREATED,
+
+  /**
+   * A consuming party was suspended — its API keys stop authenticating ({@code consumer} module,
+   * KH-1.4.4). {@code entityRef} is the party's {@code code}.
+   */
+  CONSUMING_PARTY_SUSPENDED,
+
+  /**
+   * A suspended consuming party was reactivated ({@code consumer} module, KH-1.4.4). {@code
+   * entityRef} is the party's {@code code}.
+   */
+  CONSUMING_PARTY_ACTIVATED,
+
+  /**
+   * A schema was added to a consuming party's allowlist ({@code consumer} module, KH-1.4.4). {@code
+   * entityRef} is the party's {@code code}; {@code detail.schemaId} identifies the schema.
+   */
+  CONSUMING_PARTY_SCHEMA_ALLOWED,
+
+  /**
+   * A schema was removed from a consuming party's allowlist ({@code consumer} module, KH-1.4.4).
+   * {@code entityRef} is the party's {@code code}; {@code detail.schemaId} identifies the schema.
+   */
+  CONSUMING_PARTY_SCHEMA_DISALLOWED
 }

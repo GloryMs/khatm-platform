@@ -131,6 +131,37 @@ public enum ErrorCode {
   KH_CNS_0403(HttpStatus.FORBIDDEN, "consumer.schema-not-allowed"),
 
   /**
+   * A consuming-party admin request (KH-1.4.4, {@code POST /api/v1/admin/consuming-parties})
+   * carried a {@code code} that is not a valid lowercase slug ({@code ^[a-z0-9][a-z0-9-_]{1,62}$}).
+   * The offending value is not echoed back — this is a plain format rejection.
+   */
+  KH_CNS_0400(HttpStatus.BAD_REQUEST, "consumer.invalid-code"),
+
+  /**
+   * A requested consuming party does not exist in the current tenant (KH-1.4.4 — the admin
+   * suspend/activate/allow/mint operations, and the allow endpoint's party check). The first {@code
+   * CNS} 404: before the admin plane, a consuming party was only ever resolved by {@code
+   * ConsumingPartyRegistry#ensure}, which creates one if absent, so no not-found path existed.
+   */
+  KH_CNS_0404(HttpStatus.NOT_FOUND, "consumer.party-not-found"),
+
+  /**
+   * A schema named in a consuming-party allowlist request (KH-1.4.4 D5, {@code POST
+   * /api/v1/admin/consuming-parties/{id}/allowed-schemas}) does not exist in the current tenant. A
+   * second {@code CNS} 404, distinct from {@link #KH_CNS_0404} (which is about the party): the
+   * caller needs to know <em>which</em> of the two referenced entities was missing.
+   */
+  KH_CNS_1404(HttpStatus.NOT_FOUND, "consumer.allowlist-schema-not-found"),
+
+  /**
+   * Explicit admin creation of a consuming party (KH-1.4.4 D2) whose {@code code} is already
+   * registered in this tenant. Creation is idempotent by identity (the id is derived from {@code
+   * (tenant, code)}), so a duplicate cannot produce a second row — but a second explicit create is
+   * reported as a conflict rather than silently overwriting the existing party's name/status.
+   */
+  KH_CNS_0409(HttpStatus.CONFLICT, "consumer.duplicate-code"),
+
+  /**
    * A {@code POST}/{@code PUT} schema-authoring request (KH-1.1.1, {@code schema.web
    * .SchemaController}'s create/update/version endpoints) failed a business-level check Bean
    * Validation alone cannot express — an unsupported claim field type, a {@code label_i18n}/{@code

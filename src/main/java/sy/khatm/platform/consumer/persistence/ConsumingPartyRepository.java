@@ -1,5 +1,6 @@
 package sy.khatm.platform.consumer.persistence;
 
+import java.util.List;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -9,13 +10,16 @@ import sy.khatm.platform.consumer.domain.ConsumingParty;
 
 /**
  * Repository for {@link ConsumingParty} entities, plus the {@code consuming_party_schema}
- * join-table operations schema scoping needs (KH-1.4.3) — there is no JPA entity for {@code
- * consuming_party_schema} itself, the same bare-composite-key-join-table treatment {@code
+ * join-table operations schema scoping needs (KH-1.4.3/KH-1.4.4) — there is no JPA entity for
+ * {@code consuming_party_schema} itself, the same bare-composite-key-join-table treatment {@code
  * rbac.persistence.RoleRepository} gives {@code user_role}.
  *
- * <p>Module-private — only {@code ConsumingPartyRegistryService} may use this.
+ * <p>Module-private — only the {@code consumer.domain} services may use this.
  */
 public interface ConsumingPartyRepository extends JpaRepository<ConsumingParty, UUID> {
+
+  /** Every party registered for a tenant, newest first (KH-1.4.4 admin list). */
+  List<ConsumingParty> findAllByTenantIdOrderByCreatedAtDesc(UUID tenantId);
 
   /**
    * Whether {@code (partyId, schemaId)} has a row in {@code consuming_party_schema} — the
@@ -28,6 +32,14 @@ public interface ConsumingPartyRepository extends JpaRepository<ConsumingParty, 
       nativeQuery = true)
   boolean existsAllowedSchema(@Param("partyId") UUID partyId, @Param("schemaId") UUID schemaId);
 
+  /** The schema ids on a party's allowlist (KH-1.4.4 admin view). */
+  @Query(
+      value =
+          "SELECT schema_id FROM consuming_party_schema WHERE consuming_party_id = :partyId"
+              + " ORDER BY schema_id",
+      nativeQuery = true)
+  List<UUID> findAllowedSchemaIds(@Param("partyId") UUID partyId);
+
   /** Insert an {@code (partyId, schemaId)} allowlist row; idempotent (no-op if already present). */
   @Modifying
   @Query(
@@ -36,4 +48,17 @@ public interface ConsumingPartyRepository extends JpaRepository<ConsumingParty, 
               + " VALUES (:partyId, :schemaId) ON CONFLICT DO NOTHING",
       nativeQuery = true)
   void insertAllowedSchema(@Param("partyId") UUID partyId, @Param("schemaId") UUID schemaId);
+
+  /**
+   * Remove an {@code (partyId, schemaId)} allowlist row (KH-1.4.4 D5); idempotent.
+   *
+   * @return the number of rows removed — {@code 0} if the pair was not allowed
+   */
+  @Modifying
+  @Query(
+      value =
+          "DELETE FROM consuming_party_schema"
+              + " WHERE consuming_party_id = :partyId AND schema_id = :schemaId",
+      nativeQuery = true)
+  int deleteAllowedSchema(@Param("partyId") UUID partyId, @Param("schemaId") UUID schemaId);
 }

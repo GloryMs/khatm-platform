@@ -3,6 +3,17 @@
 
 ## Current phase / task
 - Phase 0 — Production Foundation, fully closed (see prior sessions).
+- **KH-1.4.4-BE — consuming-party admin plane + `ensure()` race closure** (session
+  `feat/KH-1.4.4-BE-consuming-party-admin`, 2026-07-21): support-mode session, brief itself was the
+  spec (same precedent as KH-1.1-BE/KH-1.6-early/KH-1.2.2/KH-1.4.3). Gives the console's
+  consuming-parties screen + consume simulator (session C2b, other repo) the HTTP surface KH-1.4.3
+  left missing: parties were only ever created by `DemoApiKeySeeder` or implicitly via
+  `ConsumingPartyRegistryService#ensure`, and allowlisting was seeder/test-only. `mvn verify` green,
+  **208/208 tests (27 new, up from 181)**; the full live-compose e2e (DoD #2) ran for real (create →
+  allow → mint → consume → suspend → 401 → activate → consume). **PR open against `main`, NOT
+  MERGED** (session instruction — Majd merges after the Arabic-review gate). Confirmed `main`
+  included PR #25 (KH-1.1-BE, merge `7e5cbc1`) at session start via `git log` directly, per protocol.
+  See "Last completed" → Session KH-1.4.4-BE for the full breakdown.
 - **KH-1.1-BE — schema management + credential search + idempotency race closure** (session
   `feat/KH-1.1-BE-schema-mgmt-and-search`, 2026-07-21): three-part support-mode session, brief
   itself was the spec (no separate spec doc, same precedent as KH-1.6-early/KH-1.2.2/KH-1.4.3).
@@ -120,6 +131,79 @@
   "Last completed" → Session chore/swagger-and-flagged-fixes for details.
 
 ## Last completed
+- 2026-07-21: KH-1.4.4-BE — consuming-party admin plane + `ensure()` find-or-create race closure.
+  Support-mode session, brief itself was the spec. `mvn verify` green, 208/208 tests (27 new, up
+  from 181). PR open against `main`, **not merged** (session instruction). Branch
+  `feat/KH-1.4.4-BE-consuming-party-admin`. Confirmed `main` included PR #25 at session start via
+  `git log` directly, per protocol.
+  - **Admin plane (D1/D3), `admin` scope, under `/api/v1/admin/consuming-parties`:** new
+    `consumer.api.ConsumingPartyAdmin` (impl `consumer.domain.ConsumingPartyAdminService`,
+    module-private) + `consumer.web.ConsumingPartyAdminController`: `GET` (list, newest-first, each
+    with resolved `allowedSchemas` as `[{schemaId, schemaCode}]`), `POST` (register), `POST
+    /{id}/suspend` + `/activate`, `POST /{id}/allowed-schemas` (returns the updated view) + `DELETE
+    /{id}/allowed-schemas/{schemaId}`. The gate is the *existing* `/api/v1/admin/**` →
+    `ScopeGuard.requireScope("admin")` rule — no new scope, no seeded-role migration (same MVP stance
+    as KH-1.1.1 schema management; granular `consumer:manage` waits for KH-2.2).
+  - **Key mint lives in `rbac.web`, not `consumer` (D3, hard constraint 2):** `POST
+    /{id}/api-keys` is `rbac.web.ConsumingPartyKeyController` (mints a `CONSUMING_PARTY` key, scope
+    `consume`, plaintext once). It could not live in `consumer.web` — only `rbac` may create
+    `api_key` rows (`ApiKeyService` is module-private to `rbac.domain`), and `consumer → rbac` would
+    cycle against the existing `rbac → consumer::api` seeder dependency (`ModulithBoundariesTest`
+    stayed green + acyclic). It calls `ConsumingPartyAdmin#get` to 404 (`KH-CNS-0404`) an unknown
+    party before minting; revocation reuses the existing `/api/v1/admin/api-keys/{id}/revoke`.
+  - **D2 — identity stays deterministic, duplicate = 409 (implementer's pick):** `create(code,
+    nameI18n)` derives the row id `UUID.nameUUIDFromBytes(tenant:code)` — identical to `ensure` — so
+    explicit creation and implicit ensure can never diverge into two rows; a second create of the
+    same code is `KH-CNS-0409`, never a silent overwrite or a second row (proven by a one-row DB
+    assertion). `code` validated `^[a-z0-9][a-z0-9-_]{1,62}$` → `KH-CNS-0400` on a bad format.
+  - **Migration `V5__consuming_party_code.sql` (D2, hard constraint 3):** `consuming_party` had NO
+    `code` column (verified against the entity first, per the KH-1.4.3 Part B lesson — the id
+    derivation always hashed `tenant:code` but never persisted `code`). `V5` adds `code text` +
+    `UNIQUE (tenant_id, code)`, backfilling any pre-existing rows with `'legacy-' || id` (their
+    original code is unrecoverable from the one-way hash; a real deployment has none yet). Entity now
+    implements `Persistable<UUID>` so a fresh row forces a true `INSERT` (deterministic conflict on a
+    lost race, never a silent merge/UPDATE-clobber of the winner). V1–V4 untouched;
+    `MigrationImmutabilityTest`/`MigrationCleanBootTest` green; checksum appended to
+    `db/migration-checksums.lock`.
+  - **D4 — SUSPENDED bites, in the auth path:** new `ConsumingPartyRegistry#isActive`, consulted by
+    `rbac.domain.ApiKeyService#verify` — a `CONSUMING_PARTY` key whose party is `SUSPENDED` returns
+    empty exactly like a revoked key, funnelling down the same `API_KEY_AUTH_FAILED` / 401
+    `KH-RBC-1401` path (matched to the revoked-key path, as the brief asked). A `null`-owner guard
+    tolerates legacy/test keys with no party. Proven both by `ConsumeApiKeyGateTest`
+    (`consume_withSuspendedParty_returns401_andWorksAgainAfterActivate`) and the live e2e.
+  - **D5 — allowlist referential sanity:** `allowSchema` requires the party (`KH-CNS-0404`) and the
+    schema (`KH-CNS-1404`, a second CNS 404 — via `schema :: api`'s `SchemaCatalog#findById`, any
+    non-deleted status accepted); `disallowSchema` is a pure idempotent DELETE → **204 no-op** even
+    for an unknown party (implementer's pick), auditing only when a row was actually removed.
+  - **D6 — `ensure()` race CLOSED (KH-1.1-BE Part C "Next up" #4):** `ensure` is now deliberately
+    NOT `@Transactional`, so each repo call runs in its own transaction and a lost race's
+    `saveAndFlush` `DataIntegrityViolationException` rolls back cleanly — the catch re-reads the
+    winner's row on a clean connection (no aborted-transaction poisoning, unlike
+    `AtomicConsumptionRecorder`, exactly as the brief's D6 sketch predicted). Its one runtime caller,
+    `CredentialService#consume`, was already non-transactional for the same family of reason.
+    Regression test `db.ConsumingPartyEnsureRaceTest`: two real threads race a brand-new code → same
+    id, exactly one row.
+  - **Errors & audit (D7):** new `KH-CNS-0400`/`0404`/`1404`/`0409` (both bundles, same commit) and
+    new `AuditAction.CONSUMING_PARTY_{CREATED,SUSPENDED,ACTIVATED,SCHEMA_ALLOWED,SCHEMA_DISALLOWED}`
+    (entityRef = party `code`, detail carries `schemaId`; key mint reuses `API_KEY_CREATED`). All
+    writes via `AuditService#record` (`NoDirectAuditLogInsertTest` still green).
+  - **Both new controllers gated `@ConditionalOnProperty(khatm.web.enabled, matchIfMissing=true)`**
+    — the business-controller pattern (Credential/Claim/Status/Jwks), keeping the worker role clean.
+  - **`docs/api/openapi.json` + `docs/error-codes.md`** regenerated via their own tests
+    (`OpenApiContractTest` → `target/openapi-generated.json`, `ErrorCodesDocGenerationTest`), not
+    hand-edited — additive-only (6 new consuming-parties paths + DTOs, 4 new `KH-CNS-*` rows; contract
+    diff 478 insertions / 0 deletions). `consumer/README.md`, `consumer/package-info.java` updated.
+  - **Tests (27 new):** `consumer.domain.ConsumingPartyAdminServiceTest` (12 — create/idempotency-
+    one-row/invalid-code/get-404/suspend+activate+isActive/idempotent-suspend/allow+audit/allow-404s/
+    disallow-idempotent-no-op/list-newest-first), `rbac.ConsumingPartyAdminGateTest` (12 — 401/403
+    CP-key/403 tenant-no-admin/200 admin-key gate, full HTTP lifecycle walk with audit rows, 409
+    duplicate + one-row, 400 invalid code, 404 party/schema, 204 disallow no-op, mint returns key /
+    mint-404), `db.ConsumingPartyEnsureRaceTest` (1 — D6), `ConsumeApiKeyGateTest` (+1 — D4
+    suspend→401→activate), `AuthSecretsNotLoggedTest` (+1 — mint rawKey never logged).
+  - **Arabic-speaker review gate (spec FS-0.6a §4)** for the four new `consumer.*` keys
+    (`consumer.invalid-code`, `consumer.party-not-found`, `consumer.allowlist-schema-not-found`,
+    `consumer.duplicate-code`): **pending** — flagged in the PR body, merge blocked on Majd's
+    confirmation, `MessageBundleParityTest` green.
 - 2026-07-21: KH-1.1-BE — schema management + credential search + idempotency race closure,
   three-part support-mode session (console C2's needs plus one flagged debt); brief itself was the
   spec, same precedent as KH-1.6-early/KH-1.2.2/KH-1.4.3. `mvn verify` green, 181/181 tests (35
@@ -1713,32 +1797,26 @@
 
 **Platform v1 is complete** (auth, claim delivery + minting, signed status list, consumption
 hardening, versioned published contract — see "Current phase / task" above), and support mode is
-now underway (KH-1.1-BE, this session, closed schema management + credential search + the
-idempotency race — see "Last completed" for the full breakdown).
+now underway (KH-1.1-BE closed schema management + credential search + the consume idempotency race;
+KH-1.4.4-BE, this session, added the consuming-party admin plane + closed the `ensure()` race — see
+"Last completed" for the full breakdowns).
 
-1. **C2 (console, other repo)** — the console team's active milestone; this session's schema
-   management/credential search endpoints exist specifically to unblock it.
-2. KH-1.1.3-BE — bulk issuance endpoint, scheduled reactively when C2's issue wizard actually needs
-   it (same "support mode, not ahead of need" stance KH-1.1-BE's own session brief restated).
+1. **C2 / C2b (console, other repo)** — the console team's active milestone; this session's
+   consuming-parties admin endpoints (plus KH-1.1-BE's schema management/credential search) exist
+   specifically to unblock the consuming-parties screen + consume simulator.
+2. KH-1.1.3-BE — bulk issuance endpoint + a stats/counters endpoint, scheduled reactively when C2's
+   issue wizard actually needs them (same "support mode, not ahead of need" stance).
 3. KH-0.3.3 activation — **config, not code**: set the staging secrets in `docs/deploy-staging.md`
    and the `release.yml` deploy job runs on the next push to `main`. (The publish half is already
    live; only the gated deploy half waits on a host — Majd.)
-4. **`consumer.domain.ConsumingPartyRegistryService#ensure`'s find-or-create race — discovered,
-   not fixed, this session (KH-1.1-BE Part C's own concurrency test surfaced it as a side effect,
-   not a deliberate probe):** its id is deterministic (`UUID.nameUUIDFromBytes(tenant:code)`, by
-   design — the same code must always resolve to the same row), so two callers racing to `ensure()`
-   a **brand-new** code concurrently both see "no existing row" and both attempt an `INSERT` with
-   the identical primary key; the loser's `DataIntegrityViolationException` is uncaught, surfacing
-   as `KH-SYS-0500`. Every existing concurrent-caller test used a distinct consumer code per
-   caller specifically (dodging this without anyone noticing); `ConsumeIdempotencyRaceTest`
-   sidesteps it by pre-creating the row synchronously before racing. Low real-world likelihood (two
-   *never-before-seen* consumer codes racing on their very first call) but a real gap. Fix shape:
-   almost certainly a plain `try { ensure() } catch (DataIntegrityViolationException) { re-SELECT
-   by the same deterministic id }` — simpler than `AtomicConsumptionRecorder`'s separate-bean/fresh-
-   transaction pattern, since a retry here can just re-read the winner's row directly rather than
-   needing to roll back a partial decrement first.
+4. ~~`ConsumingPartyRegistryService#ensure` find-or-create race~~ — **CLOSED (KH-1.4.4-BE, this
+   session):** `ensure` is no longer `@Transactional` and the entity forces a true `INSERT`
+   (`Persistable`), so a lost race's `DataIntegrityViolationException` rolls back cleanly and the
+   catch re-reads the winner's row directly — exactly the shape flagged here. Regression test
+   `db.ConsumingPartyEnsureRaceTest`.
 5. KH-2.2 — full RBAC (replaces D5's lean `role.scopes text[]` with real Permission tables, admin
-   console for user/role management) + RBAC-gated REST endpoint for `KeyLifecycleService.rotate()`.
+   console for user/role management, granular `schema:manage`/`consumer:manage` scopes replacing the
+   MVP `admin`-scope stand-in) + RBAC-gated REST endpoint for `KeyLifecycleService.rotate()`.
 6. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM.
 
 ## Standing conventions (promoted to docs/CONVENTIONS.md §7)

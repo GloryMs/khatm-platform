@@ -16,6 +16,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
+import sy.khatm.platform.consumer.api.ConsumingPartyAdmin;
 import sy.khatm.platform.consumer.api.ConsumingPartyRef;
 import sy.khatm.platform.consumer.api.ConsumingPartyRegistry;
 import sy.khatm.platform.rbac.SessionTestSupport.AuthenticatedSession;
@@ -50,6 +51,7 @@ class ConsumeApiKeyGateTest extends RbacHttpTestSupport {
   @Autowired private ApiKeyService apiKeyService;
   @Autowired private JdbcTemplate jdbc;
   @Autowired private ConsumingPartyRegistry consumingParties;
+  @Autowired private ConsumingPartyAdmin consumingPartyAdmin;
   @Autowired private SchemaCatalog schemaCatalog;
 
   @Test
@@ -150,6 +152,49 @@ class ConsumeApiKeyGateTest extends RbacHttpTestSupport {
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     JsonNode body = JSON.readTree(response.getBody());
     assertThat(body.get("code").asText()).isEqualTo("KH-RBC-0403");
+  }
+
+  @Test
+  void consume_withSuspendedParty_returns401_andWorksAgainAfterActivate() throws Exception {
+    // KH-1.4.4 D4: a SUSPENDED party's key must fail authentication exactly like a revoked key
+    // (401 KH-RBC-1401 + API_KEY_AUTH_FAILED), and authenticate again once reactivated.
+    String schemaCode = "ConsumeSuspendProbe/v1";
+    UUID schemaId = ensureSchema(schemaCode);
+    String issuerRawKey =
+        apiKeyService.create(ApiKeyOwnerType.TENANT, null, Set.of("issue")).rawKey();
+    String firstCredential = issueCredential(issuerRawKey, schemaCode);
+
+    ConsumingPartyRef party = consumingParties.ensure("suspend-test-" + UUID.randomUUID());
+    consumingParties.allowSchema(party.id(), schemaId);
+    CreatedApiKey consumerKey =
+        apiKeyService.create(ApiKeyOwnerType.CONSUMING_PARTY, party.id(), Set.of("consume"));
+
+    // Active: consume succeeds.
+    assertThat(consume(consumerKey.rawKey(), firstCredential, "suspend-test").getStatusCode())
+        .isEqualTo(HttpStatus.OK);
+
+    // Suspended: the same key now fails authentication like a revoked one.
+    consumingPartyAdmin.suspend(party.id());
+    ResponseEntity<String> whileSuspended =
+        consume(consumerKey.rawKey(), firstCredential, "suspend-test");
+    assertThat(whileSuspended.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    assertThat(JSON.readTree(whileSuspended.getBody()).get("code").asText())
+        .isEqualTo("KH-RBC-1401");
+    Integer authFailed =
+        jdbc.queryForObject(
+            "SELECT COUNT(*) FROM audit_log WHERE action = 'API_KEY_AUTH_FAILED'"
+                + " AND entity_ref = ?",
+            Integer.class,
+            consumerKey.keyPrefix());
+    assertThat(authFailed).isGreaterThanOrEqualTo(1);
+
+    // Reactivated: the key authenticates again and consumes a fresh credential cleanly.
+    String secondCredential = issueCredential(issuerRawKey, schemaCode);
+    consumingPartyAdmin.activate(party.id());
+    ResponseEntity<String> afterActivate =
+        consume(consumerKey.rawKey(), secondCredential, "suspend-test");
+    assertThat(afterActivate.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(JSON.readTree(afterActivate.getBody()).get("consumed").asBoolean()).isTrue();
   }
 
   @Test

@@ -47,4 +47,15 @@ public interface ConsumingPartyRegistry {
    * @param schemaId the schema to allow
    */
   void allowSchema(UUID partyId, UUID schemaId);
+
+  /**
+   * Whether {@code partyId} is currently {@code ACTIVE} (KH-1.4.4 D4) — a {@code SUSPENDED} party's
+   * API keys must fail authentication, exactly like a revoked key. {@code rbac}'s API-key
+   * verification consults this on every {@code CONSUMING_PARTY}-key request.
+   *
+   * @param partyId the consuming party's id; must not be {@code null}
+   * @return {@code true} if the party exists and is {@code ACTIVE}; {@code false} if it is {@code
+   *     SUSPENDED} or does not exist
+   */
+  boolean isActive(UUID partyId);
 }
