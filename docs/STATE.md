@@ -12,11 +12,20 @@
   `docker compose` stack: bulk-issued 3 items of the demo schema with `mintClaimCodes:true` →
   redeemed one code → verified it (valid) → consumed it with the demo consuming-party key → `GET
   /api/v1/stats` reflected all of it (`issued`+3, `claimsRedeemed`+1, `verifyOk`+1, `consumed`+1).
-  PR open against `main`, **not merged** (session instruction — Majd merges after the
-  Arabic-review gate for the new `credential.bulk-validation-failed` key). Branch
-  `feat/KH-1.1.3-BE-bulk-and-stats`. Confirmed `main` included PR #27/#28 (KH-1.4.4-BE, merges
-  `d4e0c47`/`6d8c4ab`) at session start via `git log` directly, per protocol. See "Last completed"
-  → Session KH-1.1.3-BE for the full breakdown.
+  **DONE & MERGED via PR #29** (2026-07-22, merge commit `c138da7`); branch
+  `feat/KH-1.1.3-BE-bulk-and-stats` deleted. Arabic-review gate for `credential.bulk-validation-failed`
+  confirmed by Majd before merge, no wording changes. Confirmed `main` included PR #27/#28
+  (KH-1.4.4-BE, merges `d4e0c47`/`6d8c4ab`) at session start via `git log` directly, per protocol.
+  **PR #29's own CI caught two real, session-unrelated dependency CVEs** (Trivy's `fs` gate,
+  first surfaced by this PR simply because it was the first to run CI since they were published):
+  `org.postgresql:postgresql` 42.7.11 (`CVE-2026-54291`, HIGH, SCRAM-SHA-256-PLUS downgrade MITM
+  bypass) and `jackson-core` 2.17.3 (`GHSA-r7wm-3cxj-wff9`, HIGH, async-parser
+  `maxNumberLength` bypass) — both cleared with patch-level `pom.xml` property overrides
+  (`postgresql.version` → `42.7.12`, new `jackson-bom.version` → `2.18.8`), same pattern
+  KH-0.3-closure established; `mvn verify` re-confirmed green (230/230) after the bump, no
+  behavior change. One CI re-run was also needed for an unrelated, transient Maven Central 429
+  rate-limit Trivy's own dependency-graph resolution hit mid-scan — not a finding, cleared on
+  retry with no code change. See "Last completed" → Session KH-1.1.3-BE for the full breakdown.
 - **KH-1.4.4-BE — consuming-party admin plane + `ensure()` race closure** (session
   `feat/KH-1.4.4-BE-consuming-party-admin`, 2026-07-21): support-mode session, brief itself was the
   spec (same precedent as KH-1.1-BE/KH-1.6-early/KH-1.2.2/KH-1.4.3). Gives the console's
@@ -153,9 +162,22 @@
 ## Last completed
 - 2026-07-22: KH-1.1.3-BE — bulk issuance + stats endpoint (+ OpenAPI security schemes).
   Support-mode session, brief itself was the spec. `mvn verify` green, 230/230 tests (22 new, up
-  from 208). PR open against `main`, **not merged** (session instruction). Branch
-  `feat/KH-1.1.3-BE-bulk-and-stats`. Confirmed `main` included PR #27/#28 (KH-1.4.4-BE) at session
-  start via `git log` directly, per protocol.
+  from 208). **DONE & MERGED via PR #29** (2026-07-22, merge commit `c138da7`); branch
+  `feat/KH-1.1.3-BE-bulk-and-stats` deleted. Confirmed `main` included PR #27/#28 (KH-1.4.4-BE) at
+  session start via `git log` directly, per protocol.
+  - **Post-push CI fix (chore, same PR):** PR #29's own Trivy `fs` gate caught two real
+    dependency CVEs unrelated to this session's code — `org.postgresql:postgresql` 42.7.11
+    (`CVE-2026-54291`, HIGH) and `jackson-core` 2.17.3 (`GHSA-r7wm-3cxj-wff9`, HIGH). Both had a
+    fixed version in the same minor line, so patch-level `pom.xml` overrides cleared them
+    (`postgresql.version` → `42.7.12`; new `jackson-bom.version` property → `2.18.8`, Spring
+    Boot's own recognized override point for the whole Jackson BOM import, keeping every
+    `jackson-*` artifact on one matching release rather than bumping `jackson-core` alone) — the
+    exact same patch-level-bump-over-allowlist-entry preference `.trivyignore`'s own header
+    states and KH-0.3-closure already established. `mvn verify` re-confirmed green (230/230,
+    no behavior change) before pushing the fix. A second CI run also hit a transient Maven
+    Central 429 (rate-limited mid-scan while Trivy resolved `netty-parent`'s POM for its own
+    dependency-graph analysis) — an infrastructure flake, not a finding; cleared by re-running the
+    job on a fresh runner, no code change.
   - **D1/D2 — bulk issuance, `POST /api/v1/credentials/bulk`:** new `credential.domain
     .BulkIssuanceService` (module-private, new bean — deliberately *not* a method on
     `CredentialService` itself, so each item's call to `CredentialService#issue`/`#mintClaimCode`
@@ -219,7 +241,8 @@
     records `CREDENTIAL_VERIFY_OK` with the resolved ref and no claim content in `detail`;
     malformed presentation records `CREDENTIAL_VERIFY_FAILED` with no resolved ref).
   - **Arabic-speaker review gate (spec FS-0.6a §4)** for `credential.bulk-validation-failed`:
-    **pending** — flag in the PR body before merge, same as every other session's new-key set.
+    **confirmed by Majd (2026-07-22) before PR #29's merge**, no wording changes needed — same
+    pattern as every prior session's new-key set.
 - 2026-07-21: KH-1.4.4-BE — consuming-party admin plane + `ensure()` find-or-create race closure.
   Support-mode session, brief itself was the spec. `mvn verify` green, 208/208 tests (27 new, up
   from 181). DONE & MERGED via PR #27 (2026-07-22, merge commit `d4e0c47`); branch
