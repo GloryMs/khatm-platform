@@ -23,6 +23,126 @@
         },
         "type" : "object"
       },
+      "BulkIssueDefaults" : {
+        "description" : "Batch-wide defaults, overridable per item",
+        "properties" : {
+          "maxUses" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "validMinutes" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "BulkIssueItem" : {
+        "description" : "One credential to issue within a bulk batch",
+        "properties" : {
+          "claims" : {
+            "additionalProperties" : {
+              "type" : "object"
+            },
+            "type" : "object"
+          },
+          "maxUses" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "pseudoRef" : {
+            "type" : "string"
+          },
+          "validMinutes" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "BulkIssueItemError" : {
+        "description" : "Why one bulk-issue item failed",
+        "properties" : {
+          "code" : {
+            "type" : "string"
+          },
+          "message" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "BulkIssueItemResult" : {
+        "description" : "One bulk-issue row's outcome",
+        "properties" : {
+          "claimCode" : {
+            "type" : "string"
+          },
+          "error" : {
+            "$ref" : "#/components/schemas/BulkIssueItemError"
+          },
+          "id" : {
+            "type" : "string"
+          },
+          "index" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "ref" : {
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "BulkIssueRequest" : {
+        "description" : "Request to issue a batch of credentials against one schema",
+        "properties" : {
+          "defaults" : {
+            "$ref" : "#/components/schemas/BulkIssueDefaults"
+          },
+          "items" : {
+            "items" : {
+              "$ref" : "#/components/schemas/BulkIssueItem"
+            },
+            "type" : "array"
+          },
+          "mintClaimCodes" : {
+            "type" : "boolean"
+          },
+          "schemaCode" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "schemaCode" ],
+        "type" : "object"
+      },
+      "BulkIssueResponse" : {
+        "description" : "Full per-item report of a bulk issuance batch",
+        "properties" : {
+          "failed" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "results" : {
+            "items" : {
+              "$ref" : "#/components/schemas/BulkIssueItemResult"
+            },
+            "type" : "array"
+          },
+          "succeeded" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "total" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
       "ClaimCodeMintRequest" : {
         "description" : "Request to mint a fresh wallet claim code for an already-issued credential",
         "properties" : {
@@ -595,6 +715,66 @@
         },
         "type" : "object"
       },
+      "StatsCounters" : {
+        "description" : "Pilot-metrics counters for the requested window",
+        "properties" : {
+          "claimsRedeemed" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "consumeDenied" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "consumed" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "issued" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "revoked" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "verifyFailed" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "verifyOk" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "StatsResponse" : {
+        "description" : "Pilot-metrics counters for a time window",
+        "properties" : {
+          "counters" : {
+            "$ref" : "#/components/schemas/StatsCounters"
+          },
+          "window" : {
+            "$ref" : "#/components/schemas/StatsWindow"
+          }
+        },
+        "type" : "object"
+      },
+      "StatsWindow" : {
+        "description" : "The time window counters were aggregated over",
+        "properties" : {
+          "from" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "to" : {
+            "format" : "date-time",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "VerifyRequest" : {
         "description" : "Request to verify an SD-JWT credential presentation",
         "properties" : {
@@ -642,6 +822,20 @@
           }
         },
         "type" : "object"
+      }
+    },
+    "securitySchemes" : {
+      "apiKeyBearer" : {
+        "bearerFormat" : "khk_...",
+        "description" : "API key bearer token: Authorization: Bearer khk_<prefix>.<secret>. Scope and actor-kind requirements vary per endpoint — see each operation's description.",
+        "scheme" : "bearer",
+        "type" : "http"
+      },
+      "sessionCookie" : {
+        "description" : "Console session cookie, set by POST /api/v1/auth/login. Used together with the XSRF-TOKEN cookie/X-XSRF-TOKEN header on state-changing requests.",
+        "in" : "cookie",
+        "name" : "KHATM_SESSION",
+        "type" : "apiKey"
       }
     }
   },
@@ -1361,6 +1555,66 @@
           }
         },
         "summary" : "Search/list credentials",
+        "tags" : [ "credential" ]
+      }
+    },
+    "/api/v1/credentials/bulk" : {
+      "post" : {
+        "description" : "The C3 console wizard's CSV-per-schema flow (KH-1.1.3) — up to 200 items, one schema per batch, each issued independently through the same single-issue path (no parallel issuance logic, no bypass of any single-issue guard). One bad row never rolls back the batch: the response reports every item's outcome by index, ISSUED or FAILED with its own error. Setting mintClaimCodes:true mints a one-time wallet claim code for every successfully issued item (the existing POST /{id}/claim-code path) and returns it in that item's result — shown here exactly once. Requires the same scope as /issue: session or TENANT API key (a CONSUMING_PARTY key is always 403 here).",
+        "operationId" : "bulkIssue",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/BulkIssueRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/BulkIssueResponse"
+                }
+              }
+            },
+            "description" : "Per-item report (always 200)"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "The batch itself is invalid — empty items, or more than 200 (KH-CRD-0400)"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the issue scope, or called with a CONSUMING_PARTY API key instead of a console session or TENANT API key"
+          }
+        },
+        "summary" : "Issue a batch of credentials against one schema",
         "tags" : [ "credential" ]
       }
     },
@@ -2148,6 +2402,71 @@
         "tags" : [ "schema" ]
       }
     },
+    "/api/v1/stats" : {
+      "get" : {
+        "description" : "A plain GROUP BY action aggregation over audit_log for the requested window — counters only, never claim content (P1). Defaults to the last 30 days when from/to are omitted. Requires a console session — no API key of any kind works here (see rbac.security.SecurityConfig's Javadoc).",
+        "operationId" : "stats",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "from",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "to",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/StatsResponse"
+                }
+              }
+            },
+            "description" : "Counters for the resolved window"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "from/to was present but not a valid ISO-8601 instant"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Authenticated with an API key instead of a console session"
+          }
+        },
+        "summary" : "Fetch pilot-metrics counters",
+        "tags" : [ "stats" ]
+      }
+    },
     "/sl/{tenantSlug}/{listCode}" : {
       "get" : {
         "description" : "The public, unauthenticated source of revocation truth for offline verifiers (spec FS-1.3 D2, SAD §6). Returns the list's signed bitstring as a compact JWS (application/jose) — a verifier validates its signature against the platform's JWKS, then base64url-decodes and gunzips the `bits` claim to read the per-credential revocation bit at the index named in the credential's `status` claim. The ETag is the list's `version`; a matching If-None-Match returns 304 with no body, so periodic polls stay cheap until a revoke bumps the version. Cached for 60s, matching NFR-06's revoke-to-publish budget.",
@@ -2238,6 +2557,9 @@
   }, {
     "description" : "Consuming-party (verifier) administration — registry, status, schema allowlist",
     "name" : "consuming-parties-admin"
+  }, {
+    "description" : "Pilot-metrics counters aggregated from the audit trail",
+    "name" : "stats"
   }, {
     "description" : "Signed status-list revocation artifacts",
     "name" : "status"

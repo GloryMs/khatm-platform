@@ -172,5 +172,31 @@ public enum AuditAction {
    * A schema was removed from a consuming party's allowlist ({@code consumer} module, KH-1.4.4).
    * {@code entityRef} is the party's {@code code}; {@code detail.schemaId} identifies the schema.
    */
-  CONSUMING_PARTY_SCHEMA_DISALLOWED
+  CONSUMING_PARTY_SCHEMA_DISALLOWED,
+
+  /**
+   * A bulk issuance batch completed ({@code credential} module, KH-1.1.3, {@code POST
+   * /api/v1/credentials/bulk}) — one row per batch, in addition to the per-item {@link
+   * #CREDENTIAL_ISSUED} rows the reused single-issue path already writes. {@code entityRef} is the
+   * batch's {@code schemaCode}; {@code detail} carries {@code total}/{@code succeeded}/{@code
+   * failed} counts only — never any item's claims.
+   */
+  CREDENTIALS_BULK_ISSUED,
+
+  /**
+   * An online {@code POST /api/v1/credentials/verify} call resolved as valid (KH-1.1.3, spec
+   * FS-1.5.3's pilot-metrics commitment). {@code entityRef} is the credential's ref when the
+   * presentation's {@code ref} claim resolved to a known row, {@code null} otherwise; {@code
+   * detail.reason} carries the {@code VerifyReason} code — never the presented claims themselves.
+   * Recorded by {@code credential.web.CredentialController#verify} after {@code
+   * CredentialService#verify} returns, deliberately outside that method's own {@code readOnly =
+   * true} transaction (a read-only transaction cannot accept this write).
+   */
+  CREDENTIAL_VERIFY_OK,
+
+  /**
+   * An online {@code POST /api/v1/credentials/verify} call resolved as invalid (KH-1.1.3) — the
+   * counterpart to {@link #CREDENTIAL_VERIFY_OK}, same {@code entityRef}/{@code detail} shape.
+   */
+  CREDENTIAL_VERIFY_FAILED
 }

@@ -26,3 +26,4 @@
 | `KH-SCH-0400` | 400 | `schema.validation-failed` |
 | `KH-SCH-0409` | 409 | `schema.immutable-after-publish` |
 | `KH-SCH-1409` | 409 | `schema.invalid-transition` |
+| `KH-CRD-0400` | 400 | `credential.bulk-validation-failed` |

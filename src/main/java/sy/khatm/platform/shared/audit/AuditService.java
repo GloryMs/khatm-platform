@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.UncheckedIOException;
 import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.security.core.Authentication;
@@ -76,6 +78,27 @@ public class AuditService {
     entry.setDetail(detail == null || detail.isEmpty() ? null : writeJson(detail));
     entry.setOccurredAt(Instant.now());
     repository.save(entry);
+  }
+
+  /**
+   * Count {@code audit_log} rows per {@link AuditAction#name()} for the current tenant within
+   * {@code [from, to)} (KH-1.1.3, {@code GET /api/v1/stats}) — a plain read-only aggregation over
+   * the same append-only trail every other action already writes to, not a new bookkeeping system.
+   *
+   * @param from inclusive start of the window
+   * @param to exclusive end of the window
+   * @return a map from the raw {@code action} string (e.g. {@code "CREDENTIAL_ISSUED"}) to its
+   *     count within the window; an action with zero occurrences is simply absent, never a zero
+   *     entry
+   */
+  @Transactional(readOnly = true)
+  public Map<String, Long> countActionsInWindow(Instant from, Instant to) {
+    List<Object[]> rows = repository.countByActionInWindow(TenantContext.current(), from, to);
+    Map<String, Long> counts = new LinkedHashMap<>();
+    for (Object[] row : rows) {
+      counts.put((String) row[0], ((Number) row[1]).longValue());
+    }
+    return counts;
   }
 
   private static String writeJson(Map<String, Object> detail) {

@@ -25,6 +25,13 @@
  * sy.khatm.platform.shared.audit.AuditService}). Sub-packages such as {@code config/} remain
  * module-private.
  *
+ * <p><b>Stats/counters (KH-1.1.3):</b> {@code web.StatsController} (new) serves {@code GET
+ * /api/v1/stats} — the console's C4 pilot-metrics dashboard commitment (spec FS-1.5.3) — as a plain
+ * {@code GROUP BY action} read over this module's own {@code audit_log} table via {@link
+ * sy.khatm.platform.shared.audit.AuditService#countActionsInWindow}, never a new bookkeeping
+ * system. Stays entirely inside this module: the controller only depends on {@code audit}, a
+ * same-module named interface, so no new outbound dependency is introduced.
+ *
  * <p><b>Tables owned:</b> {@code audit_log} (append-only; the write path is {@code shared ::
  * audit}, KH-0.6b).
  */

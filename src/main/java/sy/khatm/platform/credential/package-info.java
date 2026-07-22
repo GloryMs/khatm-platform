@@ -46,6 +46,14 @@
  * uses_remaining}. See {@code CredentialService#consume}'s Javadoc for why this had to be a
  * separate bean, not a private method.
  *
+ * <p><b>Bulk issuance (KH-1.1.3):</b> {@code domain.BulkIssuanceService} (new, module-private) is a
+ * separate bean from {@code CredentialService} so that each batch row's call to {@code
+ * CredentialService#issue} — and, when requested, {@code #mintClaimCode} — goes through Spring's
+ * real transactional proxy rather than a self-invocation; one bad row never rolls back the rest of
+ * the batch. No parallel issuance logic exists — every guard {@code #issue} enforces (schema
+ * published, signing) applies identically per row. {@code POST /api/v1/credentials/bulk} is capped
+ * at 200 items, one schema per batch.
+ *
  * <p><b>Published events:</b> {@code CredentialIssued}, {@code CredentialConsumed}, {@code
  * CredentialRevoked} (future — KH-1.3)
  *
@@ -78,7 +86,11 @@
  * AuditService}; {@code CredentialService} records {@code CREDENTIAL_ISSUED}/{@code
  * CREDENTIAL_CONSUMED}/{@code CREDENTIAL_REVOKED}/{@code CONSUME_SCHEMA_DENIED}, {@code
  * ClaimRedemptionService}/{@code ClaimRedeemThrottleService} record {@code
- * CLAIM_CODE_REDEEMED}/{@code CLAIM_REDEEM_THROTTLED}).
+ * CLAIM_CODE_REDEEMED}/{@code CLAIM_REDEEM_THROTTLED}, {@code BulkIssuanceService} records one
+ * {@code CREDENTIALS_BULK_ISSUED} row per batch (KH-1.1.3), and {@code
+ * credential.web.CredentialController#verify} records {@code CREDENTIAL_VERIFY_OK}/{@code
+ * CREDENTIAL_VERIFY_FAILED} per call, deliberately outside {@code CredentialService#verify}'s own
+ * {@code readOnly = true} transaction).
  */
 @org.springframework.modulith.ApplicationModule(
     allowedDependencies = {

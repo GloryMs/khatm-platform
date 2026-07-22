@@ -76,6 +76,15 @@ gained `@NotBlank`.
 (open root package), `shared :: error` (`KhatmException` subtypes, `VerifyReason`), `shared :: web`
 (`ErrorEnvelope`, OpenAPI-only).
 
+**Bulk issuance + verify auditing (KH-1.1.3):** `POST /api/v1/credentials/bulk` (`domain
+.BulkIssuanceService`, new, module-private) issues up to 200 items against one schema, each
+through the unchanged `CredentialService#issue` path — a separate bean, not a self-invocation,
+so every item's issuance (and, when `mintClaimCodes: true`, its claim-code mint) runs in its
+own real transaction and one bad row never rolls back the rest. Same scope gate as `/issue`.
+`CredentialController#verify` now also records `CREDENTIAL_VERIFY_OK`/`CREDENTIAL_VERIFY_FAILED`
+per call — deliberately at the controller layer, after `CredentialService#verify` returns, since
+that method's `readOnly = true` transaction cannot accept the write.
+
 **Schema-scoped consumption (KH-1.4.3, spec SEC §7):** `CredentialController#consume` calls
 `CredentialService#enforceSchemaAllowlist` *before* `#consume` itself — deliberately outside
 `#consume`'s `@Transactional` boundary, the same shape `ClaimRedeemThrottleService#enforce` uses

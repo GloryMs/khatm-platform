@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.MessageSource;
@@ -18,6 +19,10 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import sy.khatm.platform.credential.api.BulkIssueItemError;
+import sy.khatm.platform.credential.api.BulkIssueItemResult;
+import sy.khatm.platform.credential.api.BulkIssueRequest;
+import sy.khatm.platform.credential.api.BulkIssueResponse;
 import sy.khatm.platform.credential.api.ClaimCodeMintRequest;
 import sy.khatm.platform.credential.api.ClaimCodeMintResponse;
 import sy.khatm.platform.credential.api.ConsumeRequest;
@@ -28,9 +33,15 @@ import sy.khatm.platform.credential.api.IssueRequest;
 import sy.khatm.platform.credential.api.IssueResponse;
 import sy.khatm.platform.credential.api.VerifyRequest;
 import sy.khatm.platform.credential.api.VerifyResponse;
+import sy.khatm.platform.credential.domain.BulkIssuanceService;
+import sy.khatm.platform.credential.domain.BulkIssueItemOutcome;
+import sy.khatm.platform.credential.domain.BulkIssueOutcome;
 import sy.khatm.platform.credential.domain.ClaimCodeIssued;
 import sy.khatm.platform.credential.domain.CredentialService;
+import sy.khatm.platform.shared.audit.AuditAction;
+import sy.khatm.platform.shared.audit.AuditService;
 import sy.khatm.platform.shared.error.ErrorCode;
+import sy.khatm.platform.shared.error.KhatmException;
 import sy.khatm.platform.shared.error.NotFoundException;
 import sy.khatm.platform.shared.web.ErrorEnvelope;
 
@@ -55,11 +66,19 @@ import sy.khatm.platform.shared.web.ErrorEnvelope;
 class CredentialController {
 
   private final CredentialService service;
+  private final BulkIssuanceService bulkIssuance;
   private final MessageSource messageSource;
+  private final AuditService audit;
 
-  CredentialController(CredentialService service, MessageSource messageSource) {
+  CredentialController(
+      CredentialService service,
+      BulkIssuanceService bulkIssuance,
+      MessageSource messageSource,
+      AuditService audit) {
     this.service = service;
+    this.bulkIssuance = bulkIssuance;
     this.messageSource = messageSource;
+    this.audit = audit;
   }
 
   @Operation(
@@ -84,6 +103,62 @@ class CredentialController {
   @PostMapping("/issue")
   ResponseEntity<IssueResponse> issue(@Valid @RequestBody IssueRequest req) {
     return ResponseEntity.ok(service.issue(req));
+  }
+
+  @Operation(
+      summary = "Issue a batch of credentials against one schema",
+      description =
+          "The C3 console wizard's CSV-per-schema flow (KH-1.1.3) — up to 200 items, one schema"
+              + " per batch, each issued independently through the same single-issue path (no"
+              + " parallel issuance logic, no bypass of any single-issue guard). One bad row"
+              + " never rolls back the batch: the response reports every item's outcome by"
+              + " index, ISSUED or FAILED with its own error. Setting mintClaimCodes:true mints"
+              + " a one-time wallet claim code for every successfully issued item (the existing"
+              + " POST /{id}/claim-code path) and returns it in that item's result — shown here"
+              + " exactly once. Requires the same scope as /issue: session or TENANT API key"
+              + " (a CONSUMING_PARTY key is always 403 here).",
+      responses = {
+        @ApiResponse(responseCode = "200", description = "Per-item report (always 200)"),
+        @ApiResponse(
+            responseCode = "400",
+            description =
+                "The batch itself is invalid — empty items, or more than 200 (KH-CRD-0400)",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "401",
+            description = "No valid session or API key",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "403",
+            description =
+                "Missing the issue scope, or called with a CONSUMING_PARTY API key instead of a"
+                    + " console session or TENANT API key",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
+      })
+  @PostMapping("/bulk")
+  BulkIssueResponse bulkIssue(@Valid @RequestBody BulkIssueRequest req) {
+    BulkIssueOutcome outcome = bulkIssuance.bulkIssue(req);
+    return new BulkIssueResponse(
+        outcome.total(),
+        outcome.succeeded(),
+        outcome.failed(),
+        outcome.results().stream().map(this::toItemResult).toList());
+  }
+
+  private BulkIssueItemResult toItemResult(BulkIssueItemOutcome r) {
+    if (r.succeeded()) {
+      return new BulkIssueItemResult(r.index(), "ISSUED", r.id(), r.ref(), r.claimCode(), null);
+    }
+    KhatmException error = r.error();
+    String message =
+        messageSource.getMessage(error.messageKey(), error.args(), LocaleContextHolder.getLocale());
+    return new BulkIssueItemResult(
+        r.index(),
+        "FAILED",
+        null,
+        null,
+        null,
+        new BulkIssueItemError(error.errorCode().code(), message));
   }
 
   @Operation(
@@ -144,6 +219,18 @@ class CredentialController {
     String reasonMessage =
         messageSource.getMessage(
             "verify.reason." + result.reason(), null, LocaleContextHolder.getLocale());
+
+    // KH-1.1.3 D6: recorded here, deliberately outside CredentialService#verify's own
+    // readOnly=true transaction — a read-only transaction cannot accept this write. `ref` comes
+    // from the already-decoded structural claims (never re-parsed), and is null whenever verify()
+    // never reached a credential row (malformed, bad signature, unknown kid).
+    String ref = result.claims() == null ? null : (String) result.claims().get("ref");
+    audit.record(
+        result.valid() ? AuditAction.CREDENTIAL_VERIFY_OK : AuditAction.CREDENTIAL_VERIFY_FAILED,
+        "credential",
+        ref,
+        Map.of("reason", result.reason()));
+
     return new VerifyResponse(
         result.valid(),
         result.reason(),
