@@ -32,9 +32,18 @@
          CRITICAL/HIGH CVEs the Trivy fs gate found with a fixed version in the SAME minor line
          (a true "bump the patch," not a minor/major upgrade). See docs/STATE.md for the full list
          and which CVEs could NOT be cleared this way. -->
-    <postgresql.version>42.7.11</postgresql.version>
+    <!-- KH-1.1.3-BE PR #29 CI (2026-07-22): CVE-2026-54291, HIGH — SCRAM-SHA-256-PLUS downgrade
+         MITM bypass. Patch-level bump, same minor line (42.7.x). -->
+    <postgresql.version>42.7.12</postgresql.version>
     <tomcat.version>10.1.55</tomcat.version>
     <netty.version>4.1.135.Final</netty.version>
+    <!-- KH-1.1.3-BE PR #29 CI (2026-07-22): GHSA-r7wm-3cxj-wff9, HIGH — jackson-core async parser
+         maxNumberLength bypass (incomplete prior fix). 2.18.8 is the lowest fixed version Trivy
+         reports; overriding jackson-bom.version (Boot's own recognized property for the whole
+         Jackson BOM import) rather than jackson-core alone keeps every jackson-* artifact on one
+         matching release, the same whole-line-together rationale spring-security.version above
+         already established. -->
+    <jackson-bom.version>2.18.8</jackson-bom.version>
     <!-- CVE-2026-22732 follow-up (flagged in docs/STATE.md "Open decisions / blockers" at
          KH-0.3-closure): tried overriding spring-security-web ALONE first (dependencyManagement
          entry, everything else left at the Boot BOM's 6.3.10) per the session brief's preferred
