@@ -34,8 +34,18 @@
   `KhatmException` — same precedent as the two secrets it mirrors, so no Arabic-review gate);
   no OpenAPI contract diff (values change, not shapes) — confirmed via `git status`/`git diff` on
   `docs/api/openapi.json`, `docs/error-codes.md`, and both message bundles, all untouched. `shared/
-  README.md`, `status/README.md`, `shared/package-info.java` updated. **PR open, not yet merged**
-  — awaiting review.
+  README.md`, `status/README.md`, `shared/package-info.java` updated. **DONE & MERGED via PR #31**
+  (2026-07-23, merge commit `e698014`); branch `chore/public-base-url` deleted.
+  - **Post-push CI fix (chore, same PR):** PR #31's own Trivy `fs` gate caught one real,
+    session-unrelated dependency CVE — `io.netty:netty-codec` 4.1.135.Final (`CVE-2026-59901`,
+    HIGH, `Bzip2Decoder` infinite loop in its RLE state machine, event-loop thread DoS). Same
+    minor line had a fix, so a patch-level `pom.xml` override cleared it (`netty.version` →
+    `4.1.136.Final`); `mvn verify` re-confirmed green (236/236) before pushing the fix. The
+    re-run also hit the same transient Maven Central 429 rate-limit flake documented at
+    KH-1.1.3-BE (Trivy's own dependency-graph resolution for `netty-parent`'s POM) — not a
+    finding, cleared by re-running the job, no code change.
+  - Also committed on this branch (first commit, pre-existing uncommitted work from before the
+    session started): the `docs/STATE.md` → `docs/STATE-archive-phase0.md` history split.
 - **KH-1.1.3-BE — bulk issuance + stats endpoint (+ OpenAPI security schemes)** (session
   `feat/KH-1.1.3-BE-bulk-and-stats`, 2026-07-22): support-mode session, brief itself was the spec
   (same precedent as KH-1.1-BE/KH-1.6-early/KH-1.2.2/KH-1.4.3/KH-1.4.4-BE). **This was the last
