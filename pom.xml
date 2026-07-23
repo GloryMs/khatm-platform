@@ -36,7 +36,10 @@
          MITM bypass. Patch-level bump, same minor line (42.7.x). -->
     <postgresql.version>42.7.12</postgresql.version>
     <tomcat.version>10.1.55</tomcat.version>
-    <netty.version>4.1.135.Final</netty.version>
+    <!-- chore/public-base-url PR #31 CI (2026-07-23): CVE-2026-59901, HIGH — netty-codec Bzip2Decoder
+         infinite loop in its RLE state machine (event-loop thread DoS). Patch-level bump, same
+         minor line (4.1.13x.Final). -->
+    <netty.version>4.1.136.Final</netty.version>
     <!-- KH-1.1.3-BE PR #29 CI (2026-07-22): GHSA-r7wm-3cxj-wff9, HIGH — jackson-core async parser
          maxNumberLength bypass (incomplete prior fix). 2.18.8 is the lowest fixed version Trivy
          reports; overriding jackson-bom.version (Boot's own recognized property for the whole
