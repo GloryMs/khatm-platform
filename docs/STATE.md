@@ -5,6 +5,37 @@
 
 ## Current phase / task
 - Phase 0 — Production Foundation, fully closed (see prior sessions).
+- **chore/public-base-url — configurable public base URL** (session `chore/public-base-url`,
+  2026-07-23): fixes a confirmed live bug — an issued credential's `status.status_list.uri`
+  embedded `http://localhost:8080/...` because `khatm.platform.base-url` always had that default,
+  even outside `local`; a wallet on a phone can never resolve it. New `khatm.public-base-url` (env
+  `KHATM_PUBLIC_BASE_URL`), bound via a `@ConfigurationProperties` record
+  (`shared.PublicUrlProperties`) and resolved by a new `shared.PublicUrlBuilder` bean — the single
+  place any module may build an absolute self-referential URL, deliberately never from the
+  incoming request's Host header. No default outside `local` — fails startup immediately if
+  unset, same no-silent-default pattern as `khatm.keys.soft.passphrase`/`khatm.claims.enc-key`.
+  Grepped the whole codebase for request-host-derived URL construction
+  (`ServletUriComponentsBuilder`, `getRequestURL`, hardcoded `http://localhost`, `.well-known`/JWKS
+  self-URIs, OpenAPI `servers:`) — the confirmed status-list URI was the *only* self-referential
+  URL emitted anywhere; `status.domain.StatusListUriBuilder` now delegates its base-URL half to
+  `PublicUrlBuilder`, keeping only the `/sl/{tenantSlug}/{listCode}` path shape itself.
+  `docker-compose.yml` (both `khatm-api` and `khatm-worker` — the bean is unconditional, so the
+  worker role instantiates it too even though nothing in that role calls it yet) now sets
+  `KHATM_PUBLIC_BASE_URL` explicitly, documented with a LAN-IP note (README "Running locally" +
+  `.env.example`): for testing from a real device (a wallet on a phone), `localhost` only resolves
+  on the Docker host, not another device on the same network. `mvn verify` green, **236/236 tests
+  (6 new** — `PublicUrlBuilderTest` unit-covers the `build()`/fail-fast logic directly;
+  `PublicUrlBuilderFailureTest` mirrors `SoftKeyProviderPassphraseFailureTest`/
+  `ClaimsEncryptionKeyFailureTest`'s full-context boot-failure pattern**)**. Every existing
+  full-context test that boots the whole app (7 `@SpringBootTest` base classes/standalone tests +
+  3 direct `SpringApplicationBuilder` boots) updated to supply `khatm.public-base-url` explicitly,
+  since it is no longer defaulted outside `local`. No migration; no message-bundle change (the
+  fail-fast throw is a plain `IllegalStateException`, a startup-time infra failure, not a
+  `KhatmException` — same precedent as the two secrets it mirrors, so no Arabic-review gate);
+  no OpenAPI contract diff (values change, not shapes) — confirmed via `git status`/`git diff` on
+  `docs/api/openapi.json`, `docs/error-codes.md`, and both message bundles, all untouched. `shared/
+  README.md`, `status/README.md`, `shared/package-info.java` updated. **PR open, not yet merged**
+  — awaiting review.
 - **KH-1.1.3-BE — bulk issuance + stats endpoint (+ OpenAPI security schemes)** (session
   `feat/KH-1.1.3-BE-bulk-and-stats`, 2026-07-22): support-mode session, brief itself was the spec
   (same precedent as KH-1.1-BE/KH-1.6-early/KH-1.2.2/KH-1.4.3/KH-1.4.4-BE). **This was the last

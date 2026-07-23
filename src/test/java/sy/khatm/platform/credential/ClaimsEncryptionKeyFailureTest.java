@@ -66,7 +66,10 @@ class ClaimsEncryptionKeyFailureTest {
                 // KH-0.6b: AdminBootstrap also fails startup without these outside 'local' (spec
                 // FS-0.6b D10) — kept valid for the same isolation reason as the two above.
                 "--khatm.auth.bootstrap.admin-username=test-admin",
-                "--khatm.auth.bootstrap.admin-password=test-admin-password-change-me"));
+                "--khatm.auth.bootstrap.admin-password=test-admin-password-change-me",
+                // chore/public-base-url: PublicUrlBuilder also fails startup without this outside
+                // 'local' — kept valid for the same isolation reason as the rest.
+                "--khatm.public-base-url=http://localhost:8080"));
     if (encKeyBase64 != null) {
       args.add("--khatm.claims.enc-key=" + encKeyBase64);
     }

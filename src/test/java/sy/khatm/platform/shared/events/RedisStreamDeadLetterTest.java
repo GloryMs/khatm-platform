@@ -76,6 +76,9 @@ class RedisStreamDeadLetterTest {
     // KH-0.6b: AdminBootstrap also fails startup without these outside 'local' (spec FS-0.6b D10).
     r.add("khatm.auth.bootstrap.admin-username", () -> "test-admin");
     r.add("khatm.auth.bootstrap.admin-password", () -> "test-admin-password-change-me");
+    // chore/public-base-url: PublicUrlBuilder fails startup on a blank khatm.public-base-url
+    // outside 'local' — this suite runs under no active profile.
+    r.add("khatm.public-base-url", () -> "http://localhost:8080");
   }
 
   @Autowired private CredentialService credentialService;

@@ -88,7 +88,10 @@ class KeyProviderRestartPersistenceTest {
             // KH-0.6b: AdminBootstrap also fails startup without these outside 'local' (spec
             // FS-0.6b D10).
             "--khatm.auth.bootstrap.admin-username=test-admin",
-            "--khatm.auth.bootstrap.admin-password=test-admin-password-change-me");
+            "--khatm.auth.bootstrap.admin-password=test-admin-password-change-me",
+            // chore/public-base-url: PublicUrlBuilder also fails startup without this outside
+            // 'local'.
+            "--khatm.public-base-url=http://localhost:8080");
   }
 
   private static JWTClaimsSet sampleClaims() {

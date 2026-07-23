@@ -84,4 +84,14 @@ public abstract class IntegrationTestSupport {
     registry.add("khatm.auth.bootstrap.admin-username", () -> "test-admin");
     registry.add("khatm.auth.bootstrap.admin-password", () -> "test-admin-password-change-me");
   }
+
+  /**
+   * chore/public-base-url: same rationale again — {@code PublicUrlBuilder} fails startup on a blank
+   * {@code khatm.public-base-url} outside {@code local}, and this shared-context suite runs under
+   * {@code test}, not {@code local}.
+   */
+  @DynamicPropertySource
+  static void publicUrlProperties(DynamicPropertyRegistry registry) {
+    registry.add("khatm.public-base-url", () -> "http://localhost:8080");
+  }
 }

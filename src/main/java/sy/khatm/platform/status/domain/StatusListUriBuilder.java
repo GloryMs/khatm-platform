@@ -1,27 +1,27 @@
 package sy.khatm.platform.status.domain;
 
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+import sy.khatm.platform.shared.PublicUrlBuilder;
 import sy.khatm.platform.shared.TenantContext;
 
 /**
  * Builds the fully-qualified public status-list URL (spec FS-1.3 D2/D7): {@code
- * {khatm.platform.base-url}/sl/{tenantSlug}/{listCode}}.
+ * {khatm.public-base-url}/sl/{tenantSlug}/{listCode}}.
  *
  * <p>Shared by {@code StatusListRevokerService} and {@code StatusListLookupService} so the URL
- * shape exists in exactly one place. This class is module-private.
+ * shape exists in exactly one place. Delegates the base-URL resolution itself to {@link
+ * PublicUrlBuilder} — this class only owns the {@code /sl/...} path shape. Module-private.
  */
 @Component
 class StatusListUriBuilder {
 
-  private final String baseUrl;
+  private final PublicUrlBuilder publicUrlBuilder;
 
-  StatusListUriBuilder(@Value("${khatm.platform.base-url}") String baseUrl) {
-    // Trim a trailing slash so a misconfigured "http://host:8080/" doesn't produce "//sl/...".
-    this.baseUrl = baseUrl.endsWith("/") ? baseUrl.substring(0, baseUrl.length() - 1) : baseUrl;
+  StatusListUriBuilder(PublicUrlBuilder publicUrlBuilder) {
+    this.publicUrlBuilder = publicUrlBuilder;
   }
 
   String build(String listCode) {
-    return baseUrl + "/sl/" + TenantContext.currentSlug() + "/" + listCode;
+    return publicUrlBuilder.build("/sl/" + TenantContext.currentSlug() + "/" + listCode);
   }
 }

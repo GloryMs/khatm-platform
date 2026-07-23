@@ -73,6 +73,9 @@ class StatusListChangedWorkerTest {
     r.add("khatm.claims.enc-key", () -> "a2hhdG0tdGVzdC1jbGFpbXMtZW5jLWtleS0zMmJ5dGU=");
     r.add("khatm.auth.bootstrap.admin-username", () -> "test-admin");
     r.add("khatm.auth.bootstrap.admin-password", () -> "test-admin-password-change-me");
+    // chore/public-base-url: PublicUrlBuilder fails startup on a blank khatm.public-base-url
+    // outside 'local' — this suite runs under no active profile.
+    r.add("khatm.public-base-url", () -> "http://localhost:8080");
   }
 
   @Autowired private StatusListAllocator allocator;

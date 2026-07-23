@@ -4,7 +4,8 @@ Cross-cutting infrastructure used by every other module: web configuration (CORS
 resolution), the single error-handling vocabulary and hierarchy, the sole error-envelope
 producer, structured logging, the `name_i18n` / `label_i18n` JSONB convention (`LocalizedText`,
 `LocalizedTextConverter`), UUIDv7 id generation (`Uuidv7`), provisional single-tenant context
-(`TenantContext`), OpenAPI configuration. Has no outbound dependencies on other Khatm modules.
+(`TenantContext`), the single self-referential-URL builder (`PublicUrlBuilder`), OpenAPI
+configuration. Has no outbound dependencies on other Khatm modules.
 
 **Events in:** none. **Events out:** none.
 
@@ -49,6 +50,17 @@ occurred_at)` range scan the aggregation performs. `AuditAction` gained
 `CREDENTIALS_BULK_ISSUED`/`CREDENTIAL_VERIFY_OK`/`CREDENTIAL_VERIFY_FAILED` (written by
 `credential`, not this module) so the dashboard has real counters for bulk issuance and online
 verification outcomes, which had no audit trail before this session.
+
+**Public base URL (chore/public-base-url):** `PublicUrlBuilder` (root package, alongside
+`TenantContext` — part of the implicit unnamed exposed interface) is now the single place any
+module turns a server-relative path into an absolute, externally-reachable URL a client outside
+this process can dereference. Bound from `khatm.public-base-url` (`PublicUrlProperties`, a
+`@ConfigurationProperties` record) — blank everywhere except the `local` profile, same
+no-silent-default pattern as `khatm.keys.soft.passphrase`/`khatm.claims.enc-key`; startup fails
+immediately outside `local` if it's unset. Replaces the old `khatm.platform.base-url` (which always
+had a `localhost` default, even outside `local` — the actual bug this chore fixes: a wallet on a
+phone cannot resolve `http://localhost:8080`). `status.domain.StatusListUriBuilder` is its first
+and, as of this session, only consumer.
 
 **For future sessions:** adding a new user-facing string or throw site now means extending
 `ErrorCode`/`VerifyReason` and *both* message bundles in the same commit — `MessageBundleParityTest`

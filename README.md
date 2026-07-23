@@ -18,6 +18,17 @@ The `local` profile supplies every required secret with a documented default, so
 with zero setup: a bootstrap console admin (`admin` / the password logged at startup) and a demo
 credential are seeded automatically. API on http://localhost:8080.
 
+**Testing from a real device (e.g. a wallet on your phone):** the platform embeds its own public
+base URL into every self-referential URL it hands a client (today: the status-list URI, spec
+FS-1.3). The `local` default is `http://localhost:8080`, which only resolves on the machine
+running Docker — a phone on the same LAN cannot reach it. Before `docker compose up`, export your
+machine's LAN IP instead:
+
+```bash
+export KHATM_PUBLIC_BASE_URL=http://<your-LAN-IP>:8080   # e.g. http://192.168.1.42:8080
+docker compose up -d --build
+```
+
 ### Restore-from-zero smoke test (Phase-0 exit criterion)
 
 ```bash

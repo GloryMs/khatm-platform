@@ -16,7 +16,9 @@ KH-1.3).
   transaction, then publishes `StatusListChanged` (KH-1.3 D3).
 - `StatusListLookup#findRef` — read-only resolution of a list's version + public URL, used by
   `/verify` and the claim-redeem path to fill the additive `statusList*` response fields (KH-1.3
-  D6/D7).
+  D6/D7). The URL itself is built by `StatusListUriBuilder` (module-private), which delegates the
+  base-URL half to `shared.PublicUrlBuilder` (`khatm.public-base-url` — chore/public-base-url) so
+  this module owns only the `/sl/{tenantSlug}/{listCode}` path shape, never the host.
 
 **Worker (`worker/`):** `StatusListChangedHandler` (near-real-time publish on event) and
 `StatusListPublishSweepWorker` (periodic catch-up safety net) together sign and store the compact

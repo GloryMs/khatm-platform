@@ -10,7 +10,10 @@
  * name_i18n} / {@code label_i18n} JSONB convention ({@link sy.khatm.platform.shared.LocalizedText},
  * {@link sy.khatm.platform.shared.LocalizedTextConverter} — CONVENTIONS.md §3), provisional
  * single-tenant context ({@link sy.khatm.platform.shared.TenantContext} — full multi-tenancy is
- * KH-2.1), OpenAPI configuration.
+ * KH-2.1), the single self-referential-URL builder ({@link
+ * sy.khatm.platform.shared.PublicUrlBuilder}, bound from {@code khatm.public-base-url} via {@link
+ * sy.khatm.platform.shared.PublicUrlProperties} — chore/public-base-url; never derive a self-URL
+ * from the incoming request's Host header), OpenAPI configuration.
  *
  * <p>This module has NO outbound dependencies on other Khatm modules. It may depend only on Spring
  * framework libraries.

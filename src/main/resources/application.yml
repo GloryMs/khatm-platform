@@ -48,12 +48,14 @@ spring:
 
 khatm:
   issuer-did: "did:web:khatm.sy:demo"
-  platform:
-    # KH-1.3 (spec FS-1.3 D2/D7): the externally-reachable base URL used to build the public
-    # GET /sl/{tenantSlug}/{listCode} status-list URI. Not a secret — same non-secret,
-    # always-has-a-default treatment as khatm.issuer-did above, no per-profile override needed.
-    # A real deployment sets KHATM_PLATFORM_BASE_URL; localhost is fine for local/test/compose.
-    base-url: ${KHATM_PLATFORM_BASE_URL:http://localhost:8080}
+  # The externally-reachable base URL PublicUrlBuilder roots every self-referential URL at (today:
+  # only the public GET /sl/{tenantSlug}/{listCode} status-list URI, spec FS-1.3 D2/D7). No default
+  # here on purpose — PublicUrlBuilder fails startup if this is blank outside the 'local' profile
+  # (same no-silent-default pattern as khatm.keys.soft.passphrase/khatm.claims.enc-key below). A
+  # real deployment sets KHATM_PUBLIC_BASE_URL to its actual public origin; 'http://localhost:8080'
+  # is never a safe default outside a developer's own machine — a wallet on a phone can't resolve
+  # it. The 'local' profile document below supplies the only permitted default.
+  public-base-url: ${KHATM_PUBLIC_BASE_URL:}
   keys:
     # KH-0.5 (spec FS-0.5 §7): SOFT today; KMS/PKCS11 later are a config change only (D3).
     provider: SOFT
@@ -189,6 +191,11 @@ server:
         secure: false
 
 khatm:
+  # Documented local-only default so `docker compose up` / a bare local run work with zero setup.
+  # Never used outside 'local' — PublicUrlBuilder enforces that. Overridden explicitly in
+  # docker-compose.yml (see README "Running locally" — LAN IP note) when a real device on the same
+  # network needs to dereference this URL, since 'localhost' only resolves on the host machine.
+  public-base-url: ${KHATM_PUBLIC_BASE_URL:http://localhost:8080}
   keys:
     soft:
       # Documented local-only default so `docker compose up` / a bare local run work with zero
