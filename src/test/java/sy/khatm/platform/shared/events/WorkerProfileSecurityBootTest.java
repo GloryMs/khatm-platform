@@ -68,6 +68,9 @@ class WorkerProfileSecurityBootTest {
     registry.add("khatm.claims.enc-key", () -> "a2hhdG0tdGVzdC1jbGFpbXMtZW5jLWtleS0zMmJ5dGU=");
     registry.add("khatm.auth.bootstrap.admin-username", () -> "worker-boot-admin");
     registry.add("khatm.auth.bootstrap.admin-password", () -> "worker-boot-admin-password");
+    // chore/public-base-url: PublicUrlBuilder fails startup on a blank khatm.public-base-url
+    // outside 'local' — this suite runs under no active profile.
+    registry.add("khatm.public-base-url", () -> "http://localhost:8080");
   }
 
   @Autowired private ApplicationContext context;

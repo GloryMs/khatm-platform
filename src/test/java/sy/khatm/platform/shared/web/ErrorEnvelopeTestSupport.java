@@ -65,6 +65,9 @@ abstract class ErrorEnvelopeTestSupport {
     // (spec FS-0.6b D10) — this suite runs under 'test'.
     registry.add("khatm.auth.bootstrap.admin-username", () -> "test-admin");
     registry.add("khatm.auth.bootstrap.admin-password", () -> "test-admin-password-change-me");
+    // chore/public-base-url: PublicUrlBuilder fails startup on a blank khatm.public-base-url
+    // outside 'local' — this suite runs under 'test'.
+    registry.add("khatm.public-base-url", () -> "http://localhost:8080");
   }
 
   /** A block of test code to run while a {@link ListAppender} is attached to the root logger. */

@@ -91,7 +91,10 @@ class SoftKeyProviderPassphraseFailureTest {
                 // KH-0.6b: AdminBootstrap also needs valid bootstrap credentials outside 'local'
                 // (spec FS-0.6b D10) — same isolation reasoning as the claims key above.
                 "--khatm.auth.bootstrap.admin-username=test-admin",
-                "--khatm.auth.bootstrap.admin-password=test-admin-password-change-me"));
+                "--khatm.auth.bootstrap.admin-password=test-admin-password-change-me",
+                // chore/public-base-url: PublicUrlBuilder also needs a valid value outside 'local'
+                // — same isolation reasoning as the rest.
+                "--khatm.public-base-url=http://localhost:8080"));
     if (passphrase != null) {
       args.add("--khatm.keys.soft.passphrase=" + passphrase);
     }
