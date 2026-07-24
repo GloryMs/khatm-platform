@@ -139,7 +139,9 @@ public class ClaimRedemptionService {
         schema.nameI18n(),
         schema.version(),
         statusListUri,
-        credential.getCreatedAt());
+        credential.getCreatedAt(),
+        credential.getMaxUses(),
+        credential.getValidTo());
   }
 
   private NotFoundException invalidOrExpired() {

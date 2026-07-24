@@ -61,6 +61,8 @@ class ClaimControllerHttpTest extends RbacHttpTestSupport {
     assertThat(body.get("schema").get("version").asInt()).isEqualTo(1);
     assertThat(body.get("statusListUri").asText()).isNotBlank();
     assertThat(body.get("issuedAt").asText()).isNotBlank();
+    assertThat(body.get("maxUses").asInt()).isEqualTo(1);
+    assertThat(body.get("expiresAt").asText()).isNotBlank();
 
     Boolean disclosuresNull =
         jdbc.queryForObject(
