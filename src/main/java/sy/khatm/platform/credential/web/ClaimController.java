@@ -66,7 +66,13 @@ class ClaimController {
               + " on receipt, before any display — the platform cannot hand it out a second time."
               + " A lost response after a successful redeem (e.g. the connection drops) is not"
               + " recoverable by retrying; the issuer must create a new claim code from the"
-              + " console.",
+              + " console."
+              + "\n\nThe response's `maxUses`/`expiresAt` are a redeem-time snapshot of the"
+              + " credential row, for display only. There is deliberately no live \"uses"
+              + " remaining\" channel: the holder is anonymous by design (P1 — no PII, no holder"
+              + " identity to authorize a lookup against), and a polling endpoint keyed by a"
+              + " credential reference would itself be new attack surface. Out of scope by"
+              + " design, not an oversight.",
       responses = {
         @ApiResponse(responseCode = "200", description = "Credential delivered"),
         @ApiResponse(
@@ -103,6 +109,8 @@ class ClaimController {
         result.disclosures(),
         new ClaimSchemaRef(result.schemaId(), result.schemaNameI18n(), result.schemaVersion()),
         result.statusListUri(),
-        result.issuedAt());
+        result.issuedAt(),
+        result.maxUses(),
+        result.expiresAt());
   }
 }

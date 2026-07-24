@@ -23,6 +23,12 @@ import java.util.List;
  *     value — the raw status list id, not yet a resolvable URL — until KH-1.3 publishes the real
  *     signed bitstring artifact endpoint)
  * @param issuedAt when the underlying credential was issued (not when this claim code was redeemed)
+ * @param maxUses the credential's total allowed consumptions, a snapshot taken at redeem time — NOT
+ *     a live "uses remaining" count. The platform deliberately exposes no such live channel: the
+ *     holder is anonymous by design (P1), and a polling endpoint keyed by a credential reference
+ *     would itself be new attack surface (enumerate refs, watch consumption timing). The wallet's
+ *     detail screen can only ever show this fixed snapshot, never a running count.
+ * @param expiresAt the credential's validity end, likewise a redeem-time snapshot
  */
 @Schema(
     name = "ClaimRedeemResponse",
@@ -33,4 +39,6 @@ public record ClaimRedeemResponse(
     List<String> disclosures,
     ClaimSchemaRef schema,
     String statusListUri,
-    Instant issuedAt) {}
+    Instant issuedAt,
+    int maxUses,
+    Instant expiresAt) {}

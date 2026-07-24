@@ -25,6 +25,11 @@ import sy.khatm.platform.shared.LocalizedText;
  * @param statusListUri the credential's fully-qualified public status-list URL (spec FS-1.3 D7 —
  *     the real {@code GET /sl/{tenantSlug}/{listCode}} value, replacing the pre-KH-1.3 placeholder)
  * @param issuedAt when the underlying credential was issued
+ * @param maxUses the credential's total allowed consumptions, snapshotted at redeem time from the
+ *     same {@code credential} row already loaded for this result — not a live count, and never
+ *     updated after this response is built
+ * @param expiresAt the credential's validity end ({@code credential.valid_to}), snapshotted the
+ *     same way as {@link #maxUses}
  */
 public record ClaimRedeemResult(
     String ref,
@@ -34,4 +39,6 @@ public record ClaimRedeemResult(
     LocalizedText schemaNameI18n,
     int schemaVersion,
     String statusListUri,
-    Instant issuedAt) {}
+    Instant issuedAt,
+    int maxUses,
+    Instant expiresAt) {}

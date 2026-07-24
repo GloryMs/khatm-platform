@@ -210,9 +210,17 @@
             },
             "type" : "array"
           },
+          "expiresAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
           "issuedAt" : {
             "format" : "date-time",
             "type" : "string"
+          },
+          "maxUses" : {
+            "format" : "int32",
+            "type" : "integer"
           },
           "ref" : {
             "type" : "string"
@@ -1415,7 +1423,7 @@
     },
     "/api/v1/claims/redeem" : {
       "post" : {
-        "description" : "The single-use exchange that hands a freshly issued credential to a wallet: the code is consumed atomically (locked, validated, decrypted, marked claimed, and the platform's only copy of the disclosures zeroed — all in one transaction, before this response is built) so exactly one caller can ever redeem a given code. Authenticates by possession of the code alone — no session or API key, ever (spec FS-1.2.1 §9); public, rate-limited per source address instead.\n\n**QR contract v1** (spec FS-1.2.1 D8, stable): the QR payload a console issue screen renders is the JSON text `{\"v\":1,\"api\":\"<platform base URL>\",\"code\":\"<claim code>\"}`. A wallet decodes it and POSTs `code` here, against `{api}/api/v1/claims/redeem`. `v` exists so a future incompatible QR shape can be introduced without breaking wallets still reading `v:1`.\n\nThe wallet is contractually obligated to persist the full response immediately on receipt, before any display — the platform cannot hand it out a second time. A lost response after a successful redeem (e.g. the connection drops) is not recoverable by retrying; the issuer must create a new claim code from the console.",
+        "description" : "The single-use exchange that hands a freshly issued credential to a wallet: the code is consumed atomically (locked, validated, decrypted, marked claimed, and the platform's only copy of the disclosures zeroed — all in one transaction, before this response is built) so exactly one caller can ever redeem a given code. Authenticates by possession of the code alone — no session or API key, ever (spec FS-1.2.1 §9); public, rate-limited per source address instead.\n\n**QR contract v1** (spec FS-1.2.1 D8, stable): the QR payload a console issue screen renders is the JSON text `{\"v\":1,\"api\":\"<platform base URL>\",\"code\":\"<claim code>\"}`. A wallet decodes it and POSTs `code` here, against `{api}/api/v1/claims/redeem`. `v` exists so a future incompatible QR shape can be introduced without breaking wallets still reading `v:1`.\n\nThe wallet is contractually obligated to persist the full response immediately on receipt, before any display — the platform cannot hand it out a second time. A lost response after a successful redeem (e.g. the connection drops) is not recoverable by retrying; the issuer must create a new claim code from the console.\n\nThe response's `maxUses`/`expiresAt` are a redeem-time snapshot of the credential row, for display only. There is deliberately no live \"uses remaining\" channel: the holder is anonymous by design (P1 — no PII, no holder identity to authorize a lookup against), and a polling endpoint keyed by a credential reference would itself be new attack surface. Out of scope by design, not an oversight.",
         "operationId" : "redeem",
         "requestBody" : {
           "content" : {

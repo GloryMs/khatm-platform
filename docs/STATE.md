@@ -5,6 +5,24 @@
 
 ## Current phase / task
 - Phase 0 — Production Foundation, fully closed (see prior sessions).
+- **chore/redeem-uses-metadata — holder-facing uses/validity metadata on redeem** (session
+  `chore/redeem-uses-metadata`, 2026-07-24, open not merged): micro-session, gap confirmed from
+  wallet W1 — `ClaimRedeemResponse` carried no `maxUses`/validity info, so the holder's detail
+  screen couldn't show it. Additively extended `ClaimRedeemResponse`/`ClaimRedeemResult` with
+  `maxUses` (int) and `expiresAt` (`Instant`), both a redeem-time snapshot sourced from the same
+  `Credential` row `ClaimRedemptionService#redeem` already loads (`credential.getMaxUses()` /
+  `credential.getValidTo()`) — no new query. **Deliberately did NOT add a live "uses remaining"
+  channel**: the holder is anonymous by design (P1), and any polling endpoint keyed by a
+  credential ref would be new attack surface — noted explicitly in `ClaimController`'s
+  `@Operation` description (not just Javadoc) so the contract itself documents the boundary.
+  Contract diff is additive-only (`OpenApiContractTest` green — two new response properties +
+  one description-string change, no path/shape removed or altered). `mvn verify` green, 236/236
+  tests (existing `ClaimRedemptionServiceTest`/`ClaimControllerHttpTest` cases extended with
+  assertions that the response's new fields match the underlying `credential` row, rather than new
+  test methods — no new behavior branch to cover, just two more fields on an existing response).
+  No new `ErrorCode`, no message-bundle change (no new `messageKey`), so no Arabic-review gate.
+  `docs/api/openapi.json` regenerated via `OpenApiContractTest`'s own debug-dump mechanism, not
+  hand-edited. **Open — PR not yet created/merged.**
 - **chore/public-base-url — configurable public base URL** (session `chore/public-base-url`,
   2026-07-23): fixes a confirmed live bug — an issued credential's `status.status_list.uri`
   embedded `http://localhost:8080/...` because `khatm.platform.base-url` always had that default,

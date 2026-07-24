@@ -58,6 +58,16 @@ class ClaimRedemptionServiceTest extends IntegrationTestSupport {
     assertThat(result.issuedAt()).isNotNull();
 
     UUID credentialId = UUID.fromString(issued.id());
+    Integer maxUses =
+        jdbc.queryForObject(
+            "SELECT max_uses FROM credential WHERE id = ?", Integer.class, credentialId);
+    Instant validTo =
+        jdbc.queryForObject(
+                "SELECT valid_to FROM credential WHERE id = ?", Timestamp.class, credentialId)
+            .toInstant();
+    assertThat(result.maxUses()).isEqualTo(maxUses);
+    assertThat(result.expiresAt()).isEqualTo(validTo);
+
     Boolean claimedAtSet =
         jdbc.queryForObject(
             "SELECT claimed_at IS NOT NULL FROM claim_code WHERE credential_id = ?",
