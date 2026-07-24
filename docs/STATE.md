@@ -22,7 +22,8 @@
   test methods — no new behavior branch to cover, just two more fields on an existing response).
   No new `ErrorCode`, no message-bundle change (no new `messageKey`), so no Arabic-review gate.
   `docs/api/openapi.json` regenerated via `OpenApiContractTest`'s own debug-dump mechanism, not
-  hand-edited. **Open — PR not yet created/merged.**
+  hand-edited. **DONE & MERGED via PR #33** (2026-07-24, merge commit `a7ee91a`, fast-forward);
+  branch `chore/redeem-uses-metadata` deleted.
 - **chore/public-base-url — configurable public base URL** (session `chore/public-base-url`,
   2026-07-23): fixes a confirmed live bug — an issued credential's `status.status_list.uri`
   embedded `http://localhost:8080/...` because `khatm.platform.base-url` always had that default,
