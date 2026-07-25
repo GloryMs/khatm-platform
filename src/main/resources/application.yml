@@ -120,6 +120,15 @@ khatm:
       # zeroing — a safety net, not the only path. Default 2000ms comfortably clears NFR-06's ≤60s
       # revoke-to-publish budget; tests configure it short to assert the latency bound directly.
       debounce: 2000
+  stats:
+    attention:
+      # KH-1.1.5-BE (spec FS-1.5.4 D6): GET /api/v1/attention's starter thresholds. All MVP
+      # defaults, not documented product requirements — tune freely, no contract/shape change.
+      window: PT24H # how far back CONSUME_SCHEMA_DENIED rows are still "recent"
+      cap: 20 # max schema-denied items returned
+      verify-window: PT1H # length of the current/baseline verify-failure-rate windows
+      verify-failure-multiplier: 3.0 # flag when current rate >= this many times the baseline
+      verify-min-volume: 5 # floor on the current window's total verify attempts, avoids noise
 
 logging:
   level:

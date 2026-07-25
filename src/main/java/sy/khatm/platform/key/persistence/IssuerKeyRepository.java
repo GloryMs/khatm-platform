@@ -23,6 +23,14 @@ public interface IssuerKeyRepository extends JpaRepository<IssuerKey, UUID> {
 
   List<IssuerKey> findByTenantIdAndStateIn(UUID tenantId, List<String> states);
 
+  /**
+   * Every key for a tenant regardless of state, newest first (spec FS-1.5.4 #4, {@code GET
+   * /api/v1/admin/signing-keys}) — unlike {@link #findByTenantIdAndStateIn}, this includes {@code
+   * RETIRED} keys too, since the admin endpoint is a full lifecycle view, not the publishable
+   * subset JWKS serves.
+   */
+  List<IssuerKey> findByTenantIdOrderByCreatedAtDesc(UUID tenantId);
+
   long countByTenantId(UUID tenantId);
 
   /**

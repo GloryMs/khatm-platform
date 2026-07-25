@@ -18,6 +18,14 @@
  *
  * <p><b>Tables owned:</b> {@code issuer_key} (table exists since the KH-0.2.1 baseline schema;
  * populated and rotated as of KH-0.5 by {@link sy.khatm.platform.key.domain.KeyLifecycleService}).
+ *
+ * <p><b>Signing-key status (KH-1.1.5-BE, spec FS-1.5.4 #4):</b> {@code
+ * web.SigningKeyStatusController} serves {@code GET /api/v1/admin/signing-keys} — every key
+ * regardless of state (including {@code RETIRED}), lifecycle fields only, never JWK material — via
+ * {@link sy.khatm.platform.key.domain.KeyLifecycleService#listAllStatuses} (new). Entirely inside
+ * this module, reading this module's own data; no new {@code key :: api} surface was added (a
+ * deliberate scope cut this session — see {@code docs/STATE.md} — so the "other modules must never
+ * see rotation" stance above stays untouched for now).
  */
 @org.springframework.modulith.ApplicationModule
 package sy.khatm.platform.key;

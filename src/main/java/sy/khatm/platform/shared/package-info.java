@@ -35,6 +35,19 @@
  * system. Stays entirely inside this module: the controller only depends on {@code audit}, a
  * same-module named interface, so no new outbound dependency is introduced.
  *
+ * <p><b>Dashboard v2 daily breakdown (KH-1.1.5-BE, spec FS-1.5.4 #1):</b> {@code
+ * web.StatsController} gained {@code GET /api/v1/stats/daily}, the same {@code GROUP BY action}
+ * aggregation as {@code GET /api/v1/stats} bucketed per UTC day, via {@link
+ * sy.khatm.platform.shared.audit.AuditService#dailyActionCounts} (new). {@link
+ * sy.khatm.platform.shared.audit.AuditService} also gained {@link
+ * sy.khatm.platform.shared.audit.AuditService#recentEvents} (backs {@code credential.web}'s
+ * activity feed) and {@link sy.khatm.platform.shared.audit.AuditService#actorActionCounts} (backs
+ * its consuming-party stats) — both new reads over this module's own {@code audit_log}, exposed as
+ * public methods on the existing {@code audit} named interface, no new dependency edge for any
+ * caller. {@link sy.khatm.platform.shared.audit.AuditEventView} (new, public) is the display-ready
+ * row shape {@code recentEvents} returns, since {@code AuditLogEntry} itself stays package-private
+ * by design.
+ *
  * <p><b>Tables owned:</b> {@code audit_log} (append-only; the write path is {@code shared ::
  * audit}, KH-0.6b).
  */

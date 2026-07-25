@@ -8,9 +8,13 @@ Console session auth, API keys, and role-based access control (spec FS-0.6b).
 lands here in KH-0.6b), `api_key` (new, `V2__auth_api_keys.sql`).
 
 **Shape (spec FS-0.6b §3):**
-- `api/` — `CurrentActor` + `CurrentActorResolver`. The *only* cross-module surface;
-  `credential.domain.CredentialService#consume` (KH-1.4.3) is the first real consumer, reading
-  `CurrentActor#ownerId()` to enforce `consuming_party_schema` scoping.
+- `api/` — `CurrentActor` + `CurrentActorResolver`, and (KH-1.1.5-BE, spec FS-1.5.4 D2)
+  `ApiKeyOwnerLookup` + `ApiKeyOwnerRef`. The *only* cross-module surface; `credential.domain
+  .CredentialService#consume` (KH-1.4.3) is the first `CurrentActorResolver` consumer, reading
+  `CurrentActor#ownerId()` to enforce `consuming_party_schema` scoping. `ApiKeyOwnerLookup`
+  batch-resolves a *historical* `audit_log.actor_id` (an `api_key.id`) to its owner — a gap
+  `CurrentActorResolver` can't fill since it only ever resolves the current request's actor;
+  `credential.web`'s activity/consuming-party-stats endpoints are its first callers.
 - `domain/` — module-private:
   - `AppUser` / `Role` / `ApiKey` — JPA entities matching V1 + V2.
   - `AuthService` — login/logout support: argon2id password check, the Redis-TTL lockout counter
@@ -19,6 +23,8 @@ lands here in KH-0.6b), `api_key` (new, `V2__auth_api_keys.sql`).
   - `ApiKeyService` — create/revoke/verify. Key shape `khk_<env>_<prefix>.<secret>` (D2); SHA-256
     of the secret (D4 — a fast hash is safe here because the secret's own entropy is the real
     defense, unlike a human password).
+  - `ApiKeyOwnerLookupImpl` (KH-1.1.5-BE, new) — implements `ApiKeyOwnerLookup` over
+    `ApiKeyRepository#findAllById`, no new query.
   - `AdminBootstrap` — same idempotent-`ApplicationRunner` pattern as `key.domain.KeyBootstrap`
     (spec FS-0.5 §5), applied to "does any `app_user` exist yet." No silent default outside
     `local` (D10).

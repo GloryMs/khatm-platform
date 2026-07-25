@@ -1,13 +1,16 @@
 package sy.khatm.platform.shared.audit;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.UncheckedIOException;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
@@ -99,6 +102,103 @@ public class AuditService {
       counts.put((String) row[0], ((Number) row[1]).longValue());
     }
     return counts;
+  }
+
+  /**
+   * Count {@code audit_log} rows per UTC day per {@link AuditAction#name()} within {@code [from,
+   * to)} (spec FS-1.5.4 #1, {@code GET /api/v1/stats/daily}) — the per-day breakdown behind the
+   * console's lifecycle chart, same aggregation as {@link #countActionsInWindow} bucketed by day.
+   *
+   * @return an ordered map from each UTC-midnight day instant that had at least one event to that
+   *     day's per-action counts; a day/action pair with zero occurrences is simply absent
+   */
+  @Transactional(readOnly = true)
+  public Map<Instant, Map<String, Long>> dailyActionCounts(Instant from, Instant to) {
+    List<Object[]> rows = repository.countByDayAndActionInWindow(TenantContext.current(), from, to);
+    Map<Instant, Map<String, Long>> byDay = new LinkedHashMap<>();
+    for (Object[] row : rows) {
+      Instant day = toInstant(row[0]);
+      String action = (String) row[1];
+      long count = ((Number) row[2]).longValue();
+      byDay.computeIfAbsent(day, k -> new LinkedHashMap<>()).put(action, count);
+    }
+    return byDay;
+  }
+
+  /**
+   * Normalizes a native query's {@code timestamptz} projection to {@link Instant} — Hibernate's
+   * JDBC type mapping for a plain {@code Object[]} projection has returned either {@link Instant}
+   * directly or a {@link Timestamp} depending on driver/dialect version, so both are tolerated
+   * rather than assuming one.
+   */
+  private static Instant toInstant(Object value) {
+    return value instanceof Timestamp timestamp ? timestamp.toInstant() : (Instant) value;
+  }
+
+  /**
+   * The most recent {@code audit_log} rows for the current tenant, newest first (spec FS-1.5.4 #2,
+   * {@code GET /api/v1/activity}) — raw rows only, no display resolution (entity ref, actor display
+   * name); see {@link AuditEventView}'s Javadoc for why that is deliberately the caller's job.
+   *
+   * @param limit the maximum number of rows to return
+   * @param actions the actions to include, or {@code null}/empty to include every action
+   */
+  @Transactional(readOnly = true)
+  public List<AuditEventView> recentEvents(int limit, List<String> actions) {
+    List<String> filter = (actions == null || actions.isEmpty()) ? null : actions;
+    return repository
+        .findRecent(TenantContext.current(), filter, PageRequest.ofSize(limit))
+        .stream()
+        .map(AuditService::toView)
+        .toList();
+  }
+
+  /**
+   * Count {@code audit_log} rows per {@code API_KEY} actor per {@link AuditAction#name()} within
+   * {@code [from, to)} (spec FS-1.5.4 "also needed", {@code GET /api/v1/stats/consuming-parties}) —
+   * {@code actorId} is an {@code api_key.id}; resolving it to a consuming party's display name is
+   * the caller's job (spec D2/D4), not this class's.
+   *
+   * @param actions the actions to aggregate (e.g. {@code CREDENTIAL_CONSUMED}, {@code
+   *     CONSUME_SCHEMA_DENIED})
+   * @return a map from each {@code api_key} actor id to its per-action counts within the window
+   */
+  @Transactional(readOnly = true)
+  public Map<UUID, Map<String, Long>> actorActionCounts(
+      Instant from, Instant to, List<String> actions) {
+    List<Object[]> rows =
+        repository.countByActorAndActionInWindow(TenantContext.current(), from, to, actions);
+    Map<UUID, Map<String, Long>> byActor = new LinkedHashMap<>();
+    for (Object[] row : rows) {
+      UUID actorId = (UUID) row[0];
+      String action = (String) row[1];
+      long count = ((Number) row[2]).longValue();
+      byActor.computeIfAbsent(actorId, k -> new LinkedHashMap<>()).put(action, count);
+    }
+    return byActor;
+  }
+
+  private static AuditEventView toView(AuditLogEntry entry) {
+    return new AuditEventView(
+        entry.getAction(),
+        entry.getActorType(),
+        entry.getActorId(),
+        entry.getEntityRef(),
+        readJson(entry.getDetail()),
+        entry.getOccurredAt());
+  }
+
+  private static Map<String, Object> readJson(String detail) {
+    if (detail == null) {
+      return null;
+    }
+    try {
+      return JSON.readValue(detail, new TypeReference<Map<String, Object>>() {});
+    } catch (JsonProcessingException e) {
+      // detail is only ever written by writeJson() below (small maps of primitives/strings) — a
+      // failure here means a stored row is corrupt, not bad caller input.
+      throw new UncheckedIOException("Failed to parse audit detail as JSON", e);
+    }
   }
 
   private static String writeJson(Map<String, Object> detail) {

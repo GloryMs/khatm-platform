@@ -54,6 +54,45 @@
  * published, signing) applies identically per row. {@code POST /api/v1/credentials/bulk} is capped
  * at 200 items, one schema per batch.
  *
+ * <p><b>Dashboard v2 (KH-1.1.5-BE, spec FS-1.5.4):</b> hosts three of the four new console
+ * read-endpoints — deliberately <em>not</em> {@code shared.web} as the session brief first
+ * suggested, since {@code shared} has no outbound dependencies on any other module (its own
+ * package-info states this) and {@code credential}/{@code consumer}/{@code rbac}/{@code key} all
+ * already declare {@code shared} as an allowed dependency; {@code shared} depending back on any of
+ * them would be a structural cycle {@code ModulithBoundariesTest} rejects outright. This module
+ * already declares every cross-module dependency the composition needs (see below), so it hosts
+ * them instead:
+ *
+ * <ul>
+ *   <li>{@code web.ActivityController}, {@code domain.ActivityService} (module-private, spec #2,
+ *       {@code GET /api/v1/activity}) — resolves both open design points the brief flagged: {@code
+ *       CREDENTIAL_CONSUMED}/{@code CREDENTIAL_REVOKED}'s bare-id {@code entity_ref} is resolved to
+ *       the credential's {@code ref} via this module's own {@code CredentialRepository} (spec D3,
+ *       no cross-module call needed); consuming-party attribution resolves {@code actor_id} (an
+ *       {@code api_key.id}) via {@code rbac :: api}'s new {@code ApiKeyOwnerLookup} (spec D2), then
+ *       to a display name via {@code consumer :: api}'s {@code ConsumingPartyAdmin#list()} (spec
+ *       D4, reused as-is). Deliberately scoped to credential-lifecycle-relevant actions only — not
+ *       a general audit-trail viewer across every module's events (spec D1b).
+ *   <li>{@code web.AttentionController}, {@code domain.AttentionService} (module-private, spec #3,
+ *       {@code GET /api/v1/attention}) — ships two of the three starter item types the brief
+ *       proposed: recent {@code CONSUME_SCHEMA_DENIED} events (itemized, windowed, capped) and a
+ *       verify-failure-rate alert (current window vs. the immediately preceding one, multiplier +
+ *       minimum-volume thresholds, all {@code khatm.stats.attention.*} config, spec D6). The third
+ *       ("signing key approaching rotation") is deliberately descoped this session — it would need
+ *       a new {@code key :: api} surface, which was declined (spec D5) to keep {@code key}'s "other
+ *       modules must never see rotation" stance untouched; see {@code docs/STATE.md}.
+ *   <li>{@code web.ConsumingPartyStatsController}, {@code domain.ConsumingPartyStatsService}
+ *       (module-private, {@code GET /api/v1/stats/consuming-parties}) — call volume + success rate
+ *       per consuming party for a window, sharing the exact {@code actor_id -> consuming_party}
+ *       resolution (spec D2/D4) {@code ActivityService} already solves; multiple {@code api_key}
+ *       rows owned by the same party are summed into one entry.
+ * </ul>
+ *
+ * <p>The fourth endpoint ({@code GET /api/v1/admin/signing-keys}) lives in {@code key.web} instead
+ * (single-module concern, no composition needed); the daily-breakdown endpoint ({@code GET
+ * /api/v1/stats/daily}) stays in {@code shared.web} alongside the existing stats endpoint
+ * (audit-only, same reasoning). See {@code docs/specs/FS-1.5.4-dashboard-stats-v2.md}.
+ *
  * <p><b>Published events:</b> {@code CredentialIssued}, {@code CredentialConsumed}, {@code
  * CredentialRevoked} (future — KH-1.3)
  *
@@ -77,17 +116,19 @@
  * for the delivered {@code ClaimSchemaRef} display shape); {@code rbac :: api} ({@link
  * sy.khatm.platform.rbac.api.CurrentActorResolver}, KH-1.4.3 — {@code
  * CredentialService#enforceSchemaAllowlist} resolves the authenticated actor to enforce {@code
- * consuming_party_schema} scoping, called by the controller ahead of {@code #consume}); {@code
- * shared} (its open root package — {@link sy.khatm.platform.shared.TenantContext}, {@link
- * sy.khatm.platform.shared.Uuidv7}); {@code shared :: error} (spec FS-0.6a — {@code KhatmException}
- * subtypes to throw, {@code VerifyReason} for {@code CredentialService#verify}'s domain results);
- * {@code shared :: web} (spec FS-0.6a — {@code ErrorEnvelope}, referenced only from this module's
- * OpenAPI error-response annotations); {@code shared :: audit} (spec FS-0.6b — {@code
- * AuditService}; {@code CredentialService} records {@code CREDENTIAL_ISSUED}/{@code
- * CREDENTIAL_CONSUMED}/{@code CREDENTIAL_REVOKED}/{@code CONSUME_SCHEMA_DENIED}, {@code
- * ClaimRedemptionService}/{@code ClaimRedeemThrottleService} record {@code
- * CLAIM_CODE_REDEEMED}/{@code CLAIM_REDEEM_THROTTLED}, {@code BulkIssuanceService} records one
- * {@code CREDENTIALS_BULK_ISSUED} row per batch (KH-1.1.3), and {@code
+ * consuming_party_schema} scoping, called by the controller ahead of {@code #consume}; {@link
+ * sy.khatm.platform.rbac.api.ApiKeyOwnerLookup}, KH-1.1.5-BE — {@code ActivityService}/{@code
+ * ConsumingPartyStatsService} batch-resolve a historical {@code audit_log.actor_id} to its owning
+ * consuming party); {@code shared} (its open root package — {@link
+ * sy.khatm.platform.shared.TenantContext}, {@link sy.khatm.platform.shared.Uuidv7}); {@code shared
+ * :: error} (spec FS-0.6a — {@code KhatmException} subtypes to throw, {@code VerifyReason} for
+ * {@code CredentialService#verify}'s domain results); {@code shared :: web} (spec FS-0.6a — {@code
+ * ErrorEnvelope}, referenced only from this module's OpenAPI error-response annotations); {@code
+ * shared :: audit} (spec FS-0.6b — {@code AuditService}; {@code CredentialService} records {@code
+ * CREDENTIAL_ISSUED}/{@code CREDENTIAL_CONSUMED}/{@code CREDENTIAL_REVOKED}/{@code
+ * CONSUME_SCHEMA_DENIED}, {@code ClaimRedemptionService}/{@code ClaimRedeemThrottleService} record
+ * {@code CLAIM_CODE_REDEEMED}/{@code CLAIM_REDEEM_THROTTLED}, {@code BulkIssuanceService} records
+ * one {@code CREDENTIALS_BULK_ISSUED} row per batch (KH-1.1.3), and {@code
  * credential.web.CredentialController#verify} records {@code CREDENTIAL_VERIFY_OK}/{@code
  * CREDENTIAL_VERIFY_FAILED} per call, deliberately outside {@code CredentialService#verify}'s own
  * {@code readOnly = true} transaction).
