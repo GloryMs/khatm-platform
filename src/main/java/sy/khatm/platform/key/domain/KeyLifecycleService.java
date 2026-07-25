@@ -29,6 +29,11 @@ import sy.khatm.platform.shared.audit.AuditService;
  * tests only. Administrative rotation arrives with RBAC (KH-2.2); scheduled rotation and the
  * runbook remain KH-2.3.2 (spec FS-0.5 §5).
  *
+ * <p>{@link #listAllStatuses} (KH-1.1.5-BE, spec FS-1.5.4 #4) is a read-only lifecycle view — every
+ * key regardless of state, no JWK material — for {@code key.web.SigningKeyStatusController}. No new
+ * {@code key :: api} surface: the controller lives inside this module, reading this module's own
+ * data directly.
+ *
  * <p>Module-private.
  */
 @Service
@@ -145,6 +150,23 @@ public class KeyLifecycleService {
   public List<PublishedKey> publishableKeys(UUID tenantId) {
     return repository.findByTenantIdAndStateIn(tenantId, PUBLISHABLE_STATES).stream()
         .map(k -> new PublishedKey(k.getKid(), k.getPublicJwkJson()))
+        .toList();
+  }
+
+  /**
+   * List every signing key for a tenant regardless of state, newest first (spec FS-1.5.4 #4, {@code
+   * GET /api/v1/admin/signing-keys}) — lifecycle fields only, never the public JWK or any private
+   * material.
+   *
+   * @param tenantId the tenant to list keys for
+   * @return every key's lifecycle status, including {@code RETIRED} keys
+   */
+  @Transactional(readOnly = true)
+  public List<IssuerKeyStatusView> listAllStatuses(UUID tenantId) {
+    return repository.findByTenantIdOrderByCreatedAtDesc(tenantId).stream()
+        .map(
+            k ->
+                new IssuerKeyStatusView(k.getKid(), k.getState(), k.getValidFrom(), k.getValidTo()))
         .toList();
   }
 

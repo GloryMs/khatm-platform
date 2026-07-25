@@ -33,7 +33,11 @@ keystore alias). Private key material is never written to this table.
     explicit administrative ceremony once a console/RBAC exists to gate it. Do not extend
     `KeyBootstrap` to provision additional tenants.
 - `web/` — `JwksController`: `GET /.well-known/jwks.json`, `ACTIVE` + `RETIRING` public keys
-  only, `Cache-Control: max-age=300`, no auth.
+  only, `Cache-Control: max-age=300`, no auth. `SigningKeyStatusController` (KH-1.1.5-BE, spec
+  FS-1.5.4 #4, new): `GET /api/v1/admin/signing-keys`, every key regardless of state (including
+  `RETIRED`), lifecycle fields only via `KeyLifecycleService#listAllStatuses` (new) — no JWK
+  material, no new `key :: api` surface (falls under the existing `/api/v1/admin/**` → `admin`
+  scope wildcard, entirely inside this module).
 
 **`kid` format:** `{tenant-slug}:key-{seq}` (e.g. `khatm-default:key-1`). Verification resolves
 strictly by `kid` — an unknown or `RETIRED` `kid` is always `bad_signature`; there is no

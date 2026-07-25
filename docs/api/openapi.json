@@ -1,6 +1,49 @@
 {
   "components" : {
     "schemas" : {
+      "ActivityItem" : {
+        "description" : "One recent, display-ready audit event",
+        "properties" : {
+          "action" : {
+            "type" : "string"
+          },
+          "actorType" : {
+            "type" : "string"
+          },
+          "consumingPartyCode" : {
+            "type" : "string"
+          },
+          "consumingPartyName" : {
+            "$ref" : "#/components/schemas/LocalizedText"
+          },
+          "detail" : {
+            "additionalProperties" : {
+              "type" : "object"
+            },
+            "type" : "object"
+          },
+          "entityRef" : {
+            "type" : "string"
+          },
+          "occurredAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "ActivityResponse" : {
+        "description" : "Recent, display-ready credential activity",
+        "properties" : {
+          "items" : {
+            "items" : {
+              "$ref" : "#/components/schemas/ActivityItem"
+            },
+            "type" : "array"
+          }
+        },
+        "type" : "object"
+      },
       "AllowSchemaRequest" : {
         "properties" : {
           "schemaId" : {
@@ -19,6 +62,37 @@
           "schemaId" : {
             "format" : "uuid",
             "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "AttentionEntry" : {
+        "description" : "One actionable needs-attention item",
+        "properties" : {
+          "detail" : {
+            "additionalProperties" : {
+              "type" : "object"
+            },
+            "type" : "object"
+          },
+          "occurredAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "type" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "AttentionResponse" : {
+        "description" : "Itemized, actionable needs-attention feed",
+        "properties" : {
+          "items" : {
+            "items" : {
+              "$ref" : "#/components/schemas/AttentionEntry"
+            },
+            "type" : "array"
           }
         },
         "type" : "object"
@@ -280,6 +354,49 @@
         },
         "type" : "object"
       },
+      "ConsumingPartyStatsEntry" : {
+        "description" : "One consuming party's call-volume stats",
+        "properties" : {
+          "consumed" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "denied" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "partyCode" : {
+            "type" : "string"
+          },
+          "partyId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "partyName" : {
+            "$ref" : "#/components/schemas/LocalizedText"
+          },
+          "successRate" : {
+            "format" : "double",
+            "type" : "number"
+          }
+        },
+        "type" : "object"
+      },
+      "ConsumingPartyStatsResponse" : {
+        "description" : "Per-consuming-party call-volume stats",
+        "properties" : {
+          "parties" : {
+            "items" : {
+              "$ref" : "#/components/schemas/ConsumingPartyStatsEntry"
+            },
+            "type" : "array"
+          },
+          "window" : {
+            "$ref" : "#/components/schemas/StatsWindow"
+          }
+        },
+        "type" : "object"
+      },
       "ConsumingPartyView" : {
         "properties" : {
           "allowedSchemas" : {
@@ -447,6 +564,34 @@
           "validTo" : {
             "format" : "date-time",
             "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "DailyStatsEntry" : {
+        "description" : "One UTC day's pilot-metrics counters",
+        "properties" : {
+          "counters" : {
+            "$ref" : "#/components/schemas/StatsCounters"
+          },
+          "day" : {
+            "format" : "date-time",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "DailyStatsResponse" : {
+        "description" : "Pilot-metrics counters broken down by UTC day",
+        "properties" : {
+          "days" : {
+            "items" : {
+              "$ref" : "#/components/schemas/DailyStatsEntry"
+            },
+            "type" : "array"
+          },
+          "window" : {
+            "$ref" : "#/components/schemas/StatsWindow"
           }
         },
         "type" : "object"
@@ -723,6 +868,38 @@
         },
         "type" : "object"
       },
+      "SigningKeyView" : {
+        "description" : "A signing key's lifecycle status, no JWK material",
+        "properties" : {
+          "kid" : {
+            "type" : "string"
+          },
+          "state" : {
+            "type" : "string"
+          },
+          "validFrom" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "validTo" : {
+            "format" : "date-time",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "SigningKeysResponse" : {
+        "description" : "Every signing key's lifecycle status",
+        "properties" : {
+          "keys" : {
+            "items" : {
+              "$ref" : "#/components/schemas/SigningKeyView"
+            },
+            "type" : "array"
+          }
+        },
+        "type" : "object"
+      },
       "StatsCounters" : {
         "description" : "Pilot-metrics counters for the requested window",
         "properties" : {
@@ -871,6 +1048,62 @@
         },
         "summary" : "Fetch the JWKS",
         "tags" : [ "jwks" ]
+      }
+    },
+    "/api/v1/activity" : {
+      "get" : {
+        "description" : "The most recent credential-lifecycle audit events (issued/consumed/revoked/schema-denied/claim-redeemed/verify-ok/verify-failed), newest first, resolved for display: entity_ref is always the credential's ref (never a bare id), and consuming-party attribution is resolved where the underlying event supports it. event, if present, is a comma-separated subset of AuditAction names to filter to (unknown values are ignored); omit it for every eligible action. Requires a console session — no API key of any kind works here (same gate as GET /api/v1/stats).",
+        "operationId" : "activity",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "limit",
+          "required" : false,
+          "schema" : {
+            "format" : "int32",
+            "type" : "integer"
+          }
+        }, {
+          "in" : "query",
+          "name" : "event",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ActivityResponse"
+                }
+              }
+            },
+            "description" : "Recent activity, newest first"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Authenticated with an API key instead of a console session"
+          }
+        },
+        "summary" : "Fetch the recent-activity feed",
+        "tags" : [ "activity" ]
       }
     },
     "/api/v1/admin/api-keys" : {
@@ -1343,6 +1576,86 @@
         },
         "summary" : "Suspend a consuming party",
         "tags" : [ "consuming-parties-admin" ]
+      }
+    },
+    "/api/v1/admin/signing-keys" : {
+      "get" : {
+        "description" : "Every signing key for the tenant, newest first, every state including RETIRED — lifecycle fields only (kid/state/validFrom/validTo), never the public JWK or any private material. Requires the admin scope (any actor kind).",
+        "operationId" : "signingKeys",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/SigningKeysResponse"
+                }
+              }
+            },
+            "description" : "Every signing key's lifecycle status"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Authenticated without the admin scope"
+          }
+        },
+        "summary" : "List every signing key's lifecycle status",
+        "tags" : [ "admin-signing-keys" ]
+      }
+    },
+    "/api/v1/attention" : {
+      "get" : {
+        "description" : "Itemized, actionable anomalies computed on read from the audit trail — never a bare count (see GET /api/v1/stats for those). Ships two item types this session: recent CONSUME_SCHEMA_DENIED events within a configurable window, and a verify-failure-rate alert when the current window's failure rate clears a configurable multiplier of the immediately preceding window's baseline (with a minimum-volume floor to avoid noise). A third starter type (signing key approaching rotation) is deliberately out of scope this session. Requires a console session — no API key of any kind works here (same gate as GET /api/v1/stats).",
+        "operationId" : "attention",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/AttentionResponse"
+                }
+              }
+            },
+            "description" : "Current needs-attention items"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Authenticated with an API key instead of a console session"
+          }
+        },
+        "summary" : "Fetch the needs-attention feed",
+        "tags" : [ "attention" ]
       }
     },
     "/api/v1/auth/login" : {
@@ -2475,6 +2788,136 @@
         "tags" : [ "stats" ]
       }
     },
+    "/api/v1/stats/consuming-parties" : {
+      "get" : {
+        "description" : "Call volume (CREDENTIAL_CONSUMED) and denial count (CONSUME_SCHEMA_DENIED) per consuming party for the requested window, with a derived success rate. Defaults to the last 30 days when from/to are omitted. Same session-only gate as GET /api/v1/stats.",
+        "operationId" : "consumingPartyStats",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "from",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "to",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ConsumingPartyStatsResponse"
+                }
+              }
+            },
+            "description" : "Per-party stats for the resolved window"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "from/to was present but not a valid ISO-8601 instant"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Authenticated with an API key instead of a console session"
+          }
+        },
+        "summary" : "Fetch per-consuming-party call-volume stats",
+        "tags" : [ "stats" ]
+      }
+    },
+    "/api/v1/stats/daily" : {
+      "get" : {
+        "description" : "The same GROUP BY action aggregation as GET /api/v1/stats, bucketed per UTC day — backs the console's lifecycle chart. Defaults to the last 30 days when from/to are omitted. Same session-only gate as GET /api/v1/stats.",
+        "operationId" : "dailyStats",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "from",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "to",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/DailyStatsResponse"
+                }
+              }
+            },
+            "description" : "Per-day counters for the resolved window"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "from/to was present but not a valid ISO-8601 instant"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Authenticated with an API key instead of a console session"
+          }
+        },
+        "summary" : "Fetch pilot-metrics counters broken down by day",
+        "tags" : [ "stats" ]
+      }
+    },
     "/sl/{tenantSlug}/{listCode}" : {
       "get" : {
         "description" : "The public, unauthenticated source of revocation truth for offline verifiers (spec FS-1.3 D2, SAD §6). Returns the list's signed bitstring as a compact JWS (application/jose) — a verifier validates its signature against the platform's JWKS, then base64url-decodes and gunzips the `bits` claim to read the per-credential revocation bit at the index named in the credential's `status` claim. The ETag is the list's `version`; a matching If-None-Match returns 304 with no body, so periodic polls stay cheap until a revoke bumps the version. Cached for 60s, matching NFR-06's revoke-to-publish budget.",
@@ -2557,6 +3000,9 @@
     }
   },
   "tags" : [ {
+    "description" : "Itemized, actionable needs-attention feed",
+    "name" : "attention"
+  }, {
     "description" : "Public JSON Web Key Set for signature verification",
     "name" : "jwks"
   }, {
@@ -2565,6 +3011,9 @@
   }, {
     "description" : "Consuming-party (verifier) administration — registry, status, schema allowlist",
     "name" : "consuming-parties-admin"
+  }, {
+    "description" : "Recent, display-ready credential activity feed",
+    "name" : "activity"
   }, {
     "description" : "Pilot-metrics counters aggregated from the audit trail",
     "name" : "stats"
@@ -2575,8 +3024,14 @@
     "description" : "Wallet claim-code delivery",
     "name" : "claim"
   }, {
+    "description" : "Signing-key lifecycle status for the console",
+    "name" : "admin-signing-keys"
+  }, {
     "description" : "Issue, consume, verify, and revoke SD-JWT credentials",
     "name" : "credential"
+  }, {
+    "description" : "Per-consuming-party call-volume stats",
+    "name" : "stats"
   }, {
     "description" : "Console session login/logout and admin API-key management",
     "name" : "auth"

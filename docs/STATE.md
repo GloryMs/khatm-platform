@@ -5,6 +5,13 @@
 
 ## Current phase / task
 - Phase 0 — Production Foundation, fully closed (see prior sessions).
+- **KH-1.1.5-BE — Dashboard v2 read endpoints** (session `feat/KH-1.1.5-BE-dashboard-stats-v2`,
+  2026-07-25, spec `docs/specs/FS-1.5.4-dashboard-stats-v2.md`): added `GET /api/v1/stats/daily`,
+  `GET /api/v1/activity`, `GET /api/v1/attention`, `GET /api/v1/admin/signing-keys`, and
+  `GET /api/v1/stats/consuming-parties` — unblocks the console's four Dashboard v2 panels. New
+  `rbac :: api` surface `ApiKeyOwnerLookup` resolves historical `audit_log.actor_id` to its owning
+  consuming party. `mvn verify` green, **274/274 tests (38 new)**. See the spec doc for full design
+  detail (module placement, D1–D9).
 - **chore/redeem-uses-metadata — holder-facing uses/validity metadata on redeem** (session
   `chore/redeem-uses-metadata`, 2026-07-24, open not merged): micro-session, gap confirmed from
   wallet W1 — `ClaimRedeemResponse` carried no `maxUses`/validity info, so the holder's detail
@@ -368,32 +375,42 @@
 **Platform v1 is complete** (auth, claim delivery + minting, signed status list, consumption
 hardening, versioned published contract — see "Current phase / task" above), and support mode is
 now underway (KH-1.1-BE closed schema management + credential search + the consume idempotency race;
-KH-1.4.4-BE added the consuming-party admin plane + closed the `ensure()` race; KH-1.1.3-BE, this
-session — **the last planned platform session before V1 closure** — added bulk issuance + the stats
-endpoint + OpenAPI security schemes, unblocking C3/C4 — see "Last completed" for the full
-breakdowns).
+KH-1.4.4-BE added the consuming-party admin plane + closed the `ensure()` race; KH-1.1.3-BE added
+bulk issuance + the stats endpoint + OpenAPI security schemes; KH-1.1.5-BE, this session — **not yet
+merged, no PR opened** — added Dashboard v2's five read endpoints, unblocking the console's four
+placeholder panels — see "Current phase / task" above for the full breakdown).
 
-1. **C2 / C2b / C3 / C4 (console, other repo)** — the console team's active milestone; this
-   session's bulk-issue + stats endpoints (plus KH-1.4.4-BE's consuming-parties admin plane and
-   KH-1.1-BE's schema management/credential search) exist specifically to unblock the console's
-   remaining screens (issue wizard, pilot-metrics dashboard, consuming-parties screen, consume
-   simulator). No further platform-side work is scheduled ahead of a concrete console ask.
-2. ~~KH-1.1.3-BE — bulk issuance endpoint + a stats/counters endpoint~~ — **CLOSED (this
-   session):** `POST /api/v1/credentials/bulk` + `GET /api/v1/stats`, both scope-gated, both
+1. **KH-1.1.5-BE needs a PR + merge** (this session's own work) — branch
+   `feat/KH-1.1.5-BE-dashboard-stats-v2`, `mvn verify` green (274/274). Not opened this session
+   since it wasn't asked for.
+2. **Console's four Dashboard v2 panels (other repo)** — once merged, wiring the console side to
+   real data is the already-scoped follow-up this session's brief named (khatm-console's
+   `docs/STATE.md`, "Next up" #5).
+3. **"Signing key approaching rotation" attention item — deliberately not built this session**
+   (KH-1.1.5-BE spec D5): needs a new, narrow, state-only `key :: api` surface Majd declined to add
+   for now, to keep `key`'s "other modules must never see rotation" stance untouched. Revisit only
+   if that boundary decision changes — see `docs/specs/FS-1.5.4-dashboard-stats-v2.md` D5.
+4. **C2 / C2b / C3 / C4 (console, other repo)** — the console team's active milestone; the bulk-issue
+   + stats endpoints (plus KH-1.4.4-BE's consuming-parties admin plane and KH-1.1-BE's schema
+   management/credential search) exist specifically to unblock the console's remaining screens
+   (issue wizard, pilot-metrics dashboard, consuming-parties screen, consume simulator). No further
+   platform-side work is scheduled ahead of a concrete console ask.
+5. ~~KH-1.1.3-BE — bulk issuance endpoint + a stats/counters endpoint~~ — **CLOSED:**
+   `POST /api/v1/credentials/bulk` + `GET /api/v1/stats`, both scope-gated, both
    backed by the reused single-issue path / `audit_log` aggregation respectively — no new
    bookkeeping. See "Last completed" → Session KH-1.1.3-BE for the full breakdown.
-3. KH-0.3.3 activation — **config, not code**: set the staging secrets in `docs/deploy-staging.md`
+6. KH-0.3.3 activation — **config, not code**: set the staging secrets in `docs/deploy-staging.md`
    and the `release.yml` deploy job runs on the next push to `main`. (The publish half is already
    live; only the gated deploy half waits on a host — Majd.)
-4. ~~`ConsumingPartyRegistryService#ensure` find-or-create race~~ — **CLOSED (KH-1.4.4-BE, this
-   session):** `ensure` is no longer `@Transactional` and the entity forces a true `INSERT`
+7. ~~`ConsumingPartyRegistryService#ensure` find-or-create race~~ — **CLOSED (KH-1.4.4-BE):**
+   `ensure` is no longer `@Transactional` and the entity forces a true `INSERT`
    (`Persistable`), so a lost race's `DataIntegrityViolationException` rolls back cleanly and the
    catch re-reads the winner's row directly — exactly the shape flagged here. Regression test
    `db.ConsumingPartyEnsureRaceTest`.
-5. KH-2.2 — full RBAC (replaces D5's lean `role.scopes text[]` with real Permission tables, admin
+8. KH-2.2 — full RBAC (replaces D5's lean `role.scopes text[]` with real Permission tables, admin
    console for user/role management, granular `schema:manage`/`consumer:manage` scopes replacing the
    MVP `admin`-scope stand-in) + RBAC-gated REST endpoint for `KeyLifecycleService.rotate()`.
-6. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM.
+9. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM.
 
 ## Standing conventions (promoted to docs/CONVENTIONS.md §7)
 - **Work rules 2 & 3 (error handling & i18n)** → `docs/CONVENTIONS.md §7.1`.

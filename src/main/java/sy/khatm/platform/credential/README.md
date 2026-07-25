@@ -100,3 +100,30 @@ yours" is its own, support-relevant situation) and a new `CONSUME_SCHEMA_DENIED`
 `SecurityConfig`'s existing `ScopeGuard.requireScopeAndConsumingPartyKey("consume")` rule already
 rejects a `TENANT` key here regardless of scope — this session only adds the explicit test proving
 it, no new enforcement code was needed for that half.
+
+**Dashboard v2 (KH-1.1.5-BE, spec FS-1.5.4) — three of the four new console endpoints live here,**
+not `shared.web` as the session brief first suggested (`shared` has no outbound module
+dependencies; this module already declares every dependency the composition needs):
+- `web.ActivityController` / `domain.ActivityService` (new, module-private): `GET
+  /api/v1/activity` — recent credential-lifecycle events, resolved for display. Resolves the
+  bare-id `entity_ref` on `CREDENTIAL_CONSUMED`/`CREDENTIAL_REVOKED` rows to the credential's `ref`
+  via this module's own `CredentialRepository` (spec D3); resolves consuming-party attribution via
+  `rbac :: api`'s new `ApiKeyOwnerLookup` (spec D2, batch `api_key.id -> owner`) + `consumer ::
+  api`'s existing `ConsumingPartyAdmin#list()` (spec D4). Scoped to credential-lifecycle actions
+  only, not a general audit-trail viewer (spec D1b).
+- `web.AttentionController` / `domain.AttentionService` (new, module-private): `GET
+  /api/v1/attention` — itemized anomalies, computed on read, no new storage. Ships schema-denied
+  events (windowed/capped) and a verify-failure-rate alert (current window vs. the immediately
+  preceding one, `khatm.stats.attention.*` config thresholds, spec D6). A third item type
+  ("signing key approaching rotation") was deliberately descoped — it needed a new `key :: api`
+  surface, declined to keep `key`'s "no rotation visibility outside the module" stance untouched
+  (spec D5).
+- `web.ConsumingPartyStatsController` / `domain.ConsumingPartyStatsService` (new, module-private):
+  `GET /api/v1/stats/consuming-parties` — call volume + success rate per consuming party, same
+  D2/D4 resolution `ActivityService` uses; multiple `api_key` rows owned by one party sum into a
+  single entry.
+
+New `rbac :: api` surface consumed here: `ApiKeyOwnerLookup#resolveOwners` (batch), backed by
+`ApiKeyRepository#findAllById` (already inherited, no new query). See
+`docs/specs/FS-1.5.4-dashboard-stats-v2.md` for the full design (including the module-placement
+rationale and the two items deliberately cut this session).

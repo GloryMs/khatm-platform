@@ -62,6 +62,15 @@ had a `localhost` default, even outside `local` — the actual bug this chore fi
 phone cannot resolve `http://localhost:8080`). `status.domain.StatusListUriBuilder` is its first
 and, as of this session, only consumer.
 
+**Dashboard v2 (KH-1.1.5-BE, spec FS-1.5.4):** `web.StatsController` gained `GET
+/api/v1/stats/daily` (same aggregation as `/stats`, bucketed per UTC day via
+`AuditService#dailyActionCounts`, new). `AuditService` also gained `#recentEvents` and
+`#actorActionCounts` (new), consumed by `credential.web`'s activity/attention/consuming-party-stats
+endpoints — this module stayed the sole owner of every `audit_log` read, no new dependency edge for
+any of them. New public `AuditEventView` record is the display-ready row shape `#recentEvents`
+returns (the entity itself stays package-private). `SecurityConfig`'s `STATS_PATH` widened from an
+exact match to `/api/v1/stats/**` to cover the new sub-paths without a separate entry each.
+
 **For future sessions:** adding a new user-facing string or throw site now means extending
 `ErrorCode`/`VerifyReason` and *both* message bundles in the same commit — `MessageBundleParityTest`
 and `ErrorCodesDocGenerationTest` fail the build otherwise. This is deliberate (spec FS-0.6a): the

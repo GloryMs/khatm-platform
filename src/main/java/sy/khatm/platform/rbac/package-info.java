@@ -13,7 +13,13 @@
  * this call" without depending on Spring Security types directly — {@code
  * credential.domain.CredentialService#consume} (KH-1.4.3, spec §9) is the first real consumer,
  * reading {@link sy.khatm.platform.rbac.api.CurrentActor#ownerId()} to enforce {@code
- * consuming_party_schema} scoping.
+ * consuming_party_schema} scoping. {@link sy.khatm.platform.rbac.api.ApiKeyOwnerLookup} (spec
+ * FS-1.5.4 D2, KH-1.1.5-BE) is the batch counterpart for a <em>historical</em> {@code
+ * audit_log.actor_id} — {@code CurrentActorResolver} only ever resolves the current request's actor
+ * — used by {@code credential.web}'s activity/consuming-party-stats endpoints to attribute a past
+ * {@code CREDENTIAL_CONSUMED}/{@code CONSUME_SCHEMA_DENIED} row to its owning consuming party.
+ * Backed by the plain {@code ApiKeyRepository#findAllById} already inherited from Spring Data — no
+ * new query, no new column.
  *
  * <p><b>Published events:</b> none.
  *

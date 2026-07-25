@@ -117,6 +117,14 @@ import sy.khatm.platform.shared.audit.AuditService;
  * audit trail, the same "any operator role, no integration use case" judgment call credential
  * search already made.
  *
+ * <p><b>Dashboard v2 (KH-1.1.5-BE, spec FS-1.5.4):</b> {@code STATS_PATH} widened from an exact
+ * match to {@code /api/v1/stats/**} so {@code GET /api/v1/stats/daily} and {@code GET
+ * /api/v1/stats/consuming-parties} pick up the identical rule without a separate entry each — both
+ * are the same kind of read as {@code GET /api/v1/stats} itself. {@code GET /api/v1/activity} and
+ * {@code GET /api/v1/attention} get their own explicit entries (they don't share the {@code
+ * /api/v1/stats} path prefix) but the exact same rule: session-only, no scope, no API key of any
+ * kind — the same operator-dashboard judgment call as every other endpoint in this family.
+ *
  * <p><b>Worker role:</b> this configuration class loads in every profile (nothing here is
  * conditional on {@code khatm.web.enabled}) — the worker image runs no business REST endpoints
  * regardless (ADR-09's {@code @ConditionalOnProperty} on the controllers themselves), so
@@ -148,7 +156,9 @@ class SecurityConfig {
   private static final String SCHEMAS_PATH = "/api/v1/schemas/**";
   private static final String CLAIMS_REDEEM_PATH = "/api/v1/claims/redeem";
   private static final String CREDENTIALS_LIST_PATH = "/api/v1/credentials";
-  private static final String STATS_PATH = "/api/v1/stats";
+  private static final String STATS_PATH = "/api/v1/stats/**";
+  private static final String ACTIVITY_PATH = "/api/v1/activity";
+  private static final String ATTENTION_PATH = "/api/v1/attention";
   private static final String[] SWAGGER_PATHS = {
     "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html"
   };
@@ -239,6 +249,10 @@ class SecurityConfig {
         .requestMatchers(HttpMethod.GET, CREDENTIALS_LIST_PATH)
         .access(ScopeGuard.requireUserSession())
         .requestMatchers(HttpMethod.GET, STATS_PATH)
+        .access(ScopeGuard.requireUserSession())
+        .requestMatchers(HttpMethod.GET, ACTIVITY_PATH)
+        .access(ScopeGuard.requireUserSession())
+        .requestMatchers(HttpMethod.GET, ATTENTION_PATH)
         .access(ScopeGuard.requireUserSession())
         .anyRequest()
         .authenticated();
