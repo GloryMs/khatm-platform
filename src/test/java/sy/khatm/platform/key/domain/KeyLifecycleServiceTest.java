@@ -97,7 +97,8 @@ class KeyLifecycleServiceTest extends IntegrationTestSupport {
     IssuerKey oldRow = repository.findByKid(oldKid).orElseThrow();
     assertThat(oldRow.getState()).isEqualTo("RETIRING");
 
-    List<PublishedKey> published = lifecycle.publishableKeys(TenantContext.current());
+    List<PublishedKey> published =
+        lifecycle.publishableKeysForDefaultTenantJwks(TenantContext.current());
     assertThat(published).extracting(PublishedKey::kid).contains(oldKid, rotated.kid());
 
     // Old signature (signed before rotation) must still verify against the now-RETIRING key.

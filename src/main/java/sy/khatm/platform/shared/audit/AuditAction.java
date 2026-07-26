@@ -198,5 +198,22 @@ public enum AuditAction {
    * An online {@code POST /api/v1/credentials/verify} call resolved as invalid (KH-1.1.3) — the
    * counterpart to {@link #CREDENTIAL_VERIFY_OK}, same {@code entityRef}/{@code detail} shape.
    */
-  CREDENTIAL_VERIFY_FAILED
+  CREDENTIAL_VERIFY_FAILED,
+
+  /**
+   * A tenant was onboarded via the admin plane (KH-2.1, {@code tenant} module, {@code POST
+   * /api/v1/admin/tenants}). {@code entityRef} is the tenant's slug. Recorded once per genuinely
+   * new row — a resumed partial onboarding (spec V3) does not re-record this.
+   */
+  TENANT_CREATED,
+
+  /**
+   * A tenant was suspended — its own users'/API keys' authentication stops entirely, though
+   * already-issued credentials keep verifying/consuming and its JWKS/status-list stay public
+   * (KH-2.1 D7/V4). {@code entityRef} is the tenant's slug.
+   */
+  TENANT_SUSPENDED,
+
+  /** A suspended tenant was reactivated (KH-2.1). {@code entityRef} is the tenant's slug. */
+  TENANT_ACTIVATED
 }

@@ -21,6 +21,10 @@ import sy.khatm.platform.shared.TenantContext;
 import sy.khatm.platform.shared.Uuidv7;
 import sy.khatm.platform.shared.audit.AuditAction;
 import sy.khatm.platform.shared.audit.AuditService;
+import sy.khatm.platform.shared.error.ErrorCode;
+import sy.khatm.platform.shared.error.NotFoundException;
+import sy.khatm.platform.tenant.api.TenantDirectory;
+import sy.khatm.platform.tenant.api.TenantRef;
 
 /**
  * Create, revoke, and verify API keys (spec FS-0.6b §4, D2–D4).
@@ -55,22 +59,25 @@ public class ApiKeyService {
   private final ApiKeyRepository repository;
   private final AuditService audit;
   private final ConsumingPartyRegistry consumingParties;
+  private final TenantDirectory tenants;
   private final String env;
 
   public ApiKeyService(
       ApiKeyRepository repository,
       AuditService audit,
       ConsumingPartyRegistry consumingParties,
+      TenantDirectory tenants,
       Environment environment) {
     this.repository = repository;
     this.audit = audit;
     this.consumingParties = consumingParties;
+    this.tenants = tenants;
     this.env = environment.acceptsProfiles(Profiles.of("local", "dev", "test")) ? "test" : "live";
   }
 
   /**
-   * Create a new API key. The returned {@link CreatedApiKey#rawKey} is the only time the secret is
-   * ever available — the platform stores only its SHA-256 hash (D4).
+   * Create a new API key for the current tenant. The returned {@link CreatedApiKey#rawKey} is the
+   * only time the secret is ever available — the platform stores only its SHA-256 hash (D4).
    *
    * @param ownerType who this key acts on behalf of
    * @param ownerId the owning consuming party's id ({@code CONSUMING_PARTY} only); must be {@code
@@ -80,12 +87,36 @@ public class ApiKeyService {
    */
   @Transactional
   public CreatedApiKey create(ApiKeyOwnerType ownerType, UUID ownerId, Set<String> scopes) {
+    return create(ownerType, ownerId, scopes, TenantContext.current());
+  }
+
+  /**
+   * Create a new API key for an explicitly named tenant (spec FS-2.1 — the tenant admin plane's
+   * only way to provision a newly onboarded tenant's first operational key, since {@code
+   * TenantContext.current()} always resolves to the calling platform admin's own tenant, never the
+   * tenant just onboarded).
+   *
+   * @param ownerType who this key acts on behalf of
+   * @param ownerId the owning consuming party's id ({@code CONSUMING_PARTY} only); must be {@code
+   *     null} for {@code TENANT}
+   * @param scopes the scopes to grant this key (a subset of the platform's scope catalog)
+   * @param tenantId the tenant this key belongs to
+   * @return the created key's id, prefix, and one-time raw value
+   * @throws sy.khatm.platform.shared.error.NotFoundException {@code KH-TNT-0404} if no such tenant
+   *     exists
+   */
+  @Transactional
+  public CreatedApiKey create(
+      ApiKeyOwnerType ownerType, UUID ownerId, Set<String> scopes, UUID tenantId) {
+    if (tenants.findById(tenantId).isEmpty()) {
+      throw new NotFoundException(ErrorCode.KH_TNT_0404, "tenant.not-found");
+    }
     String prefix = randomBase62(PREFIX_LENGTH);
     String secret = randomBase62(SECRET_LENGTH);
 
     ApiKey key = new ApiKey();
     key.setId(Uuidv7.generate());
-    key.setTenantId(TenantContext.current());
+    key.setTenantId(tenantId);
     key.setOwnerType(ownerType.name());
     key.setOwnerId(ownerId);
     key.setKeyPrefix(prefix);
@@ -158,6 +189,13 @@ public class ApiKeyService {
     if (key.isConsumingParty()
         && key.getOwnerId() != null
         && !consumingParties.isActive(key.getOwnerId())) {
+      return Optional.empty();
+    }
+    // Spec FS-2.1 D7: a key whose own tenant is SUSPENDED fails exactly like a revoked key —
+    // the same shape as the consuming-party check above, checked on every request since keys are
+    // reverified every time (unlike a console session, which TenantContextFilter separately covers
+    // for the "already logged in before the tenant was suspended" gap).
+    if (!tenants.findById(key.getTenantId()).map(TenantRef::isActive).orElse(false)) {
       return Optional.empty();
     }
 

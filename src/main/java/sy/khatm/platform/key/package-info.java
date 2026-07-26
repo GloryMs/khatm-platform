@@ -9,9 +9,16 @@
  * today; KMS/HSM later, KH-2.3/KH-3.1), never in the database, logs, or an API response.
  *
  * <p><b>Exposed API:</b> {@link sy.khatm.platform.key.api.KeySigner} and {@link
- * sy.khatm.platform.key.api.KeyVerifier} — the only surface other modules may depend on. The full
- * key-management SPI ({@code KeyProvider}, with {@code rotate()}) is module-private on purpose
- * (spec FS-0.5 §2, D1): other modules must never see rotation, only "sign this" / "verify this."
+ * sy.khatm.platform.key.api.KeyVerifier} ("sign this" / "verify this"), plus two deliberately
+ * narrow KH-2.1 additions (spec FS-2.1 D6/D8): {@link
+ * sy.khatm.platform.key.api.TenantKeyProvisioner} (idempotent first-key provisioning for the
+ * tenant-onboarding admin plane) and {@link sy.khatm.platform.key.api.JwksLookup} (a tenant's
+ * publishable JWKS material, called from {@code tenant.web.TenantJwksController} rather than this
+ * module's own {@code web} — a reverse {@code key → tenant :: api} dependency to resolve a slug
+ * would be a Modulith cycle, since {@code tenant} already depends on this module for onboarding).
+ * The full key-management SPI ({@code KeyProvider}, with {@code rotate()}) stays module-private
+ * (spec FS-0.5 §2, D1): other modules still never see general rotation, only these specific, narrow
+ * operations.
  *
  * <p><b>Published events:</b> none yet ({@code KeyRotated} — future, once rotation gets an
  * admin-triggered path in KH-2.2).

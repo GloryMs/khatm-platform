@@ -27,3 +27,6 @@
 | `KH-SCH-0409` | 409 | `schema.immutable-after-publish` |
 | `KH-SCH-1409` | 409 | `schema.invalid-transition` |
 | `KH-CRD-0400` | 400 | `credential.bulk-validation-failed` |
+| `KH-TNT-0400` | 400 | `tenant.invalid-slug` |
+| `KH-TNT-0404` | 404 | `tenant.not-found` |
+| `KH-TNT-0409` | 409 | `tenant.duplicate-slug` |

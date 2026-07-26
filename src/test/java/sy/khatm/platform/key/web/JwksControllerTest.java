@@ -43,7 +43,7 @@ class JwksControllerTest {
 
   @Test
   void jwks_returnsPublishableKeysOnly_withNoPrivateMaterial_andCacheHeader() {
-    when(lifecycle.publishableKeys(org.mockito.ArgumentMatchers.any()))
+    when(lifecycle.publishableKeysForDefaultTenantJwks(org.mockito.ArgumentMatchers.any()))
         .thenReturn(
             List.of(
                 new PublishedKey("khatm-default:key-1", ACTIVE_JWK),
@@ -61,7 +61,8 @@ class JwksControllerTest {
 
   @Test
   void jwks_noPublishableKeys_returnsEmptyKeysArray() {
-    when(lifecycle.publishableKeys(org.mockito.ArgumentMatchers.any())).thenReturn(List.of());
+    when(lifecycle.publishableKeysForDefaultTenantJwks(org.mockito.ArgumentMatchers.any()))
+        .thenReturn(List.of());
 
     ResponseEntity<String> response = controller.jwks();
 

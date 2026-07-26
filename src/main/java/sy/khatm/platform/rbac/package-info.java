@@ -40,7 +40,11 @@
  * local}/{@code dev}-only demo {@code CONSUMING_PARTY} API key needs a real consuming party to own
  * it, and — KH-1.4.3 — allowlists that party for the demo schema); {@code schema :: api} ({@code
  * SchemaCatalog#listAll}, KH-1.4.3 — {@code seed.DemoApiKeySeeder} resolves the demo schema's id by
- * code to allowlist it, same local/dev-only seeder).
+ * code to allowlist it, same local/dev-only seeder); {@code tenant :: api} ({@code
+ * TenantDirectory}, KH-2.1 spec FS-2.1 D1/D7 — {@code security.TenantContextFilter} resolves a
+ * principal's tenant and enforces suspension; {@code domain.ApiKeyService#verify}/{@code
+ * domain.AuthService#login} check the same tenant's active status directly, mirroring the KH-1.4.3
+ * suspended-consuming-party check).
  */
 @org.springframework.modulith.ApplicationModule(
     allowedDependencies = {
@@ -49,6 +53,7 @@
       "shared :: audit",
       "shared :: web",
       "consumer :: api",
-      "schema :: api"
+      "schema :: api",
+      "tenant :: api"
     })
 package sy.khatm.platform.rbac;

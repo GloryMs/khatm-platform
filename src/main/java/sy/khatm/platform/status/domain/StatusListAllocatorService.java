@@ -48,6 +48,14 @@ class StatusListAllocatorService implements StatusListAllocator {
     return new StatusAllocation(list.getId(), idx);
   }
 
+  @Override
+  @Transactional
+  public void ensureList(UUID tenantId, String listCode) {
+    if (statusLists.findByTenantIdAndListCode(tenantId, listCode).isEmpty()) {
+      createList(tenantId, listCode);
+    }
+  }
+
   private StatusList createList(UUID tenantId, String listCode) {
     StatusList list = new StatusList();
     list.setId(Uuidv7.generate());

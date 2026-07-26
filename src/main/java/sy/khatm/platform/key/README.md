@@ -1,7 +1,9 @@
 # key
 
 Issuer key management and cryptographic signing (ES256). Key material never leaves this
-module (SEC §9) — other modules depend only on `key :: api` (`KeySigner`, `KeyVerifier`).
+module (SEC §9) — other modules depend only on `key :: api` (`KeySigner`, `KeyVerifier`, and, as
+of KH-2.1, two more deliberately narrow surfaces below — never the full `KeyProvider`/rotation
+contract).
 
 **Events in:** none. **Events out:** none yet (`KeyRotated` — future, once rotation gets an
 admin-triggered path in KH-2.2).
@@ -12,7 +14,14 @@ keystore alias). Private key material is never written to this table.
 
 **Shape (spec FS-0.5 §2):**
 - `api/` — `KeySigner` (sign) + `KeyVerifier` (resolve a public key strictly by `kid`, no
-  fallback). The *only* cross-module surface; `ModulithBoundariesTest` enforces this.
+  fallback), plus two KH-2.1 additions (spec FS-2.1 D6/D8): `TenantKeyProvisioner
+  #provisionFirstKey` (idempotent — the tenant-onboarding admin plane's "give this new tenant its
+  first ACTIVE key" step, `tenant.domain.TenantAdminService`'s one caller) and `JwksLookup
+  #publishableKeys` (a tenant's publishable JWKS material, called by `tenant.web
+  .TenantJwksController`'s per-tenant JWKS endpoint — deliberately *not* in this module's own
+  `web/`, since `tenant` already depends one-way on this `api` package for onboarding; a reverse
+  `key → tenant :: api` dependency to resolve a slug would be a Modulith cycle). These are the
+  *only* cross-module surfaces; `ModulithBoundariesTest` enforces this.
 - `domain/` — module-private:
   - `KeyProvider` — SPI for the physical crypto backend (generate / sign / resolve public key
     against an opaque `providerRef`). Selected via `khatm.keys.provider`
@@ -32,16 +41,20 @@ keystore alias). Private key material is never written to this table.
     without it). **This is temporary by design**: Phase 2 replaces auto-provisioning with an
     explicit administrative ceremony once a console/RBAC exists to gate it. Do not extend
     `KeyBootstrap` to provision additional tenants.
-- `web/` — `JwksController`: `GET /.well-known/jwks.json`, `ACTIVE` + `RETIRING` public keys
-  only, `Cache-Control: max-age=300`, no auth. `SigningKeyStatusController` (KH-1.1.5-BE, spec
-  FS-1.5.4 #4, new): `GET /api/v1/admin/signing-keys`, every key regardless of state (including
-  `RETIRED`), lifecycle fields only via `KeyLifecycleService#listAllStatuses` (new) — no JWK
-  material, no new `key :: api` surface (falls under the existing `/api/v1/admin/**` → `admin`
-  scope wildcard, entirely inside this module).
+- `web/` — `JwksController`: `GET /.well-known/jwks.json` — since KH-2.1, a **deprecated alias for
+  the default tenant only** (spec V2, stays through Phase 2); every other tenant's JWKS is at
+  `GET /t/{tenantSlug}/.well-known/jwks.json` (`tenant.web.TenantJwksController`). Calls
+  `KeyLifecycleService#publishableKeysForDefaultTenantJwks` — named distinctly from the `JwksLookup`
+  cross-module override (`#publishableKeys`) since both wrap the same query but return different
+  types (module-private `PublishedKey` vs. `key.api.PublishedKeyView`).
+  `SigningKeyStatusController` (KH-1.1.5-BE, spec FS-1.5.4 #4): `GET /api/v1/admin/signing-keys`,
+  every key regardless of state (including `RETIRED`), lifecycle fields only via
+  `KeyLifecycleService#listAllStatuses` — no JWK material, no new `key :: api` surface (falls under
+  the existing `/api/v1/admin/**` → `admin` scope wildcard, entirely inside this module).
 
 **`kid` format:** `{tenant-slug}:key-{seq}` (e.g. `khatm-default:key-1`). Verification resolves
 strictly by `kid` — an unknown or `RETIRED` `kid` is always `bad_signature`; there is no
 fallback to "the current active key" (SEC §3).
 
-**Status:** production-shaped for a single-tenant deployment (KH-0.5). KMS/HSM-backed
-persistence is KH-2.3 → KH-3.1; per-tenant JWKS paths are KH-2.1.3.
+**Status:** production-shaped for a single-tenant deployment (KH-0.5); KH-2.1 adds tenant
+onboarding + per-tenant JWKS lookup surfaces. KMS/HSM-backed persistence remains KH-2.3 → KH-3.1.

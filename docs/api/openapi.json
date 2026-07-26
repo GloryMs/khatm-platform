@@ -441,6 +441,10 @@
             },
             "type" : "array",
             "uniqueItems" : true
+          },
+          "tenantId" : {
+            "format" : "uuid",
+            "type" : "string"
           }
         },
         "required" : [ "ownerType", "scopes" ],
@@ -471,6 +475,26 @@
           }
         },
         "required" : [ "nameI18n" ],
+        "type" : "object"
+      },
+      "CreateTenantRequest" : {
+        "properties" : {
+          "deployMode" : {
+            "pattern" : "SAAS|ONPREM|FEDERATED",
+            "type" : "string"
+          },
+          "nameI18n" : {
+            "$ref" : "#/components/schemas/NameI18nRequest"
+          },
+          "slug" : {
+            "type" : "string"
+          },
+          "type" : {
+            "pattern" : "GOVERNMENT|EDUCATION|PRIVATE|OTHER",
+            "type" : "string"
+          }
+        },
+        "required" : [ "nameI18n", "type" ],
         "type" : "object"
       },
       "CredentialPage" : {
@@ -960,6 +984,34 @@
         },
         "type" : "object"
       },
+      "TenantView" : {
+        "properties" : {
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "deployMode" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "nameI18n" : {
+            "$ref" : "#/components/schemas/LocalizedText"
+          },
+          "slug" : {
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "type" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "VerifyRequest" : {
         "description" : "Request to verify an SD-JWT credential presentation",
         "properties" : {
@@ -1032,8 +1084,9 @@
   "paths" : {
     "/.well-known/jwks.json" : {
       "get" : {
-        "description" : "Public ACTIVE + RETIRING signing keys, no authentication required.",
-        "operationId" : "jwks",
+        "deprecated" : true,
+        "description" : "Public ACTIVE + RETIRING signing keys, no authentication required. Deprecated (spec FS-2.1 V2): aliases the default tenant only — every other tenant's JWKS is at GET /t/{tenantSlug}/.well-known/jwks.json. Stays available through Phase 2.",
+        "operationId" : "jwks_1",
         "responses" : {
           "200" : {
             "content" : {
@@ -1108,7 +1161,7 @@
     },
     "/api/v1/admin/api-keys" : {
       "post" : {
-        "description" : "The response's rawKey is shown exactly once — the platform stores only its SHA-256 hash and prefix (spec FS-0.6b §4). Requires the admin scope.",
+        "description" : "The response's rawKey is shown exactly once — the platform stores only its SHA-256 hash and prefix (spec FS-0.6b §4). tenantId (spec FS-2.1) defaults to the caller's own tenant — a platform admin provisioning a newly onboarded tenant's first key names it explicitly. Requires the admin scope.",
         "operationId" : "createApiKey",
         "requestBody" : {
           "content" : {
@@ -1140,6 +1193,16 @@
               }
             },
             "description" : "Missing the admin scope (KH-RBC-0403)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "The named tenantId does not exist (KH-TNT-0404)"
           }
         },
         "summary" : "Create an API key",
@@ -1180,7 +1243,7 @@
     "/api/v1/admin/consuming-parties" : {
       "get" : {
         "description" : "Every consuming party registered for the tenant (newest first), each with its status and resolved schema allowlist. Requires the admin scope.",
-        "operationId" : "list_2",
+        "operationId" : "list_3",
         "responses" : {
           "200" : {
             "content" : {
@@ -1221,7 +1284,7 @@
       },
       "post" : {
         "description" : "Creates a party with the given code and bilingual name. The code is a lowercase slug (^[a-z0-9][a-z0-9-_]{1,62}$); the row's id is derived deterministically from (tenant, code), so this is idempotent by identity — but registering an already-registered code is a conflict (KH-CNS-0409), not a silent overwrite. Requires the admin scope.",
-        "operationId" : "create_1",
+        "operationId" : "create_2",
         "requestBody" : {
           "content" : {
             "application/json" : {
@@ -1291,7 +1354,7 @@
     "/api/v1/admin/consuming-parties/{id}/activate" : {
       "post" : {
         "description" : "Flips a SUSPENDED party back to ACTIVE — its API keys authenticate again. Idempotent. Requires the admin scope.",
-        "operationId" : "activate",
+        "operationId" : "activate_1",
         "parameters" : [ {
           "in" : "path",
           "name" : "id",
@@ -1523,7 +1586,7 @@
     "/api/v1/admin/consuming-parties/{id}/suspend" : {
       "post" : {
         "description" : "Flips the party to SUSPENDED — its API keys immediately stop authenticating (KH-1.4.4 D4), the same outcome as a revoked key. Idempotent. Requires the admin scope.",
-        "operationId" : "suspend",
+        "operationId" : "suspend_1",
         "parameters" : [ {
           "in" : "path",
           "name" : "id",
@@ -1616,6 +1679,291 @@
         },
         "summary" : "List every signing key's lifecycle status",
         "tags" : [ "admin-signing-keys" ]
+      }
+    },
+    "/api/v1/admin/tenants" : {
+      "get" : {
+        "description" : "Every tenant registered on the platform (newest first). Requires the admin scope.",
+        "operationId" : "list_2",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/TenantView"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "The platform's tenants"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the admin scope (KH-RBC-0403)"
+          }
+        },
+        "summary" : "List tenants",
+        "tags" : [ "tenants-admin" ]
+      },
+      "post" : {
+        "description" : "Full onboarding: creates the tenant row, provisions its first ACTIVE signing key, and creates its default status list (<slug>-<year>, capacity 131072) before this call returns. Calling this again with a slug that already has a fully-onboarded tenant is a conflict (KH-TNT-0409); calling it again with a slug whose onboarding previously died partway through resumes it instead of conflicting. Requires the admin scope.",
+        "operationId" : "create_1",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CreateTenantRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TenantView"
+                }
+              }
+            },
+            "description" : "Tenant onboarded (or resumed)"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Bean Validation failed, or an invalid slug format (KH-TNT-0400)"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the admin scope (KH-RBC-0403)"
+          },
+          "409" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "A fully-onboarded tenant with this slug already exists (KH-TNT-0409)"
+          }
+        },
+        "summary" : "Onboard a tenant",
+        "tags" : [ "tenants-admin" ]
+      }
+    },
+    "/api/v1/admin/tenants/{id}" : {
+      "get" : {
+        "description" : "One tenant by id. Requires the admin scope.",
+        "operationId" : "get_2",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TenantView"
+                }
+              }
+            },
+            "description" : "The tenant"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the admin scope (KH-RBC-0403)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No tenant with this id (KH-TNT-0404)"
+          }
+        },
+        "summary" : "Fetch a tenant",
+        "tags" : [ "tenants-admin" ]
+      }
+    },
+    "/api/v1/admin/tenants/{id}/activate" : {
+      "post" : {
+        "description" : "Flips a SUSPENDED tenant back to ACTIVE — its users'/API keys' authentication resumes. Idempotent. Requires the admin scope.",
+        "operationId" : "activate",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TenantView"
+                }
+              }
+            },
+            "description" : "Tenant activated"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the admin scope (KH-RBC-0403)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No tenant with this id (KH-TNT-0404)"
+          }
+        },
+        "summary" : "Reactivate a tenant",
+        "tags" : [ "tenants-admin" ]
+      }
+    },
+    "/api/v1/admin/tenants/{id}/suspend" : {
+      "post" : {
+        "description" : "Flips the tenant to SUSPENDED — its own users' sessions and API keys immediately stop authenticating (spec D7), the same outcome as a revoked key. Already-issued credentials keep verifying/consuming, and the tenant's JWKS + status lists stay public (spec V4) — suspension blocks new issuance only. Idempotent. Requires the admin scope.",
+        "operationId" : "suspend",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TenantView"
+                }
+              }
+            },
+            "description" : "Tenant suspended"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the admin scope (KH-RBC-0403)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No tenant with this id (KH-TNT-0404)"
+          }
+        },
+        "summary" : "Suspend a tenant",
+        "tags" : [ "tenants-admin" ]
       }
     },
     "/api/v1/attention" : {
@@ -2920,7 +3268,7 @@
     },
     "/sl/{tenantSlug}/{listCode}" : {
       "get" : {
-        "description" : "The public, unauthenticated source of revocation truth for offline verifiers (spec FS-1.3 D2, SAD §6). Returns the list's signed bitstring as a compact JWS (application/jose) — a verifier validates its signature against the platform's JWKS, then base64url-decodes and gunzips the `bits` claim to read the per-credential revocation bit at the index named in the credential's `status` claim. The ETag is the list's `version`; a matching If-None-Match returns 304 with no body, so periodic polls stay cheap until a revoke bumps the version. Cached for 60s, matching NFR-06's revoke-to-publish budget.",
+        "description" : "The public, unauthenticated source of revocation truth for offline verifiers (spec FS-1.3 D2, SAD §6). Returns the list's signed bitstring as a compact JWS (application/jose) — a verifier validates its signature against the tenant's own JWKS, then base64url-decodes and gunzips the `bits` claim to read the per-credential revocation bit at the index named in the credential's `status` claim. The ETag is the list's `version`; a matching If-None-Match returns 304 with no body. Cached for 60s.",
         "operationId" : "getStatusList",
         "parameters" : [ {
           "description" : "the tenant's slug",
@@ -2991,38 +3339,68 @@
                 }
               }
             },
-            "description" : "No status list at this tenantSlug/listCode, or the tenantSlug is unknown (KH-STS-0404)"
+            "description" : "No status list at this tenantSlug/listCode, or the tenantSlug is unknown (KH-TNT-0404/KH-STS-0404)"
           }
         },
         "summary" : "Fetch a signed status-list artifact",
         "tags" : [ "status" ]
       }
+    },
+    "/t/{tenantSlug}/.well-known/jwks.json" : {
+      "get" : {
+        "description" : "Public ACTIVE + RETIRING signing keys for the named tenant, no authentication required. Stays available regardless of the tenant's suspension status (spec V4).",
+        "operationId" : "jwks",
+        "parameters" : [ {
+          "description" : "the tenant's slug",
+          "in" : "path",
+          "name" : "tenantSlug",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "type" : "string"
+                }
+              }
+            },
+            "description" : "The tenant's JWKS"
+          },
+          "404" : {
+            "content" : {
+              "application/json" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No tenant with this slug (KH-TNT-0404)"
+          }
+        },
+        "summary" : "Fetch a tenant's JWKS",
+        "tags" : [ "jwks" ]
+      }
     }
   },
   "tags" : [ {
+    "description" : "Tenant administration — onboarding, listing, status",
+    "name" : "tenants-admin"
+  }, {
     "description" : "Itemized, actionable needs-attention feed",
     "name" : "attention"
   }, {
     "description" : "Public JSON Web Key Set for signature verification",
     "name" : "jwks"
   }, {
-    "description" : "Credential schema (credential type) lookups and authoring",
-    "name" : "schema"
-  }, {
-    "description" : "Consuming-party (verifier) administration — registry, status, schema allowlist",
-    "name" : "consuming-parties-admin"
-  }, {
     "description" : "Recent, display-ready credential activity feed",
     "name" : "activity"
   }, {
-    "description" : "Pilot-metrics counters aggregated from the audit trail",
-    "name" : "stats"
-  }, {
     "description" : "Signed status-list revocation artifacts",
     "name" : "status"
-  }, {
-    "description" : "Wallet claim-code delivery",
-    "name" : "claim"
   }, {
     "description" : "Signing-key lifecycle status for the console",
     "name" : "admin-signing-keys"
@@ -3035,5 +3413,17 @@
   }, {
     "description" : "Console session login/logout and admin API-key management",
     "name" : "auth"
+  }, {
+    "description" : "Credential schema (credential type) lookups and authoring",
+    "name" : "schema"
+  }, {
+    "description" : "Consuming-party (verifier) administration — registry, status, schema allowlist",
+    "name" : "consuming-parties-admin"
+  }, {
+    "description" : "Pilot-metrics counters aggregated from the audit trail",
+    "name" : "stats"
+  }, {
+    "description" : "Wallet claim-code delivery",
+    "name" : "claim"
   } ]
 }

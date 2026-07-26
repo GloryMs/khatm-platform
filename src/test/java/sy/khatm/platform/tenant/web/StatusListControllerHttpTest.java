@@ -1,4 +1,4 @@
-package sy.khatm.platform.status.web;
+package sy.khatm.platform.tenant.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -35,9 +35,13 @@ import sy.khatm.platform.shared.TenantContext;
 import sy.khatm.platform.shared.Uuidv7;
 
 /**
- * Spec FS-1.3 DoD #3 — {@code GET /sl/{tenantSlug}/{listCode}} at the HTTP level: public with zero
- * credentials, returns a JWS a client can validate the claims of, {@code ETag}/{@code
- * Cache-Control} are present, and a matching {@code If-None-Match} gets a bodyless 304.
+ * Spec FS-1.3 DoD #3 / FS-2.1 D8 — {@code GET /sl/{tenantSlug}/{listCode}} at the HTTP level:
+ * public with zero credentials, returns a JWS a client can validate the claims of, {@code
+ * ETag}/{@code Cache-Control} are present, and a matching {@code If-None-Match} gets a bodyless
+ * 304.
+ *
+ * <p>Relocated from {@code status.web} to {@code tenant.web} alongside its controller (spec FS-2.1
+ * D8) — unchanged otherwise, it only ever exercised the endpoint over real HTTP.
  */
 class StatusListControllerHttpTest extends RbacHttpTestSupport {
 
@@ -150,7 +154,7 @@ class StatusListControllerHttpTest extends RbacHttpTestSupport {
   /**
    * revoke requires a console session (session-only, {@code ACTOR_USER} — API keys are always 403).
    * {@code rbac.SessionTestSupport} is package-private to {@code rbac}, so this test (living in
-   * {@code status.web}) creates its own {@code ISSUER_OPERATOR} user and does the minimal
+   * {@code tenant.web}) creates its own {@code ISSUER_OPERATOR} user and does the minimal
    * login-cookie dance itself, mirroring {@code rbac.ClaimCodeMintScopeGateTest}'s user-creation
    * pattern.
    */
