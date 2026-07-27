@@ -110,8 +110,9 @@
     `e2e-alpha2`/`e2e-beta`/`e2e-beta2` across a fresh-volume run and an existing-pre-KH-2.1-volume
     upgrade run) — **done**, full sequence (onboard → key → issue → per-tenant JWKS/status-list →
     cross-tenant 404 → suspend blocks issuance while verify/status-list/JWKS keep serving → reactivate
-    restores issuance) passing on the final image; PR — opened, not merged; Arabic-review gate —
-    `tenant.*` and `consumer.schema-unresolvable` message keys need Majd's review before merge.
+    restores issuance) passing on the final image. **DONE & MERGED via PR #36** (2026-07-27,
+    merge commit `d6ae42c`, fast-forward, Arabic-review gate cleared); branch
+    `feat/KH-2.1-BE-multi-tenancy-core` deleted.
     **Also updated `docs/deploy-staging.md`** with the `khatm_app` role provisioning requirement
     (fresh-host compose snippet + a one-time manual-SQL step for an existing pre-KH-2.1 deployment,
     since `docker-entrypoint-initdb.d` only runs against an empty data directory).
@@ -123,7 +124,7 @@
   consuming party. `mvn verify` green, **274/274 tests (38 new)**. See the spec doc for full design
   detail (module placement, D1–D9).
 - **chore/redeem-uses-metadata — holder-facing uses/validity metadata on redeem** (session
-  `chore/redeem-uses-metadata`, 2026-07-24, open not merged): micro-session, gap confirmed from
+  `chore/redeem-uses-metadata`, 2026-07-24, merged via PR #33): micro-session, gap confirmed from
   wallet W1 — `ClaimRedeemResponse` carried no `maxUses`/validity info, so the holder's detail
   screen couldn't show it. Additively extended `ClaimRedeemResponse`/`ClaimRedeemResult` with
   `maxUses` (int) and `expiresAt` (`Instant`), both a redeem-time snapshot sourced from the same
@@ -487,49 +488,46 @@
 ## Next up (ordered)
 
 **Platform v1 is complete** (auth, claim delivery + minting, signed status list, consumption
-hardening, versioned published contract — see "Current phase / task" above), and support mode is
-now underway (KH-1.1-BE closed schema management + credential search + the consume idempotency race;
-KH-1.4.4-BE added the consuming-party admin plane + closed the `ensure()` race; KH-1.1.3-BE added
-bulk issuance + the stats endpoint + OpenAPI security schemes; KH-1.1.5-BE, this session — **not yet
-merged, no PR opened** — added Dashboard v2's five read endpoints, unblocking the console's four
-placeholder panels — see "Current phase / task" above for the full breakdown).
+hardening, versioned published contract — see "Current phase / task" above), support mode closed
+out a first wave (KH-1.1-BE schema management + credential search + the consume idempotency race;
+KH-1.4.4-BE the consuming-party admin plane + closed the `ensure()` race; KH-1.1.3-BE bulk issuance
++ the stats endpoint + OpenAPI security schemes; KH-1.1.5-BE Dashboard v2's five read endpoints,
+merged via PR #35), and **KH-2.1-BE (multi-tenancy core + real Postgres RLS) is now merged via PR
+#36** — every PR named in this document is merged; there is no PR outstanding as of this update.
 
-1. **KH-2.1-BE needs Majd's review + merge** (this session's own work, see "Current phase / task"
-   above for full detail) — branch `feat/KH-2.1-BE-multi-tenancy-core`, `mvn verify` green
-   (308/308), live compose e2e done, PR opened. Merge waits on Majd's Arabic-review gate for the
-   new `tenant.*`/`consumer.schema-unresolvable` message keys, and a decision on the flagged
-   `CONVENTIONS.md §5` discrepancy (repository-level `@Transactional` vs. "service layer only").
-2. **KH-1.1.5-BE needs a PR + merge** (prior session's own work) — branch
-   `feat/KH-1.1.5-BE-dashboard-stats-v2`, `mvn verify` green (274/274). Not opened this session
-   since it wasn't asked for.
-3. **Console's four Dashboard v2 panels (other repo)** — once merged, wiring the console side to
-   real data is the already-scoped follow-up this session's brief named (khatm-console's
-   `docs/STATE.md`, "Next up" #5).
-4. **"Signing key approaching rotation" attention item — deliberately not built this session**
+1. **`docs/CONVENTIONS.md §5` needs a decision** — KH-2.1-BE's platform-wide type-level
+   `@Transactional(readOnly = true)` on every `JpaRepository` interface contradicts §5's current
+   "Transactions at service layer, never controllers/repositories" line (flagged, not fixed, per
+   CLAUDE.md's no-touch-without-explicit-approval rule for that file — see "Current phase / task"
+   above for the full rationale). Needs Majd to fold the exception into §5 or override the pattern.
+2. **Console's four Dashboard v2 panels (other repo)** — now that KH-1.1.5-BE is merged, wiring the
+   console side to real data is the already-scoped follow-up this session's brief named
+   (khatm-console's `docs/STATE.md`, "Next up" #5).
+3. **"Signing key approaching rotation" attention item — deliberately not built this session**
    (KH-1.1.5-BE spec D5): needs a new, narrow, state-only `key :: api` surface Majd declined to add
    for now, to keep `key`'s "other modules must never see rotation" stance untouched. Revisit only
    if that boundary decision changes — see `docs/specs/FS-1.5.4-dashboard-stats-v2.md` D5.
-5. **C2 / C2b / C3 / C4 (console, other repo)** — the console team's active milestone; the bulk-issue
+4. **C2 / C2b / C3 / C4 (console, other repo)** — the console team's active milestone; the bulk-issue
    + stats endpoints (plus KH-1.4.4-BE's consuming-parties admin plane and KH-1.1-BE's schema
    management/credential search) exist specifically to unblock the console's remaining screens
    (issue wizard, pilot-metrics dashboard, consuming-parties screen, consume simulator). No further
    platform-side work is scheduled ahead of a concrete console ask.
-6. ~~KH-1.1.3-BE — bulk issuance endpoint + a stats/counters endpoint~~ — **CLOSED:**
+5. ~~KH-1.1.3-BE — bulk issuance endpoint + a stats/counters endpoint~~ — **CLOSED:**
    `POST /api/v1/credentials/bulk` + `GET /api/v1/stats`, both scope-gated, both
    backed by the reused single-issue path / `audit_log` aggregation respectively — no new
    bookkeeping. See "Last completed" → Session KH-1.1.3-BE for the full breakdown.
-7. KH-0.3.3 activation — **config, not code**: set the staging secrets in `docs/deploy-staging.md`
+6. KH-0.3.3 activation — **config, not code**: set the staging secrets in `docs/deploy-staging.md`
    and the `release.yml` deploy job runs on the next push to `main`. (The publish half is already
    live; only the gated deploy half waits on a host — Majd.)
-8. ~~`ConsumingPartyRegistryService#ensure` find-or-create race~~ — **CLOSED (KH-1.4.4-BE):**
+7. ~~`ConsumingPartyRegistryService#ensure` find-or-create race~~ — **CLOSED (KH-1.4.4-BE):**
    `ensure` is no longer `@Transactional` and the entity forces a true `INSERT`
    (`Persistable`), so a lost race's `DataIntegrityViolationException` rolls back cleanly and the
    catch re-reads the winner's row directly — exactly the shape flagged here. Regression test
    `db.ConsumingPartyEnsureRaceTest`.
-9. KH-2.2 — full RBAC (replaces D5's lean `role.scopes text[]` with real Permission tables, admin
+8. KH-2.2 — full RBAC (replaces D5's lean `role.scopes text[]` with real Permission tables, admin
    console for user/role management, granular `schema:manage`/`consumer:manage` scopes replacing the
    MVP `admin`-scope stand-in) + RBAC-gated REST endpoint for `KeyLifecycleService.rotate()`.
-10. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM.
+9. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM.
 
 ## Standing conventions (promoted to docs/CONVENTIONS.md §7)
 - **Work rules 2 & 3 (error handling & i18n)** → `docs/CONVENTIONS.md §7.1`.
