@@ -1,6 +1,9 @@
 package sy.khatm.platform.shared;
 
 import java.util.UUID;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 /**
  * Resolves the tenant the current thread of execution is acting on behalf of (spec FS-2.1 D1).
@@ -20,6 +23,27 @@ import java.util.UUID;
  * #currentSlug()} fall back to {@link #DEFAULT_TENANT_ID}/{@link #DEFAULT_TENANT_SLUG} — the single
  * tenant every row belonged to before KH-2.1. That fallback is also what keeps every seeder and the
  * {@code local} profile's zero-setup demo data working unchanged.
+ *
+ * <p><b>Fail-fast guard (KH-2.1 review follow-up):</b> the default-tenant fallback above is
+ * deliberately silent — but silence is only safe for requests that genuinely have no tenant to
+ * resolve (an anonymous caller, a worker, a seeder, a test). It is NOT safe for an authenticated,
+ * non-anonymous request that somehow reaches this class without {@code
+ * rbac.security.TenantContextFilter} having run first: under RLS that cannot leak across tenants
+ * (the query itself would just see nothing), but it CAN silently misattribute the request's
+ * reads/writes to the default tenant instead of failing loudly. {@link #current()}/{@link
+ * #currentSlug()} therefore check {@link SecurityContextHolder}: if it holds a real, authenticated,
+ * non-{@link AnonymousAuthenticationToken} principal but nothing was ever set on this thread, that
+ * is exactly the "bypassed the filter" shape, and they throw rather than fall back. Every current
+ * call site is safe against this — verified by reading, not inferred: the five genuinely anonymous
+ * HTTP paths ({@code SecurityConfig}'s {@code VERIFY_PATH}/{@code JWKS_PATH}/{@code
+ * TENANT_JWKS_PATH}/{@code STATUS_LIST_PATH}/{@code CLAIMS_REDEEM_PATH}) always carry an {@code
+ * AnonymousAuthenticationToken} when hit without a session (the guard's predicate is false, exactly
+ * the legal fallback case); {@code SystemAccessExecutor}-wrapped worker/anonymous-lookup code paths
+ * run on threads Spring Security's {@code SecurityContextHolder} never populates at all ({@code
+ * getAuthentication()} is {@code null}); and every seeder/test either runs with no {@code
+ * SecurityContext} either, or (for the {@code RbacHttpTestSupport}-based HTTP tests) goes through
+ * the real filter chain, which always sets this before a real principal's request reaches
+ * application code.
  */
 public final class TenantContext {
 
@@ -38,11 +62,17 @@ public final class TenantContext {
    * Resolve the current tenant id.
    *
    * @return the tenant id set by {@link #set} on this thread, or {@link #DEFAULT_TENANT_ID} if
-   *     nothing has been set
+   *     nothing has been set and the fallback is legal (see the class Javadoc's fail-fast guard)
+   * @throws IllegalStateException if a real, authenticated, non-anonymous principal is on the
+   *     {@link SecurityContextHolder} but nothing was ever set on this thread
    */
   public static UUID current() {
     TenantSnapshot snapshot = CURRENT.get();
-    return snapshot != null ? snapshot.id() : DEFAULT_TENANT_ID;
+    if (snapshot != null) {
+      return snapshot.id();
+    }
+    requireLegalFallback();
+    return DEFAULT_TENANT_ID;
   }
 
   /**
@@ -51,11 +81,59 @@ public final class TenantContext {
    * dependency on the {@code tenant} module.
    *
    * @return the slug set by {@link #set} on this thread, or {@link #DEFAULT_TENANT_SLUG} if nothing
-   *     has been set
+   *     has been set and the fallback is legal (see the class Javadoc's fail-fast guard)
+   * @throws IllegalStateException if a real, authenticated, non-anonymous principal is on the
+   *     {@link SecurityContextHolder} but nothing was ever set on this thread
    */
   public static String currentSlug() {
     TenantSnapshot snapshot = CURRENT.get();
-    return snapshot != null ? snapshot.slug() : DEFAULT_TENANT_SLUG;
+    if (snapshot != null) {
+      return snapshot.slug();
+    }
+    requireLegalFallback();
+    return DEFAULT_TENANT_SLUG;
+  }
+
+  /**
+   * Resolve the current tenant id, bypassing the fail-fast guard {@link #current()} applies —
+   * package-private, for {@link TenantContextTransactionExecutionListener}'s use only.
+   *
+   * <p>That listener fires on <em>every</em> physical database transaction — including the one
+   * {@code rbac.security.TenantContextFilter} itself uses to look up which tenant to {@link #set},
+   * which necessarily begins before that {@code set} call can happen. A real, authenticated,
+   * non-anonymous principal is already on the {@link SecurityContextHolder} at that point (the
+   * filter only reaches the lookup after resolving one) — exactly the shape {@link #current()}'s
+   * guard exists to reject, but here it is not a bypassed filter, it is that filter's own
+   * legitimate, unavoidable chicken-and-egg step. This listener's job is purely to propagate
+   * whatever the {@link ThreadLocal} currently holds — set or not — to Postgres; it is
+   * infrastructure plumbing, never an HTTP-authentication judgment call, so it must never throw.
+   *
+   * @return the tenant id set by {@link #set} on this thread, or {@link #DEFAULT_TENANT_ID} if
+   *     nothing has been set, unconditionally — never throws
+   */
+  static UUID currentIdForTransactionPropagation() {
+    TenantSnapshot snapshot = CURRENT.get();
+    return snapshot != null ? snapshot.id() : DEFAULT_TENANT_ID;
+  }
+
+  /**
+   * The default-tenant fallback is illegal exactly when {@link SecurityContextHolder} holds a real
+   * (non-anonymous) authenticated principal — that shape only exists if {@code
+   * rbac.security.TenantContextFilter} was bypassed, since it always calls {@link #set} for one.
+   * Anonymous requests, worker threads, seeders, and most tests never populate an authenticated,
+   * non-anonymous {@link Authentication} at all, so this is a no-op for every legal caller.
+   */
+  private static void requireLegalFallback() {
+    Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+    if (authentication != null
+        && authentication.isAuthenticated()
+        && !(authentication instanceof AnonymousAuthenticationToken)) {
+      throw new IllegalStateException(
+          "TenantContext read with an authenticated, non-anonymous principal on the"
+              + " SecurityContext but no tenant was ever set on this thread — this would silently"
+              + " misattribute the request to the default tenant instead of failing. Every"
+              + " authenticated route must run behind rbac.security.TenantContextFilter.");
+    }
   }
 
   /**
