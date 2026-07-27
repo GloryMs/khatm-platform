@@ -12,6 +12,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.boot.web.client.RestTemplateBuilder;
+import org.springframework.context.annotation.Import;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.client.ClientHttpRequestFactory;
 import org.springframework.http.client.JdkClientHttpRequestFactory;
@@ -20,6 +21,7 @@ import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
+import sy.khatm.platform.support.TransactionalTestJdbcTemplateConfig;
 
 /**
  * Base for KH-0.6b's HTTP-level auth tests: a real embedded servlet container ({@code
@@ -43,6 +45,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
+@Import(TransactionalTestJdbcTemplateConfig.class)
 public abstract class RbacHttpTestSupport {
 
   protected static final PostgreSQLContainer<?> POSTGRES;
@@ -50,7 +53,11 @@ public abstract class RbacHttpTestSupport {
   private static final Path KEYSTORE_PATH;
 
   static {
-    POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+    POSTGRES =
+        new PostgreSQLContainer<>("postgres:16-alpine")
+            // KH-2.1 (spec FS-2.1 D3): provisions khatm_app before Flyway's first migration run —
+            // V7__rls_policies.sql GRANTs to it, so it must already exist.
+            .withInitScript("db/khatm-app-role-init.sql");
     POSTGRES.start();
     REDIS = new GenericContainer<>("redis:7-alpine").withExposedPorts(6379);
     REDIS.start();
@@ -115,9 +122,15 @@ public abstract class RbacHttpTestSupport {
 
   @DynamicPropertySource
   static void properties(DynamicPropertyRegistry registry) {
+    // KH-2.1 (spec FS-2.1 D3): the app's own datasource runs as khatm_app; Flyway alone runs as
+    // the container's owner role via the separate spring.flyway.* connection — see
+    // support.IntegrationTestSupport#datasourceProperties's identical split for the full rationale.
     registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-    registry.add("spring.datasource.username", POSTGRES::getUsername);
-    registry.add("spring.datasource.password", POSTGRES::getPassword);
+    registry.add("spring.datasource.username", () -> "khatm_app");
+    registry.add("spring.datasource.password", () -> "khatm-app-test-only-password");
+    registry.add("spring.flyway.url", POSTGRES::getJdbcUrl);
+    registry.add("spring.flyway.user", POSTGRES::getUsername);
+    registry.add("spring.flyway.password", POSTGRES::getPassword);
     registry.add("spring.data.redis.host", REDIS::getHost);
     registry.add("spring.data.redis.port", () -> REDIS.getMappedPort(6379));
     registry.add("khatm.keys.soft.keystore-path", KEYSTORE_PATH::toString);

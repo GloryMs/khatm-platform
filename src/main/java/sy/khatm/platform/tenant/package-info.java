@@ -25,8 +25,16 @@
  * <p><b>Tables owned:</b> {@code tenant}
  *
  * <p><b>Status:</b> KH-2.1 Part A — tenant context resolution, the admin/onboarding plane, and the
- * per-tenant trust endpoints. RLS enforcement (Part B) is a separate, later change to this same
- * module's migration/persistence layer.
+ * per-tenant trust endpoints. Part B added real Postgres Row Level Security enforcement ({@code
+ * V7__rls_policies.sql}), a locked-down {@code khatm_app} database role, transaction-scoped {@code
+ * app.tenant_id} propagation ({@link sy.khatm.platform.shared.TenantContext} → {@code
+ * shared.TenantContextTransactionExecutionListener}), and {@code shared.SystemAccessExecutor} for
+ * the handful of legitimately-anonymous read paths — see {@code shared}'s package-info and README
+ * for the mechanism, since it applies platform-wide, not just to this module's own tables. {@code
+ * TenantAdminService#create} runs its key/status-list provisioning steps (and the
+ * conflict-vs-resume {@code hasActiveKey} check) under an explicit {@code TenantContext.set} for
+ * the target tenant, never the calling admin's own ambient one — RLS would otherwise hide or reject
+ * a fresh tenant's own rows.
  */
 @org.springframework.modulith.ApplicationModule
 package sy.khatm.platform.tenant;

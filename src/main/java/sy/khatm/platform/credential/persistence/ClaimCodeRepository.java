@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 import sy.khatm.platform.credential.domain.ClaimCode;
 
 /**
@@ -15,7 +16,11 @@ import sy.khatm.platform.credential.domain.ClaimCode;
  *
  * <p>Module-private — only {@code CredentialService} and the module's own worker ({@code
  * ClaimCodeExpiryWorker}) may use this.
+ *
+ * <p>KH-2.1 Part B (spec FS-2.1 D4): type-level {@code @Transactional(readOnly = true)} — see
+ * {@code key.persistence.IssuerKeyRepository}'s Javadoc for the full rationale.
  */
+@Transactional(readOnly = true)
 public interface ClaimCodeRepository extends JpaRepository<ClaimCode, UUID> {
 
   /**
@@ -38,6 +43,7 @@ public interface ClaimCodeRepository extends JpaRepository<ClaimCode, UUID> {
    * @return the number of claim codes whose {@code disclosures_enc} was zeroed
    */
   @Modifying(flushAutomatically = true, clearAutomatically = true)
+  @Transactional
   @Query(
       "UPDATE ClaimCode c SET c.disclosuresEnc = NULL "
           + "WHERE c.expiresAt < CURRENT_TIMESTAMP "
@@ -72,6 +78,7 @@ public interface ClaimCodeRepository extends JpaRepository<ClaimCode, UUID> {
    * @return the number of claim codes voided
    */
   @Modifying(flushAutomatically = true, clearAutomatically = true)
+  @Transactional
   @Query(
       "UPDATE ClaimCode c SET c.disclosuresEnc = NULL "
           + "WHERE c.credentialId = :credentialId "

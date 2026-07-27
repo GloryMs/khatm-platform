@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -14,6 +15,7 @@ import sy.khatm.platform.key.api.PublicKeyHandle;
 import sy.khatm.platform.key.api.SignResult;
 import sy.khatm.platform.key.persistence.IssuerKeyRepository;
 import sy.khatm.platform.shared.TenantContext;
+import sy.khatm.platform.shared.Uuidv7;
 import sy.khatm.platform.support.IntegrationTestSupport;
 
 /**
@@ -44,6 +46,54 @@ class KeyLifecycleServiceTest extends IntegrationTestSupport {
     assertThat(second).isEmpty();
     assertThat(repository.countByTenantId(TenantContext.current())).isEqualTo(countBefore);
     assertThat(repository.findByTenantIdAndState(TenantContext.current(), "ACTIVE")).isPresent();
+  }
+
+  /**
+   * KH-2.1 Part B (spec FS-2.1 D4) — functional proof, not just the structural one {@code
+   * RepositoryDefaultTransactionsTest} pins down: a bare {@code
+   * IssuerKeyRepository#countByTenantId} call, with no ambient service transaction at all, must
+   * still be transaction-scoped enough for {@code shared.TenantContextTransactionExecutionListener}
+   * to fire and set {@code app.tenant_id} — otherwise this closed-fails to zero rows regardless of
+   * the real data (exactly the bug {@code CredentialService#enforceSchemaAllowlist} hit before the
+   * repository-level {@code @Transactional(readOnly = true)} fix). Provisions a key for a tenant
+   * other than the shared context's default, then shows the SAME bare call sees it only when {@link
+   * TenantContext} is set to that tenant, and sees nothing when it isn't — proving isolation is
+   * enforced by RLS itself, not by this call's own {@code tenantId} parameter.
+   */
+  @Test
+  void countByTenantId_calledBareWithNoAmbientTransaction_isStillTenantScopedByRls() {
+    UUID otherTenant = Uuidv7.generate();
+    String otherSlug = "rls-repo-proof-" + otherTenant;
+    // issuer_key.tenant_id has a foreign key to tenant(id) — a real row is needed regardless of
+    // RLS (tenant itself is excluded from RLS, spec D2, so this bare insert needs no tenant
+    // context of its own).
+    jdbcTemplate.update(
+        "INSERT INTO tenant (id, slug, name_i18n, type, deploy_mode, status, created_at,"
+            + " updated_at) VALUES (?, ?, ?::jsonb, ?, ?, ?, now(), now())",
+        otherTenant,
+        otherSlug,
+        "{\"en\":\"RLS proof\",\"ar\":\"إثبات\"}",
+        "OTHER",
+        "SAAS",
+        "ACTIVE");
+
+    TenantContext.set(otherTenant, otherSlug);
+    try {
+      lifecycle.bootstrapIfNeeded(otherTenant, otherSlug);
+    } finally {
+      TenantContext.clear();
+    }
+
+    TenantContext.set(otherTenant, otherSlug);
+    try {
+      assertThat(repository.countByTenantId(otherTenant)).isEqualTo(1);
+    } finally {
+      TenantContext.clear();
+    }
+
+    // Same tenantId argument, but no ambient TenantContext for it (back at the shared context's
+    // default) — RLS hides the row regardless of the WHERE clause matching it.
+    assertThat(repository.countByTenantId(otherTenant)).isZero();
   }
 
   @Test

@@ -19,6 +19,7 @@ import sy.khatm.platform.credential.api.ClaimSchemaRef;
 import sy.khatm.platform.credential.domain.ClaimRedeemResult;
 import sy.khatm.platform.credential.domain.ClaimRedeemThrottleService;
 import sy.khatm.platform.credential.domain.ClaimRedemptionService;
+import sy.khatm.platform.shared.SystemAccessExecutor;
 import sy.khatm.platform.shared.web.ErrorEnvelope;
 
 /**
@@ -42,10 +43,15 @@ class ClaimController {
 
   private final ClaimRedemptionService redemption;
   private final ClaimRedeemThrottleService throttle;
+  private final SystemAccessExecutor systemAccess;
 
-  ClaimController(ClaimRedemptionService redemption, ClaimRedeemThrottleService throttle) {
+  ClaimController(
+      ClaimRedemptionService redemption,
+      ClaimRedeemThrottleService throttle,
+      SystemAccessExecutor systemAccess) {
     this.redemption = redemption;
     this.throttle = throttle;
+    this.systemAccess = systemAccess;
   }
 
   @Operation(
@@ -98,7 +104,9 @@ class ClaimController {
   ResponseEntity<ClaimRedeemResponse> redeem(
       @Valid @RequestBody ClaimRedeemRequest req, HttpServletRequest request) {
     throttle.enforce(request.getRemoteAddr());
-    ClaimRedeemResult result = redemption.redeem(req.code());
+    // KH-2.1 (spec FS-2.1 D5): a claim code's owning tenant is unknowable before it's looked up —
+    // genuinely anonymous, so this runs under system access rather than any one tenant's RLS scope.
+    ClaimRedeemResult result = systemAccess.runAsSystem(() -> redemption.redeem(req.code()));
     return ResponseEntity.ok(toResponse(result));
   }
 

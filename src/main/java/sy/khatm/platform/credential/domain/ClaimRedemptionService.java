@@ -5,17 +5,23 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import sy.khatm.platform.credential.persistence.ClaimCodeRepository;
 import sy.khatm.platform.credential.persistence.CredentialRepository;
 import sy.khatm.platform.schema.api.SchemaCatalog;
 import sy.khatm.platform.schema.api.SchemaDetail;
+import sy.khatm.platform.shared.TenantContext;
 import sy.khatm.platform.shared.audit.AuditAction;
 import sy.khatm.platform.shared.audit.AuditService;
 import sy.khatm.platform.shared.error.ErrorCode;
 import sy.khatm.platform.shared.error.NotFoundException;
 import sy.khatm.platform.status.api.StatusListLookup;
+import sy.khatm.platform.status.api.StatusListRef;
+import sy.khatm.platform.tenant.api.TenantDirectory;
+import sy.khatm.platform.tenant.api.TenantRef;
 
 /**
  * Hands a freshly issued credential to a wallet exactly once, then destroys the platform's only
@@ -53,6 +59,7 @@ public class ClaimRedemptionService {
   private final SchemaCatalog schemas;
   private final StatusListLookup statusLookup;
   private final AuditService audit;
+  private final TenantDirectory tenants;
 
   public ClaimRedemptionService(
       ClaimCodeRepository claimCodes,
@@ -60,13 +67,15 @@ public class ClaimRedemptionService {
       ClaimsEncryptionService claimsEncryption,
       SchemaCatalog schemas,
       StatusListLookup statusLookup,
-      AuditService audit) {
+      AuditService audit,
+      TenantDirectory tenants) {
     this.claimCodes = claimCodes;
     this.credentials = credentials;
     this.claimsEncryption = claimsEncryption;
     this.schemas = schemas;
     this.statusLookup = statusLookup;
     this.audit = audit;
+    this.tenants = tenants;
   }
 
   /**
@@ -126,9 +135,8 @@ public class ClaimRedemptionService {
     // status list id). The FK guarantees the list exists; an empty result is treated as impossible,
     // falling back to the id only defensively so a redeem never fails to ship a URI.
     String statusListUri =
-        statusLookup
-            .findRef(credential.getStatusListId())
-            .map(sy.khatm.platform.status.api.StatusListRef::uri)
+        findRefForTenant(credential.getTenantId(), credential.getStatusListId())
+            .map(StatusListRef::uri)
             .orElseGet(() -> credential.getStatusListId().toString());
 
     return new ClaimRedeemResult(
@@ -146,6 +154,25 @@ public class ClaimRedemptionService {
 
   private NotFoundException invalidOrExpired() {
     return new NotFoundException(ErrorCode.KH_CLM_0404, "error.clm.invalid_or_expired");
+  }
+
+  /**
+   * Resolve a status list's reference under {@code tenantId}'s own {@link TenantContext}, not
+   * whatever tenant happens to be ambient for the calling thread — KH-2.1 Part B: {@link #redeem}
+   * runs under {@code SystemAccessExecutor} (no principal, no ambient tenant of its own), and
+   * {@code status.domain.StatusListUriBuilder} builds the {@code /sl/{tenantSlug}/...} URL from
+   * {@link TenantContext#currentSlug()} — without this, every redeem call would embed the {@code
+   * statusListUri} using whichever tenant is ambient (the platform default in practice), even
+   * though the credential itself belongs to a different tenant.
+   */
+  private Optional<StatusListRef> findRefForTenant(UUID tenantId, UUID statusListId) {
+    String slug = tenants.findById(tenantId).map(TenantRef::slug).orElse("");
+    TenantContext.set(tenantId, slug);
+    try {
+      return statusLookup.findRef(statusListId);
+    } finally {
+      TenantContext.clear();
+    }
   }
 
   private static byte[] sha256(String value) {

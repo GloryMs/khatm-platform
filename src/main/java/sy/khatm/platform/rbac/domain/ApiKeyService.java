@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import sy.khatm.platform.consumer.api.ConsumingPartyRegistry;
 import sy.khatm.platform.rbac.api.CurrentActor;
 import sy.khatm.platform.rbac.persistence.ApiKeyRepository;
+import sy.khatm.platform.shared.SystemAccessExecutor;
 import sy.khatm.platform.shared.TenantContext;
 import sy.khatm.platform.shared.Uuidv7;
 import sy.khatm.platform.shared.audit.AuditAction;
@@ -60,6 +61,7 @@ public class ApiKeyService {
   private final AuditService audit;
   private final ConsumingPartyRegistry consumingParties;
   private final TenantDirectory tenants;
+  private final SystemAccessExecutor systemAccess;
   private final String env;
 
   public ApiKeyService(
@@ -67,11 +69,13 @@ public class ApiKeyService {
       AuditService audit,
       ConsumingPartyRegistry consumingParties,
       TenantDirectory tenants,
+      SystemAccessExecutor systemAccess,
       Environment environment) {
     this.repository = repository;
     this.audit = audit;
     this.consumingParties = consumingParties;
     this.tenants = tenants;
+    this.systemAccess = systemAccess;
     this.env = environment.acceptsProfiles(Profiles.of("local", "dev", "test")) ? "test" : "live";
   }
 
@@ -105,12 +109,12 @@ public class ApiKeyService {
    * @throws sy.khatm.platform.shared.error.NotFoundException {@code KH-TNT-0404} if no such tenant
    *     exists
    */
-  @Transactional
   public CreatedApiKey create(
       ApiKeyOwnerType ownerType, UUID ownerId, Set<String> scopes, UUID tenantId) {
-    if (tenants.findById(tenantId).isEmpty()) {
-      throw new NotFoundException(ErrorCode.KH_TNT_0404, "tenant.not-found");
-    }
+    TenantRef tenant =
+        tenants
+            .findById(tenantId)
+            .orElseThrow(() -> new NotFoundException(ErrorCode.KH_TNT_0404, "tenant.not-found"));
     String prefix = randomBase62(PREFIX_LENGTH);
     String secret = randomBase62(SECRET_LENGTH);
 
@@ -124,9 +128,21 @@ public class ApiKeyService {
     key.setScopes(scopes.toArray(new String[0]));
     key.setStatus(ApiKey.STATUS_ACTIVE);
     key.setCreatedAt(Instant.now());
-    repository.save(key);
 
-    audit.record(AuditAction.API_KEY_CREATED, "api_key", prefix, null);
+    // KH-2.1 Part B (spec D2/D4): api_key is RLS-protected, and the calling admin's own ambient
+    // tenant (whatever TenantContextFilter resolved from THEIR principal) is not necessarily
+    // tenantId — the whole point of this overload is minting a key for a tenant other than the
+    // caller's own. Deliberately not @Transactional on this method itself (each step below is
+    // already independently transactional — ApiKeyRepository#save, AuditService#record — so each
+    // opens its own fresh physical transaction and picks up the target tenant set here, not the
+    // admin caller's own; same pattern as tenant.domain.TenantAdminService#create).
+    TenantContext.set(tenantId, tenant.slug());
+    try {
+      repository.save(key);
+      audit.record(AuditAction.API_KEY_CREATED, "api_key", prefix, null);
+    } finally {
+      TenantContext.clear();
+    }
     return new CreatedApiKey(
         key.getId(), prefix, KEY_PREFIX_TAG + env + "_" + prefix + "." + secret);
   }
@@ -158,11 +174,16 @@ public class ApiKeyService {
    * single place that records {@code API_KEY_AUTH_FAILED} (spec FS-0.6b §6), so it can attach
    * whatever best-effort {@code detail.prefix} it can parse regardless of why verification failed.
    *
+   * <p>KH-2.1 Part B (spec D5): runs under {@link SystemAccessExecutor} — this is, by construction,
+   * a lookup with no tenant known yet (resolving the tenant is the whole point), so it cannot rely
+   * on {@code TenantContext}'s ambient value the way every other {@code @Transactional} method in
+   * this class does; {@code api_key} is RLS-protected like every other business table, and a key
+   * belonging to any tenant other than the caller's ambient default would otherwise be invisible.
+   *
    * @param rawKey the full {@code khk_<env>_<prefix>.<secret>} value
    * @return the verified key's identity, or empty if the value is malformed, unknown, revoked, or
    *     the secret does not match
    */
-  @Transactional
   public Optional<VerifiedApiKey> verify(String rawKey) {
     Optional<String[]> parsed = parse(rawKey);
     if (parsed.isEmpty()) {
@@ -171,48 +192,52 @@ public class ApiKeyService {
     String prefix = parsed.get()[0];
     String secret = parsed.get()[1];
 
-    Optional<ApiKey> maybeKey = repository.findByKeyPrefix(prefix);
-    if (maybeKey.isEmpty()) {
-      return Optional.empty();
-    }
-    ApiKey key = maybeKey.get();
-    if (!key.isActive()) {
-      return Optional.empty();
-    }
-    if (!MessageDigest.isEqual(sha256(secret), key.getKeyHash())) {
-      return Optional.empty();
-    }
-    // KH-1.4.4 D4: a CONSUMING_PARTY key whose owning party is SUSPENDED must fail authentication
-    // exactly like a revoked key — returning empty here funnels it down the same
-    // API_KEY_AUTH_FAILED / KH-RBC-1401 path as any other unverifiable key. A real minted key
-    // always carries its party id; the null guard only tolerates legacy/test keys with no owner.
-    if (key.isConsumingParty()
-        && key.getOwnerId() != null
-        && !consumingParties.isActive(key.getOwnerId())) {
-      return Optional.empty();
-    }
-    // Spec FS-2.1 D7: a key whose own tenant is SUSPENDED fails exactly like a revoked key —
-    // the same shape as the consuming-party check above, checked on every request since keys are
-    // reverified every time (unlike a console session, which TenantContextFilter separately covers
-    // for the "already logged in before the tenant was suspended" gap).
-    if (!tenants.findById(key.getTenantId()).map(TenantRef::isActive).orElse(false)) {
-      return Optional.empty();
-    }
+    return systemAccess.runAsSystem(
+        () -> {
+          Optional<ApiKey> maybeKey = repository.findByKeyPrefix(prefix);
+          if (maybeKey.isEmpty()) {
+            return Optional.empty();
+          }
+          ApiKey key = maybeKey.get();
+          if (!key.isActive()) {
+            return Optional.empty();
+          }
+          if (!MessageDigest.isEqual(sha256(secret), key.getKeyHash())) {
+            return Optional.empty();
+          }
+          // KH-1.4.4 D4: a CONSUMING_PARTY key whose owning party is SUSPENDED must fail
+          // authentication exactly like a revoked key — returning empty here funnels it down the
+          // same API_KEY_AUTH_FAILED / KH-RBC-1401 path as any other unverifiable key. A real
+          // minted key always carries its party id; the null guard only tolerates legacy/test
+          // keys with no owner.
+          if (key.isConsumingParty()
+              && key.getOwnerId() != null
+              && !consumingParties.isActive(key.getOwnerId())) {
+            return Optional.empty();
+          }
+          // Spec FS-2.1 D7: a key whose own tenant is SUSPENDED fails exactly like a revoked key —
+          // the same shape as the consuming-party check above, checked on every request since keys
+          // are reverified every time (unlike a console session, which TenantContextFilter
+          // separately covers for the "already logged in before the tenant was suspended" gap).
+          if (!tenants.findById(key.getTenantId()).map(TenantRef::isActive).orElse(false)) {
+            return Optional.empty();
+          }
 
-    key.setLastUsedAt(Instant.now());
-    repository.save(key);
+          key.setLastUsedAt(Instant.now());
+          repository.save(key);
 
-    CurrentActor.ActorKind kind =
-        key.isConsumingParty()
-            ? CurrentActor.ActorKind.API_KEY_CONSUMING_PARTY
-            : CurrentActor.ActorKind.API_KEY_TENANT;
-    return Optional.of(
-        new VerifiedApiKey(
-            key.getId(),
-            key.getTenantId(),
-            kind,
-            key.getOwnerId(),
-            new LinkedHashSet<>(Arrays.asList(key.getScopes()))));
+          CurrentActor.ActorKind kind =
+              key.isConsumingParty()
+                  ? CurrentActor.ActorKind.API_KEY_CONSUMING_PARTY
+                  : CurrentActor.ActorKind.API_KEY_TENANT;
+          return Optional.of(
+              new VerifiedApiKey(
+                  key.getId(),
+                  key.getTenantId(),
+                  kind,
+                  key.getOwnerId(),
+                  new LinkedHashSet<>(Arrays.asList(key.getScopes()))));
+        });
   }
 
   /**

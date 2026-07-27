@@ -21,6 +21,7 @@ import sy.khatm.platform.credential.api.IssueRequest;
 import sy.khatm.platform.credential.api.IssueResponse;
 import sy.khatm.platform.credential.domain.CredentialService;
 import sy.khatm.platform.credential.persistence.ClaimCodeRepository;
+import sy.khatm.platform.shared.SystemAccessExecutor;
 import sy.khatm.platform.shared.TenantContext;
 import sy.khatm.platform.shared.Uuidv7;
 import sy.khatm.platform.shared.audit.AuditService;
@@ -44,12 +45,13 @@ class ClaimCodeExpirySweepTest extends IntegrationTestSupport {
   @Autowired private JdbcTemplate jdbc;
   @Autowired private EntityManager entityManager;
   @Autowired private AuditService auditService;
+  @Autowired private SystemAccessExecutor systemAccess;
 
   private ClaimCodeExpiryWorker worker;
 
   @BeforeEach
   void constructWorker() {
-    worker = new ClaimCodeExpiryWorker(claimCodes, auditService);
+    worker = new ClaimCodeExpiryWorker(claimCodes, auditService, systemAccess);
   }
 
   @Test

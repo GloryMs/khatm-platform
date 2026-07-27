@@ -9,10 +9,12 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
+import sy.khatm.platform.support.TransactionalTestJdbcTemplateConfig;
 
 /**
  * Base for FS-0.6a's HTTP-level error-envelope tests: a real embedded servlet container ({@code
@@ -36,13 +38,18 @@ import org.testcontainers.containers.PostgreSQLContainer;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @ActiveProfiles("test")
+@Import(TransactionalTestJdbcTemplateConfig.class)
 abstract class ErrorEnvelopeTestSupport {
 
   static final PostgreSQLContainer<?> POSTGRES;
   static final Path TEMP_DIR;
 
   static {
-    POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+    POSTGRES =
+        new PostgreSQLContainer<>("postgres:16-alpine")
+            // KH-2.1 (spec FS-2.1 D3): provisions khatm_app before Flyway's first migration run —
+            // V7__rls_policies.sql GRANTs to it, so it must already exist.
+            .withInitScript("db/khatm-app-role-init.sql");
     POSTGRES.start();
     try {
       TEMP_DIR = Files.createTempDirectory("khatm-error-envelope-test-");
@@ -53,9 +60,13 @@ abstract class ErrorEnvelopeTestSupport {
 
   @DynamicPropertySource
   static void properties(DynamicPropertyRegistry registry) {
+    // KH-2.1 (spec FS-2.1 D3): same role split as support.IntegrationTestSupport.
     registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-    registry.add("spring.datasource.username", POSTGRES::getUsername);
-    registry.add("spring.datasource.password", POSTGRES::getPassword);
+    registry.add("spring.datasource.username", () -> "khatm_app");
+    registry.add("spring.datasource.password", () -> "khatm-app-test-only-password");
+    registry.add("spring.flyway.url", POSTGRES::getJdbcUrl);
+    registry.add("spring.flyway.user", POSTGRES::getUsername);
+    registry.add("spring.flyway.password", POSTGRES::getPassword);
     registry.add(
         "khatm.keys.soft.keystore-path",
         () -> TEMP_DIR.resolve("error-envelope-test-keys.p12").toString());

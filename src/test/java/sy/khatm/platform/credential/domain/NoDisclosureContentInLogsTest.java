@@ -23,6 +23,7 @@ import sy.khatm.platform.credential.api.IssueRequest;
 import sy.khatm.platform.credential.api.IssueResponse;
 import sy.khatm.platform.credential.persistence.ClaimCodeRepository;
 import sy.khatm.platform.credential.worker.ClaimCodeExpiryWorker;
+import sy.khatm.platform.shared.SystemAccessExecutor;
 import sy.khatm.platform.shared.audit.AuditService;
 import sy.khatm.platform.support.IntegrationTestSupport;
 
@@ -39,6 +40,7 @@ class NoDisclosureContentInLogsTest extends IntegrationTestSupport {
   @Autowired private JdbcTemplate jdbc;
   @Autowired private EntityManager entityManager;
   @Autowired private AuditService auditService;
+  @Autowired private SystemAccessExecutor systemAccess;
 
   private Logger rootLogger;
   private ListAppender<ILoggingEvent> appender;
@@ -111,7 +113,7 @@ class NoDisclosureContentInLogsTest extends IntegrationTestSupport {
     jdbc.update(
         "UPDATE claim_code SET expires_at = now() - interval '1 hour' WHERE credential_id = ?",
         UUID.fromString(issued.id()));
-    int zeroed = new ClaimCodeExpiryWorker(claimCodes, auditService).sweep();
+    int zeroed = new ClaimCodeExpiryWorker(claimCodes, auditService, systemAccess).sweep();
     assertThat(zeroed)
         .as("the sweep must have zeroed the expired code for this assertion to mean anything")
         .isEqualTo(1);

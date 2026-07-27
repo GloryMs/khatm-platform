@@ -10,6 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import sy.khatm.platform.key.api.TenantKeyProvisioner;
 import sy.khatm.platform.shared.LocalizedText;
+import sy.khatm.platform.shared.TenantContext;
 import sy.khatm.platform.shared.Uuidv7;
 import sy.khatm.platform.shared.error.ConflictException;
 import sy.khatm.platform.shared.error.ErrorCode;
@@ -62,11 +63,18 @@ class TenantAdminServiceTest extends IntegrationTestSupport {
     assertThat(view.nameI18n().en()).isEqualTo("Acme Gov");
     assertThat(auditCount("TENANT_CREATED", slug)).isEqualTo(1);
 
-    assertThat(keyProvisioner.hasActiveKey(view.id())).isTrue();
-    Integer listRows =
-        jdbc.queryForObject(
-            "SELECT COUNT(*) FROM status_list WHERE tenant_id = ?", Integer.class, view.id());
-    assertThat(listRows).isEqualTo(1);
+    // issuer_key/status_list are RLS-protected and this test's own ambient tenant is never the
+    // freshly onboarded one — same reasoning as TenantAdminService#create's own internal check.
+    TenantContext.set(view.id(), slug);
+    try {
+      assertThat(keyProvisioner.hasActiveKey(view.id())).isTrue();
+      Integer listRows =
+          jdbc.queryForObject(
+              "SELECT COUNT(*) FROM status_list WHERE tenant_id = ?", Integer.class, view.id());
+      assertThat(listRows).isEqualTo(1);
+    } finally {
+      TenantContext.clear();
+    }
 
     assertThat(directory.findBySlug(slug)).isPresent();
     assertThat(directory.findById(view.id())).isPresent();
@@ -103,16 +111,28 @@ class TenantAdminServiceTest extends IntegrationTestSupport {
         "OTHER",
         "SAAS",
         "ACTIVE");
-    assertThat(keyProvisioner.hasActiveKey(id)).isFalse();
+    // issuer_key is RLS-protected and this test's own ambient tenant is never this freshly
+    // inserted one — same reasoning as TenantAdminService#create's own internal check.
+    TenantContext.set(id, slug);
+    try {
+      assertThat(keyProvisioner.hasActiveKey(id)).isFalse();
+    } finally {
+      TenantContext.clear();
+    }
 
     TenantView resumed = admin.create(slug, new LocalizedText("Resumed", "مستأنف"), "OTHER", null);
 
     assertThat(resumed.id()).isEqualTo(id);
-    assertThat(keyProvisioner.hasActiveKey(id)).isTrue();
-    Integer listRows =
-        jdbc.queryForObject(
-            "SELECT COUNT(*) FROM status_list WHERE tenant_id = ?", Integer.class, id);
-    assertThat(listRows).isEqualTo(1);
+    TenantContext.set(id, slug);
+    try {
+      assertThat(keyProvisioner.hasActiveKey(id)).isTrue();
+      Integer listRows =
+          jdbc.queryForObject(
+              "SELECT COUNT(*) FROM status_list WHERE tenant_id = ?", Integer.class, id);
+      assertThat(listRows).isEqualTo(1);
+    } finally {
+      TenantContext.clear();
+    }
     // Resuming does not re-record TENANT_CREATED — the row already existed.
     assertThat(auditCount("TENANT_CREATED", slug)).isEqualTo(0);
 
@@ -184,15 +204,22 @@ class TenantAdminServiceTest extends IntegrationTestSupport {
     UUID id = admin.create(slug, new LocalizedText("List", "قائمة"), "OTHER", null).id();
     String listCode = slug + "-extra";
 
-    statusLists.ensureList(id, listCode);
-    statusLists.ensureList(id, listCode);
+    // status_list is RLS-protected and this test's own ambient tenant is never the freshly
+    // onboarded one — same reason TenantAdminService#create itself sets this before provisioning.
+    TenantContext.set(id, slug);
+    try {
+      statusLists.ensureList(id, listCode);
+      statusLists.ensureList(id, listCode);
 
-    Integer rows =
-        jdbc.queryForObject(
-            "SELECT COUNT(*) FROM status_list WHERE tenant_id = ? AND list_code = ?",
-            Integer.class,
-            id,
-            listCode);
-    assertThat(rows).isEqualTo(1);
+      Integer rows =
+          jdbc.queryForObject(
+              "SELECT COUNT(*) FROM status_list WHERE tenant_id = ? AND list_code = ?",
+              Integer.class,
+              id,
+              listCode);
+      assertThat(rows).isEqualTo(1);
+    } finally {
+      TenantContext.clear();
+    }
   }
 }

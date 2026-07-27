@@ -22,6 +22,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RestController;
 import sy.khatm.platform.key.api.JwksLookup;
 import sy.khatm.platform.key.api.PublishedKeyView;
+import sy.khatm.platform.shared.SystemAccessExecutor;
 import sy.khatm.platform.shared.error.ErrorCode;
 import sy.khatm.platform.shared.error.NotFoundException;
 import sy.khatm.platform.shared.web.ErrorEnvelope;
@@ -50,11 +51,17 @@ class TenantJwksController {
   private final TenantDirectory tenants;
   private final JwksLookup jwksLookup;
   private final ObjectMapper json;
+  private final SystemAccessExecutor systemAccess;
 
-  TenantJwksController(TenantDirectory tenants, JwksLookup jwksLookup, ObjectMapper json) {
+  TenantJwksController(
+      TenantDirectory tenants,
+      JwksLookup jwksLookup,
+      ObjectMapper json,
+      SystemAccessExecutor systemAccess) {
     this.tenants = tenants;
     this.jwksLookup = jwksLookup;
     this.json = json;
+    this.systemAccess = systemAccess;
   }
 
   @Operation(
@@ -80,7 +87,11 @@ class TenantJwksController {
             .findBySlug(tenantSlug)
             .orElseThrow(() -> new NotFoundException(ErrorCode.KH_TNT_0404, "tenant.not-found"));
 
-    List<PublishedKeyView> keys = jwksLookup.publishableKeys(tenant.id());
+    // KH-2.1 (spec FS-2.1 D5): issuer_key is RLS-protected and this request has no principal to
+    // resolve a tenant from — the target tenant comes from the URL's slug instead, so this read
+    // runs under system access.
+    List<PublishedKeyView> keys =
+        systemAccess.runAsSystem(() -> jwksLookup.publishableKeys(tenant.id()));
     ArrayNode keysArray = json.createArrayNode();
     for (PublishedKeyView key : keys) {
       keysArray.add(readJwk(key.jwkJson()));

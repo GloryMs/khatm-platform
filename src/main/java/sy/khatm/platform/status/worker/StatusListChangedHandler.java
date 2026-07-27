@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.UUID;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
+import sy.khatm.platform.shared.TenantContext;
 import sy.khatm.platform.shared.events.StreamEventHandler;
 import sy.khatm.platform.status.domain.StatusListPublisher;
 import sy.khatm.platform.status.events.StatusListChanged;
@@ -19,6 +20,12 @@ import sy.khatm.platform.status.events.StatusListChanged;
  * have already advanced the version further still, and {@link StatusListPublisher#publishIfStale}
  * republishes exactly once for whatever the latest state is. This is what collapses a revocation
  * storm into one publish instead of one per event (D5).
+ *
+ * <p><b>Tenant context (KH-2.1, spec FS-2.1 D5):</b> a worker thread has no principal to resolve a
+ * tenant from, so this handler restores {@link TenantContext} from the event payload's {@code
+ * tenantId} before touching the (RLS-protected) {@code status_list} row — set/cleared per dispatch,
+ * same discipline as the servlet filter's try/finally (a worker thread is reused across unrelated
+ * events just as a servlet thread is reused across unrelated requests).
  *
  * <p>Worker-role only ({@code khatm.worker.enabled=true}) — mirrors every other worker-role
  * component's gating (ADR-09); the {@code api} image never registers this bean.
@@ -44,6 +51,15 @@ class StatusListChangedHandler implements StreamEventHandler {
   public void handle(String payload) throws Exception {
     JsonNode node = JSON.readTree(payload);
     UUID statusListId = UUID.fromString(node.get("statusListId").asText());
-    publisher.publishIfStale(statusListId);
+    UUID tenantId = UUID.fromString(node.get("tenantId").asText());
+    // The slug is never read on this path (only KeySignerImpl's id-based key lookup matters here,
+    // via TenantContext.current()) — resolving the real slug would need a tenant::api dependency
+    // this module deliberately avoids (would cycle with tenant's own dependency on status::api).
+    TenantContext.set(tenantId, "");
+    try {
+      publisher.publishIfStale(statusListId);
+    } finally {
+      TenantContext.clear();
+    }
   }
 }

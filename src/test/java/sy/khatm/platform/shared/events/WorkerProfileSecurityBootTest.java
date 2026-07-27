@@ -37,7 +37,11 @@ import org.testcontainers.containers.PostgreSQLContainer;
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class WorkerProfileSecurityBootTest {
 
-  static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+  // KH-2.1 (spec FS-2.1 D3): provisions khatm_app before Flyway's first migration run —
+  // V7__rls_policies.sql GRANTs to it, so it must already exist even though this test's own
+  // app datasource keeps using the container's owner role (no RLS-specific assertions here).
+  static final PostgreSQLContainer<?> POSTGRES =
+      new PostgreSQLContainer<>("postgres:16-alpine").withInitScript("db/khatm-app-role-init.sql");
   static final GenericContainer<?> REDIS =
       new GenericContainer<>("redis:7-alpine").withExposedPorts(6379);
   private static final Path KEYSTORE;

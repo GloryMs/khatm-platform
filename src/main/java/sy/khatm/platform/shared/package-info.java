@@ -48,6 +48,32 @@
  * row shape {@code recentEvents} returns, since {@code AuditLogEntry} itself stays package-private
  * by design.
  *
+ * <p><b>Multi-tenancy propagation (KH-2.1 Part B, spec FS-2.1 D4/D5):</b> {@link
+ * sy.khatm.platform.shared.TenantContext} gained a {@code ThreadLocal} backing (still part of the
+ * unnamed exposed interface) — {@code rbac.security.TenantContextFilter} sets it per request,
+ * {@code status.worker.StatusListChangedHandler} restores it from an event payload on a worker
+ * thread. {@code TenantContextTransactionExecutionListener} (module-private, registered on the
+ * app's {@code JpaTransactionManager} by {@code TenantContextPropagationConfig}) sets the Postgres
+ * session variable {@code app.tenant_id} at the start of every physical transaction — transaction-
+ * scoped only, never session-scoped, the mechanism Row Level Security's {@code tenant_isolation}
+ * policy reads. {@link sy.khatm.platform.shared.SystemAccessExecutor} (new, public — part of the
+ * unnamed exposed interface) sets {@code app.khatm_system = 'on'} for the small, enumerated set of
+ * genuinely anonymous-principal read paths RLS's {@code system_access} policy exists for; {@code
+ * SystemAccessCallerAllowlistTest} pins that enumeration.
+ *
+ * <p><b>Repository-level transaction safety (KH-2.1 Part B):</b> every {@code JpaRepository}
+ * interface platform-wide now carries a type-level {@code @Transactional(readOnly = true)}, with an
+ * explicit bare {@code @Transactional} override on every {@code @Modifying} method ({@code
+ * db.RepositoryDefaultTransactionsTest} enforces both structurally) — without it, a derived-query
+ * method called with no ambient service transaction runs via {@code SharedEntityManagerCreator}'s
+ * non-transactional path, so the listener above never fires and RLS closed-fails to zero rows
+ * regardless of the real data. This is not merely a test-infrastructure concern: {@code
+ * credential.domain.CredentialService#enforceSchemaAllowlist} is deliberately
+ * non-{@code @Transactional} (its audit-row write must commit independently of the authorization
+ * exception it's about to throw), and its one bare repository read had exactly this bug — silently
+ * turning "can't resolve this schema, don't block" into "can never resolve any schema, always
+ * allow," a real authorization bypass caught by {@code rbac.ConsumeApiKeyGateTest}.
+ *
  * <p><b>Tables owned:</b> {@code audit_log} (append-only; the write path is {@code shared ::
  * audit}, KH-0.6b).
  */

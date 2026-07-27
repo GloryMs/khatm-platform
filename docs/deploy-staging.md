@@ -78,6 +78,65 @@ networks: { khatm-net: { external: true } }
 `khatm-worker` sets `SPRING_PROFILES_ACTIVE=local,worker` (or the prod worker profile) in its `.env`
 section — the two roles are selected by Spring profile, one image (ADR-09).
 
+## Database role for multi-tenancy RLS (KH-2.1, spec FS-2.1 D3)
+
+`khatm-api`/`khatm-worker` connect as a locked-down `khatm_app` role — no `BYPASSRLS`, not a table
+owner, granted only `SELECT`/`INSERT`/`UPDATE` (+ `DELETE` on the one documented exception) by
+`V7__rls_policies.sql`'s own `GRANT` statements. Flyway itself still runs as the owner role
+(`khatm`), split onto its own `SPRING_FLYWAY_*` datasource. Both `.env` and the compose file need
+the following, on top of the prod compose snippet above:
+
+```yaml
+  khatm-postgres:
+    # ...as above, plus:
+    environment:
+      # ...POSTGRES_DB/POSTGRES_USER/POSTGRES_PASSWORD as above, plus:
+      KHATM_APP_DB_PASSWORD: "${KHATM_APP_DB_PASSWORD}"
+    volumes:
+      - khatm_pgdata:/var/lib/postgresql/data
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro   # copy this dir to the host too
+  khatm-api:
+    # ...as above, plus:
+    environment:
+      SPRING_DATASOURCE_USERNAME: khatm_app
+      SPRING_DATASOURCE_PASSWORD: "${KHATM_APP_DB_PASSWORD}"
+      SPRING_FLYWAY_USER: khatm
+      SPRING_FLYWAY_PASSWORD: "${POSTGRES_PASSWORD}"
+  khatm-worker:
+    # same four SPRING_DATASOURCE_*/SPRING_FLYWAY_* lines as khatm-api
+```
+
+`.env` needs a `KHATM_APP_DB_PASSWORD` alongside the existing `POSTGRES_PASSWORD`.
+
+**Fresh host (empty `khatm_pgdata` volume):** the mounted `docker/postgres-init/` script runs
+automatically on Postgres's first boot (the official image runs everything under
+`/docker-entrypoint-initdb.d/` exactly once, only against a freshly-initialized data directory) —
+no manual step needed.
+
+**Existing staging host deployed before KH-2.1:** an already-initialized `khatm_pgdata` volume will
+**not** pick up the mounted init script — `docker-entrypoint-initdb.d` only runs against a fresh
+data directory. Before deploying the first KH-2.1+ image, run this once against the existing
+database (Flyway's `V7__rls_policies.sql` migration `GRANT`s to `khatm_app` and will fail outright
+if the role doesn't exist yet):
+
+```sh
+docker compose exec khatm-postgres psql -U khatm -d khatm -c "
+  DO \$\$
+  BEGIN
+    IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'khatm_app') THEN
+      CREATE ROLE khatm_app LOGIN PASSWORD '<same value as KHATM_APP_DB_PASSWORD>'
+        NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+    END IF;
+  END
+  \$\$;
+  GRANT CONNECT ON DATABASE khatm TO khatm_app;
+  GRANT USAGE ON SCHEMA public TO khatm_app;
+"
+```
+
+Then add the `.env`/compose changes above and redeploy as usual — Flyway's `V7` migration handles
+every other `GRANT` itself on that same run.
+
 ## Staging secrets (GitHub repo → Settings → Secrets → Actions)
 
 | Secret                | Required to activate | Purpose                                                       |

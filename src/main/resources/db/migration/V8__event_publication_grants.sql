@@ -1,0 +1,14 @@
+-- V8__event_publication_grants.sql — KH-2.1 Part B follow-up: V7__rls_policies.sql granted
+-- khatm_app privileges on every RLS-protected business table plus the one documented RLS
+-- exclusion (`tenant`), but missed `event_publication` — Spring Modulith's own JDBC event
+-- publication registry (V1__baseline.sql §3.12, schema copied verbatim from
+-- spring-modulith-events-jdbc). Like `tenant`, this table carries no `tenant_id` of its own and
+-- is deliberately excluded from RLS (it is platform-wide library bookkeeping, not tenant data) —
+-- but "no RLS" is not "no grant," the same principle V7 already applied to `tenant`. Found via
+-- live testing (docker compose e2e, KH-2.1 Part B DoD): every credential issuance publishes a
+-- CredentialIssued event, which Spring Modulith's EventPublicationRegistry records by inserting a
+-- row into this table within the same transaction — khatm_app had no privilege on it at all, so
+-- every event-publishing request failed with "permission denied for table event_publication"
+-- (reproduced against both an existing pre-KH-2.1 volume and a genuinely fresh one — this is not
+-- an existing-deployment-only gap).
+GRANT SELECT, INSERT, UPDATE, DELETE ON event_publication TO khatm_app;

@@ -7,6 +7,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Repository for {@link AuditLogEntry} rows.
@@ -17,7 +18,11 @@ import org.springframework.data.repository.query.Param;
  * only read of this table) was the first read query this interface needed beyond {@code save};
  * {@link #countByDayAndActionInWindow}, {@link #findRecent}, and {@link
  * #countByActorAndActionInWindow} (KH-1.1.5-BE, spec FS-1.5.4) are Dashboard v2's reads.
+ *
+ * <p>KH-2.1 Part B (spec FS-2.1 D4): type-level {@code @Transactional(readOnly = true)} — see
+ * {@code key.persistence.IssuerKeyRepository}'s Javadoc for the full rationale.
  */
+@Transactional(readOnly = true)
 interface AuditLogRepository extends JpaRepository<AuditLogEntry, Long> {
 
   /**

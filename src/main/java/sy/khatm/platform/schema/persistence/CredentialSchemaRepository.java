@@ -7,13 +7,18 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 import sy.khatm.platform.schema.domain.CredentialSchema;
 
 /**
  * Repository for {@link CredentialSchema} entities.
  *
  * <p>Module-private — only {@code SchemaCatalogService} may use this.
+ *
+ * <p>KH-2.1 Part B (spec FS-2.1 D4): type-level {@code @Transactional(readOnly = true)} — see
+ * {@code key.persistence.IssuerKeyRepository}'s Javadoc for the full rationale.
  */
+@Transactional(readOnly = true)
 public interface CredentialSchemaRepository extends JpaRepository<CredentialSchema, UUID> {
 
   Optional<CredentialSchema> findByTenantIdAndCodeAndVersion(
@@ -50,6 +55,7 @@ public interface CredentialSchemaRepository extends JpaRepository<CredentialSche
    * defaultValidity} means "no configured default," not "leave whatever was there before").
    */
   @Modifying
+  @Transactional
   @Query(
       value =
           "UPDATE credential_schema SET default_validity = make_interval(secs => :seconds) WHERE"

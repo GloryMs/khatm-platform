@@ -8,13 +8,24 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 import sy.khatm.platform.key.domain.IssuerKey;
 
 /**
  * Repository for {@link IssuerKey} entities.
  *
  * <p>Module-private — only the {@code key} module's domain services may use this.
+ *
+ * <p>KH-2.1 Part B (spec FS-2.1 D4): type-level {@code @Transactional(readOnly = true)} makes every
+ * derived-query method here safe to call standalone (no ambient transaction) — without it, such a
+ * call runs via {@code SharedEntityManagerCreator}'s non-transactional path, so {@code
+ * shared.TenantContextTransactionExecutionListener} never fires and RLS closed-fails to zero rows
+ * regardless of the real data (see {@code RepositoryDefaultTransactionsTest}'s Javadoc for the full
+ * story). Lowest priority in Spring's annotation lookup, so a method with its own more specific
+ * {@code @Transactional} (below) or one called from inside a real service transaction is
+ * unaffected.
  */
+@Transactional(readOnly = true)
 public interface IssuerKeyRepository extends JpaRepository<IssuerKey, UUID> {
 
   Optional<IssuerKey> findByKid(String kid);
@@ -48,6 +59,7 @@ public interface IssuerKeyRepository extends JpaRepository<IssuerKey, UUID> {
    *     {@code ACTIVE} row per tenant)
    */
   @Modifying
+  @Transactional
   @Query(
       "UPDATE IssuerKey k SET k.state = 'RETIRING', k.validTo = :retiredAt "
           + "WHERE k.tenantId = :tenantId AND k.state = 'ACTIVE'")

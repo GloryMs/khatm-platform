@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
+import sy.khatm.platform.shared.SystemAccessExecutor;
 import sy.khatm.platform.shared.error.ErrorCode;
 import sy.khatm.platform.shared.error.NotFoundException;
 import sy.khatm.platform.shared.web.ErrorEnvelope;
@@ -54,10 +55,13 @@ class TenantStatusListController {
 
   private final TenantDirectory tenants;
   private final StatusListLookup statusLists;
+  private final SystemAccessExecutor systemAccess;
 
-  TenantStatusListController(TenantDirectory tenants, StatusListLookup statusLists) {
+  TenantStatusListController(
+      TenantDirectory tenants, StatusListLookup statusLists, SystemAccessExecutor systemAccess) {
     this.tenants = tenants;
     this.statusLists = statusLists;
+    this.systemAccess = systemAccess;
   }
 
   @Operation(
@@ -106,9 +110,12 @@ class TenantStatusListController {
             .findBySlug(tenantSlug)
             .orElseThrow(() -> new NotFoundException(ErrorCode.KH_TNT_0404, "tenant.not-found"));
 
+    // KH-2.1 (spec FS-2.1 D5): status_list is RLS-protected and this request has no principal to
+    // resolve a tenant from — the target tenant comes from the URL's slug instead, so this read
+    // (and the lazy-publish fallback's conditional write) runs under system access.
     StatusListArtifact artifact =
-        statusLists
-            .findArtifact(tenant.id(), listCode)
+        systemAccess
+            .runAsSystem(() -> statusLists.findArtifact(tenant.id(), listCode))
             .orElseThrow(() -> new NotFoundException(ErrorCode.KH_STS_0404, "status.not-found"));
 
     String eTag = "\"" + artifact.version() + "\"";

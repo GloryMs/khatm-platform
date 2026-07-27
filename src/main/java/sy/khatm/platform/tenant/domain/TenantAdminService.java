@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import sy.khatm.platform.key.api.TenantKeyProvisioner;
 import sy.khatm.platform.shared.LocalizedText;
+import sy.khatm.platform.shared.TenantContext;
 import sy.khatm.platform.shared.Uuidv7;
 import sy.khatm.platform.shared.audit.AuditAction;
 import sy.khatm.platform.shared.audit.AuditService;
@@ -64,26 +65,43 @@ class TenantAdminService implements TenantAdmin {
   }
 
   @Override
-  @Transactional
   public TenantView create(String slug, LocalizedText nameI18n, String type, String deployMode) {
     if (slug == null || !SLUG_PATTERN.matcher(slug).matches()) {
       throw new ValidationException(ErrorCode.KH_TNT_0400, "tenant.invalid-slug");
     }
 
     Tenant tenant = tenants.findBySlug(slug).orElse(null);
-    if (tenant == null) {
+    boolean freshRow = tenant == null;
+    if (freshRow) {
       tenant = insertNewRow(slug, nameI18n, type, deployMode);
       audit.record(AuditAction.TENANT_CREATED, "tenant", slug, null);
-    } else if (keyProvisioner.hasActiveKey(tenant.getId())) {
-      // Already fully onboarded — a second explicit create is a genuine conflict, never a silent
-      // overwrite (spec D9, same stance as consumer.domain.ConsumingPartyAdminService#create).
-      throw new ConflictException(ErrorCode.KH_TNT_0409, "tenant.duplicate-slug");
     }
-    // Else: a tenant row exists but has no ACTIVE key yet — a prior onboarding attempt died between
-    // steps (spec V3). Resume rather than reject; every step below is independently idempotent.
 
-    keyProvisioner.provisionFirstKey(tenant.getId(), tenant.getSlug());
-    statusLists.ensureList(tenant.getId(), defaultListCode(tenant.getSlug()));
+    // KH-2.1 Part B (spec D2/D4): issuer_key/status_list are RLS-protected, and the calling admin's
+    // own ambient tenant (whatever TenantContextFilter resolved from THEIR principal) is never the
+    // tenant being onboarded — RLS's tenant_isolation policy would hide/reject reads and inserts
+    // under the admin's own tenant_id. This scope also covers the hasActiveKey conflict check below
+    // (not just provisioning): checking an EXISTING tenant's key under the wrong ambient context
+    // would always see zero rows and silently fall through to the resume path instead of detecting
+    // a genuine duplicate. Deliberately NOT @Transactional on this method (each step below is
+    // already independently idempotent per the resumable-onboarding design below, and each needs
+    // its own fresh physical transaction anyway so shared.TenantContextTransactionExecutionListener
+    // re-fires and picks up the target tenant set here, not the admin caller's own).
+    TenantContext.set(tenant.getId(), tenant.getSlug());
+    try {
+      if (!freshRow && keyProvisioner.hasActiveKey(tenant.getId())) {
+        // Already fully onboarded — a second explicit create is a genuine conflict, never a silent
+        // overwrite (spec D9, same stance as consumer.domain.ConsumingPartyAdminService#create).
+        throw new ConflictException(ErrorCode.KH_TNT_0409, "tenant.duplicate-slug");
+      }
+      // Else: a tenant row exists but has no ACTIVE key yet — a prior onboarding attempt died
+      // between steps (spec V3). Resume rather than reject; every step below is independently
+      // idempotent.
+      keyProvisioner.provisionFirstKey(tenant.getId(), tenant.getSlug());
+      statusLists.ensureList(tenant.getId(), defaultListCode(tenant.getSlug()));
+    } finally {
+      TenantContext.clear();
+    }
 
     return toView(tenant);
   }

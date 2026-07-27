@@ -10,8 +10,15 @@ services:
       POSTGRES_DB: khatm
       POSTGRES_USER: khatm
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-khatm_local_only}
+      # KH-2.1 (spec FS-2.1 D3): read by docker/postgres-init/01-create-khatm-app-role.sh, which
+      # provisions the low-privilege runtime role khatm-api/khatm-worker connect as below.
+      KHATM_APP_DB_PASSWORD: ${KHATM_APP_DB_PASSWORD:-khatm_app_local_only}
     ports: ["5432:5432"]          # exposed for IntelliJ DB tools
-    volumes: [khatm_pgdata:/var/lib/postgresql/data]
+    volumes:
+      - khatm_pgdata:/var/lib/postgresql/data
+      # Runs only against a FRESH (empty) data directory — an existing khatm_pgdata volume from
+      # before KH-2.1 needs the one-time manual step docs/deploy-staging.md documents instead.
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U khatm -d khatm"]
       interval: 5s
@@ -35,9 +42,16 @@ services:
     container_name: khatm-api
     environment:
       SPRING_PROFILES_ACTIVE: local,api
+      # KH-2.1 (spec FS-2.1 D3): the app's own datasource runs as khatm_app — no BYPASSRLS, not a
+      # table owner, RLS-bound (V7__rls_policies.sql). Flyway alone still runs as the owner role
+      # (khatm) via the separate SPRING_FLYWAY_* datasource below — Boot's Flyway autoconfiguration
+      # splits onto its own connection whenever spring.flyway.url is set.
       SPRING_DATASOURCE_URL: jdbc:postgresql://khatm-postgres:5432/khatm
-      SPRING_DATASOURCE_USERNAME: khatm
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-khatm_local_only}
+      SPRING_DATASOURCE_USERNAME: khatm_app
+      SPRING_DATASOURCE_PASSWORD: ${KHATM_APP_DB_PASSWORD:-khatm_app_local_only}
+      SPRING_FLYWAY_URL: jdbc:postgresql://khatm-postgres:5432/khatm
+      SPRING_FLYWAY_USER: khatm
+      SPRING_FLYWAY_PASSWORD: ${POSTGRES_PASSWORD:-khatm_local_only}
       SPRING_DATA_REDIS_HOST: khatm-redis
       # KH-0.5 (spec FS-0.5 §7): SoftKeyProvider's PKCS#12 keystore passphrase. Must come from
       # env in any real deployment; this local-only default matches application.yml's 'local'
@@ -49,7 +63,7 @@ services:
       # export KHATM_PUBLIC_BASE_URL=http://<your-LAN-IP>:8080 in the shell that runs `docker
       # compose up` (see README "Running locally"). Falls back to localhost for a same-machine
       # dev loop, matching application.yml's 'local' profile default.
-      KHATM_PUBLIC_BASE_URL: ${KHATM_PUBLIC_BASE_URL:-http://localhost:8080}
+      KHATM_PUBLIC_BASE_URL: ${KHATM_PUBLIC_BASE_URL:-http://172.16.3.106:8080}
     ports: ["8080:8080"]
     volumes: [khatm_keys:/var/khatm/keys]
     depends_on:
@@ -62,9 +76,13 @@ services:
     container_name: khatm-worker
     environment:
       SPRING_PROFILES_ACTIVE: local,worker
+      # KH-2.1 (spec FS-2.1 D3): same role split as khatm-api above.
       SPRING_DATASOURCE_URL: jdbc:postgresql://khatm-postgres:5432/khatm
-      SPRING_DATASOURCE_USERNAME: khatm
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-khatm_local_only}
+      SPRING_DATASOURCE_USERNAME: khatm_app
+      SPRING_DATASOURCE_PASSWORD: ${KHATM_APP_DB_PASSWORD:-khatm_app_local_only}
+      SPRING_FLYWAY_URL: jdbc:postgresql://khatm-postgres:5432/khatm
+      SPRING_FLYWAY_USER: khatm
+      SPRING_FLYWAY_PASSWORD: ${POSTGRES_PASSWORD:-khatm_local_only}
       SPRING_DATA_REDIS_HOST: khatm-redis
       KHATM_KEYS_PASSPHRASE: ${KHATM_KEYS_PASSPHRASE:-khatm-local-dev-passphrase-change-me}
       # PublicUrlBuilder is wired regardless of role — same value as khatm-api above (see its

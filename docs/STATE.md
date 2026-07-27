@@ -5,6 +5,116 @@
 
 ## Current phase / task
 - Phase 0 — Production Foundation, fully closed (see prior sessions).
+- **KH-2.1-BE — Multi-Tenancy Core** (session `feat/KH-2.1-BE-multi-tenancy-core`, 2026-07-27,
+  spec `docs/specs/FS-2.1-multi-tenancy-core.md`): full multi-tenancy — tenant context resolution,
+  a tenant admin/onboarding plane, per-tenant trust endpoints, and real Postgres Row Level
+  Security enforcement. `mvn verify` green, **308/308 tests (38 new)**. Two parts, one session,
+  separated by the spec's own hard checkpoint:
+  - **Part A** (D1, D6–D9, no RLS yet): `shared.TenantContext` became `ThreadLocal`-backed
+    (`set`/`clear`/`current`/`currentSlug`, falling back to the default tenant when unset — zero
+    call-site changes needed anywhere). New `tenant.api`/`tenant.domain`/`tenant.web` — the
+    onboarding plane (`POST /api/v1/admin/tenants`, resumable-create design, spec V3: a slug with a
+    tenant row but no `ACTIVE` key yet resumes instead of conflicting — no `KH-TNT-0422` needed).
+    New narrow cross-module surfaces `key.api.TenantKeyProvisioner`/`JwksLookup` and
+    `status.api.StatusListAllocator#ensureList`/`StatusListLookup#findArtifact`. Per-tenant JWKS
+    (`GET /t/{slug}/.well-known/jwks.json`) and status-list (`GET /sl/{slug}/{listCode}`, moved
+    from `status.web` to `tenant.web`) endpoints — the relocation avoids a Modulith cycle
+    (`tenant` depends one-way on `key`/`status :: api` for onboarding). Suspended-tenant
+    enforcement blocks issuance/login/new-sessions only (spec V4) — verify/consume/status-list/JWKS
+    keep serving a suspended tenant's already-issued credentials. Legacy `/.well-known/jwks.json`
+    stays as a deprecated default-tenant alias (spec V2), zero code change. Committed standalone
+    as `5819fd3` before Part B started, per the spec's hard checkpoint.
+  - **Part B** (D2–D5, D10, real RLS): `V7__rls_policies.sql` — `FORCE ROW LEVEL SECURITY` +
+    `tenant_isolation`/`system_access` PERMISSIVE policies on 14 business tables (backfilled
+    `tenant_id` onto two join tables, `consuming_party_schema`/`user_role`, that had none), a
+    locked-down `khatm_app` DB role (no `BYPASSRLS`, not table owner), transaction-scoped
+    `app.tenant_id` propagation (`shared.TenantContextTransactionExecutionListener`, registered on
+    the app's `JpaTransactionManager`), and `shared.SystemAccessExecutor` for the enumerated
+    anonymous-principal read paths. Mandatory `db.CrossTenantIsolationTest` (HTTP-layer 404,
+    repository-layer RLS-not-app-code proof, missing-context closed-fail).
+    **Bugs found and fixed along the way, all confirmed real (not test-only) and RLS-caused:**
+    1. `TenantAdminService#create`'s `hasActiveKey` conflict check ran under the *calling admin's*
+       ambient tenant, not the target — RLS hid the target's own key, so a genuine duplicate-slug
+       conflict silently fell through to the resume path instead of throwing `KH-TNT-0409`.
+    2. `ApiKeyService#create(..., UUID tenantId)` (the tenant-admin-plane overload minting a key for
+       a tenant other than the caller's own) inserted under the wrong ambient `app.tenant_id` for
+       the same reason — fixed with the same explicit `TenantContext.set(tenantId, slug)` pattern.
+    3. `ApiKeyService#verify` — API-key verification is, by construction, a lookup with no tenant
+       known yet (resolving it is the point), so it can never rely on ambient `TenantContext` the
+       way this class's other methods do; a key for any non-default tenant was invisible. Now runs
+       under `SystemAccessExecutor` (added to its enumeration).
+    4. **The big one:** Spring Data JPA derived-query methods are only transactional when called
+       from inside another `@Transactional` method — invoked bare (deliberately, for unrelated
+       reasons, at a handful of real production call sites, plus dozens of test "call service, then
+       verify via a bare repository/`jdbc` call" assertions), they run with no Spring-managed
+       transaction, so the `app.tenant_id` listener never fires and RLS closed-fails to zero rows
+       regardless of the real data. This silently turned `credential.domain.CredentialService
+       #enforceSchemaAllowlist`'s "can't resolve this schema, don't block" fallback into "can never
+       resolve any schema, always allow" — **a real authorization bypass**, caught by
+       `rbac.ConsumeApiKeyGateTest` (expected 403, got 200). Fixed platform-wide: every
+       `JpaRepository` interface now carries a type-level `@Transactional(readOnly = true)` (a
+       no-op wherever a method already has its own more-specific annotation or an ambient
+       transaction — lowest priority in Spring's lookup order), with an explicit bare
+       `@Transactional` override on every `@Modifying` method; `db.RepositoryDefaultTransactionsTest`
+       pins both as a structural invariant, and `enforceSchemaAllowlist`'s fallback is now
+       deny-by-default on principle (new `consumer.schema-unresolvable` messageKey, same
+       `KH-CNS-0403` code), not just because the underlying bug is fixed. Decision + all four riders
+       (structural test, deny-by-default flip, this writeup) made with Majd + a plan-mode architect
+       review mid-session — see git history for the exact exchange.
+    5. `TransactionalTestJdbcTemplateConfig` (test-only, wraps the shared `JdbcTemplate` bean so
+       bare test verification calls get a transaction) originally used `REQUIRES_NEW`, which
+       suspends and cannot see an *ambient* test-method transaction's own uncommitted JPA writes
+       (`ClaimCodeExpirySweepTest` et al., which deliberately wrap the whole test method in one
+       transaction for unrelated reasons) — changed to `REQUIRED`, correct for both cases.
+    **Known, deliberate discrepancy — flagged, not fixed:** `docs/CONVENTIONS.md §5` still says
+    "Transactions at service layer (`@Transactional`), never controllers/repositories," which the
+    type-level repository annotation above now contradicts. `CONVENTIONS.md` is a contract this
+    session has no explicit approval to edit (CLAUDE.md session protocol) — flagging here for
+    Majd to fold into `CONVENTIONS.md §5` in a future session, or override.
+    **Three more bugs found only by the live compose e2e run (3 real tenants, real Postgres) — none
+    of these surfaced in the Testcontainers-backed suite, which is why the DoD requires the e2e
+    step at all, not just `mvn verify`:**
+    6. `event_publication` (Spring Modulith's own JDBC event-publication registry, `V1__baseline.sql`
+       §3.12) never got a `khatm_app` grant — `V7`'s grant loop only covered the 14 RLS-protected
+       business tables plus the one documented RLS exclusion (`tenant`), missing this table
+       entirely. Every event-publishing request (i.e. every credential issuance) failed with
+       "permission denied for table event_publication" — reproduced against both an existing
+       pre-KH-2.1 volume and a genuinely fresh one, so this is a universal gap, not an
+       upgrade-path-only one. New `V8__event_publication_grants.sql` (append-only, per CLAUDE.md —
+       `V7` was already applied nowhere outside this session, but the rule is the rule).
+    7. `status.worker.StatusListPublishSweepWorker` runs its whole tick under
+       `SystemAccessExecutor` (correctly, so `findStaleIds` sees every tenant's stale lists in one
+       query) but never set `TenantContext` to each individual list's own tenant before signing it —
+       `key.domain.KeySignerImpl` reads only the ambient `TenantContext`, so every list the sweep
+       touched was signed with whichever tenant happened to be ambient for the scheduled worker
+       thread (the platform default, in practice), regardless of which tenant actually owned it. A
+       wallet verifying a non-default tenant's status list against that tenant's own JWKS would
+       always fail signature verification. `StatusListRepository#findStaleIds` widened to
+       `findStaleRefs()` (new `StaleStatusListRef(id, tenantId)` projection) so the sweep can wrap
+       each list's publish in `TenantContext.set(ref.tenantId(), "")`. Regression test in
+       `StatusListPublishTest` provisions a second tenant and asserts the published artifact's JWS
+       `kid` matches that tenant's own key.
+    8. `CredentialService#verify` and `ClaimRedemptionService#redeem` both run under
+       `SystemAccessExecutor` (anonymous, no ambient tenant) and both independently re-derive a
+       `statusListUri` response field via `StatusListLookup#findRef` →
+       `status.domain.StatusListUriBuilder`, which builds the `/sl/{tenantSlug}/...` path from
+       `TenantContext.currentSlug()` — always the platform default for these two anonymous paths,
+       regardless of which tenant actually issued the credential. (The credential's own *embedded*
+       JWT claim was always correct, since `#issue` runs under the issuing tenant's authenticated
+       context — only this separately-rebuilt convenience field was wrong.) Fixed by resolving the
+       credential's own tenant's slug via `tenant.api.TenantDirectory` (new `credential → tenant ::
+       api` dependency edge — safe, `tenant` has no reverse dependency on `credential`) and wrapping
+       the `findRef` call in `TenantContext.set(credential.getTenantId(), slug)` in both services.
+       Regression test added to `db.CrossTenantIsolationTest`.
+    **DoD status:** `mvn verify` green (308/308); live compose e2e (3 tenants, `e2e-alpha`/
+    `e2e-alpha2`/`e2e-beta`/`e2e-beta2` across a fresh-volume run and an existing-pre-KH-2.1-volume
+    upgrade run) — **done**, full sequence (onboard → key → issue → per-tenant JWKS/status-list →
+    cross-tenant 404 → suspend blocks issuance while verify/status-list/JWKS keep serving → reactivate
+    restores issuance) passing on the final image; PR — opened, not merged; Arabic-review gate —
+    `tenant.*` and `consumer.schema-unresolvable` message keys need Majd's review before merge.
+    **Also updated `docs/deploy-staging.md`** with the `khatm_app` role provisioning requirement
+    (fresh-host compose snippet + a one-time manual-SQL step for an existing pre-KH-2.1 deployment,
+    since `docker-entrypoint-initdb.d` only runs against an empty data directory).
 - **KH-1.1.5-BE — Dashboard v2 read endpoints** (session `feat/KH-1.1.5-BE-dashboard-stats-v2`,
   2026-07-25, spec `docs/specs/FS-1.5.4-dashboard-stats-v2.md`): added `GET /api/v1/stats/daily`,
   `GET /api/v1/activity`, `GET /api/v1/attention`, `GET /api/v1/admin/signing-keys`, and
@@ -305,9 +415,13 @@
   `JAVA_HOME` must point at the JDK 21 install for builds to target the right release —
   IntelliJ project SDK and JAVA_HOME both point at Eclipse Temurin 21 (fixed manually
   2026-07-15) — the JDK 17 install remains on disk but is unused.
-- Default tenant strategy: single default tenant row until KH-2.1 — fixed UUID
-  `00000000-0000-0000-0000-000000000001`, seeded by `V1__baseline.sql`, mirrored in Java as
-  `sy.khatm.platform.shared.TenantContext.DEFAULT_TENANT_ID`.
+- Default tenant strategy: **KH-2.1 landed real multi-tenancy** (tenant admin/onboarding plane +
+  Postgres RLS) — the original fixed default-tenant UUID
+  `00000000-0000-0000-0000-000000000001` (seeded by `V1__baseline.sql`, mirrored as
+  `sy.khatm.platform.shared.TenantContext.DEFAULT_TENANT_ID`) still exists and still works as the
+  fallback every pre-KH-2.1 code path (seeders, the legacy default-tenant JWKS alias, any caller
+  that never touches tenant machinery) resolves to when nothing set an explicit tenant context —
+  it just isn't the *only* tenant anymore.
 - Docker Desktop on this machine needs `src/test/resources/docker-java.properties`
   (`api.version=1.44`) for Testcontainers to connect at all (see decisions above).
 - Docker Desktop does not auto-start on login on this machine — `docker info` fails until it's
@@ -380,37 +494,42 @@ bulk issuance + the stats endpoint + OpenAPI security schemes; KH-1.1.5-BE, this
 merged, no PR opened** — added Dashboard v2's five read endpoints, unblocking the console's four
 placeholder panels — see "Current phase / task" above for the full breakdown).
 
-1. **KH-1.1.5-BE needs a PR + merge** (this session's own work) — branch
+1. **KH-2.1-BE needs Majd's review + merge** (this session's own work, see "Current phase / task"
+   above for full detail) — branch `feat/KH-2.1-BE-multi-tenancy-core`, `mvn verify` green
+   (308/308), live compose e2e done, PR opened. Merge waits on Majd's Arabic-review gate for the
+   new `tenant.*`/`consumer.schema-unresolvable` message keys, and a decision on the flagged
+   `CONVENTIONS.md §5` discrepancy (repository-level `@Transactional` vs. "service layer only").
+2. **KH-1.1.5-BE needs a PR + merge** (prior session's own work) — branch
    `feat/KH-1.1.5-BE-dashboard-stats-v2`, `mvn verify` green (274/274). Not opened this session
    since it wasn't asked for.
-2. **Console's four Dashboard v2 panels (other repo)** — once merged, wiring the console side to
+3. **Console's four Dashboard v2 panels (other repo)** — once merged, wiring the console side to
    real data is the already-scoped follow-up this session's brief named (khatm-console's
    `docs/STATE.md`, "Next up" #5).
-3. **"Signing key approaching rotation" attention item — deliberately not built this session**
+4. **"Signing key approaching rotation" attention item — deliberately not built this session**
    (KH-1.1.5-BE spec D5): needs a new, narrow, state-only `key :: api` surface Majd declined to add
    for now, to keep `key`'s "other modules must never see rotation" stance untouched. Revisit only
    if that boundary decision changes — see `docs/specs/FS-1.5.4-dashboard-stats-v2.md` D5.
-4. **C2 / C2b / C3 / C4 (console, other repo)** — the console team's active milestone; the bulk-issue
+5. **C2 / C2b / C3 / C4 (console, other repo)** — the console team's active milestone; the bulk-issue
    + stats endpoints (plus KH-1.4.4-BE's consuming-parties admin plane and KH-1.1-BE's schema
    management/credential search) exist specifically to unblock the console's remaining screens
    (issue wizard, pilot-metrics dashboard, consuming-parties screen, consume simulator). No further
    platform-side work is scheduled ahead of a concrete console ask.
-5. ~~KH-1.1.3-BE — bulk issuance endpoint + a stats/counters endpoint~~ — **CLOSED:**
+6. ~~KH-1.1.3-BE — bulk issuance endpoint + a stats/counters endpoint~~ — **CLOSED:**
    `POST /api/v1/credentials/bulk` + `GET /api/v1/stats`, both scope-gated, both
    backed by the reused single-issue path / `audit_log` aggregation respectively — no new
    bookkeeping. See "Last completed" → Session KH-1.1.3-BE for the full breakdown.
-6. KH-0.3.3 activation — **config, not code**: set the staging secrets in `docs/deploy-staging.md`
+7. KH-0.3.3 activation — **config, not code**: set the staging secrets in `docs/deploy-staging.md`
    and the `release.yml` deploy job runs on the next push to `main`. (The publish half is already
    live; only the gated deploy half waits on a host — Majd.)
-7. ~~`ConsumingPartyRegistryService#ensure` find-or-create race~~ — **CLOSED (KH-1.4.4-BE):**
+8. ~~`ConsumingPartyRegistryService#ensure` find-or-create race~~ — **CLOSED (KH-1.4.4-BE):**
    `ensure` is no longer `@Transactional` and the entity forces a true `INSERT`
    (`Persistable`), so a lost race's `DataIntegrityViolationException` rolls back cleanly and the
    catch re-reads the winner's row directly — exactly the shape flagged here. Regression test
    `db.ConsumingPartyEnsureRaceTest`.
-8. KH-2.2 — full RBAC (replaces D5's lean `role.scopes text[]` with real Permission tables, admin
+9. KH-2.2 — full RBAC (replaces D5's lean `role.scopes text[]` with real Permission tables, admin
    console for user/role management, granular `schema:manage`/`consumer:manage` scopes replacing the
    MVP `admin`-scope stand-in) + RBAC-gated REST endpoint for `KeyLifecycleService.rotate()`.
-9. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM.
+10. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM.
 
 ## Standing conventions (promoted to docs/CONVENTIONS.md §7)
 - **Work rules 2 & 3 (error handling & i18n)** → `docs/CONVENTIONS.md §7.1`.

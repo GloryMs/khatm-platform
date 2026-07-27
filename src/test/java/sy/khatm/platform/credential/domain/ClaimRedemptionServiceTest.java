@@ -19,6 +19,7 @@ import sy.khatm.platform.credential.api.IssueRequest;
 import sy.khatm.platform.credential.api.IssueResponse;
 import sy.khatm.platform.credential.persistence.ClaimCodeRepository;
 import sy.khatm.platform.credential.worker.ClaimCodeExpiryWorker;
+import sy.khatm.platform.shared.SystemAccessExecutor;
 import sy.khatm.platform.shared.audit.AuditService;
 import sy.khatm.platform.shared.error.NotFoundException;
 import sy.khatm.platform.support.IntegrationTestSupport;
@@ -35,6 +36,7 @@ class ClaimRedemptionServiceTest extends IntegrationTestSupport {
   @Autowired private AuditService auditService;
   @Autowired private JdbcTemplate jdbc;
   @Autowired private EntityManager entityManager;
+  @Autowired private SystemAccessExecutor systemAccess;
 
   @Test
   void redeem_validCode_deliversCredentialAndZeroesDisclosuresAndAudits() {
@@ -194,7 +196,7 @@ class ClaimRedemptionServiceTest extends IntegrationTestSupport {
         Timestamp.from(Instant.now().minus(1, ChronoUnit.HOURS)),
         UUID.fromString(issued.id()));
     entityManager.clear();
-    int zeroed = new ClaimCodeExpiryWorker(claimCodes, auditService).sweep();
+    int zeroed = new ClaimCodeExpiryWorker(claimCodes, auditService, systemAccess).sweep();
     assertThat(zeroed).isEqualTo(1);
 
     assertThatThrownBy(() -> redemptionService.redeem(claimCode.code()))
