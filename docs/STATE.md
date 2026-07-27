@@ -5,6 +5,66 @@
 
 ## Current phase / task
 - Phase 0 — Production Foundation, fully closed (see prior sessions).
+- **chore/KH-2.1-review-followups — post-merge review actions for KH-2.1-BE** (session
+  `chore/KH-2.1-review-followups`, 2026-07-27): four follow-ups from KH-2.1-BE's review (PR #36,
+  merged), `mvn verify` green, **316/316 tests (8 new)**. No contract change (additive-only
+  confirmed via `OpenApiContractTest`), no message-bundle change — no Arabic-review gate this
+  session.
+  1. **`docs/CONVENTIONS.md §5` amended** (explicit approval this session) to codify the
+     repository-transactional exception KH-2.1-BE's bug-4 fix introduced, replacing the old
+     absolute "never repositories" line — see `docs/CONVENTIONS.md §5` for the final wording. The
+     "known, deliberate discrepancy" note this created in the KH-2.1-BE writeup below, and the
+     corresponding stale "Next up" item, are both removed.
+  2. **`TenantContextFilter` coverage — proven, not assumed** (the review's main concern):
+     - **Fail-fast guard**: `TenantContext.current()`/`currentSlug()` now throw
+       `IllegalStateException` (→ generic 500, no new `ErrorCode`/message key — reuses the
+       existing unhandled-exception path) when `SecurityContextHolder` holds a real, authenticated,
+       non-anonymous principal but nothing was ever `set` on the thread — the "filter got
+       bypassed" shape. The default-tenant fallback stays legal for the five genuinely anonymous
+       HTTP paths, `SystemAccessExecutor`-wrapped worker/lookup code, seeders, and tests, verified
+       against the code path by path (see `TenantContext`'s class Javadoc).
+     - **Self-inflicted regression caught before shipping**: the new guard initially broke ~210
+       tests platform-wide. Root cause: `TenantContextTransactionExecutionListener#afterBegin`
+       fires on every physical transaction, including the one `TenantContextFilter` itself uses
+       internally to look up which tenant to `set` — at that exact moment a real principal is
+       already on the `SecurityContext` but `TenantContext.set` hasn't run yet (resolving the
+       tenant *is* the point of that lookup), which the new guard wrongly rejected as a bypass.
+       Fixed with a new package-private, never-throwing
+       `TenantContext#currentIdForTransactionPropagation()`, used only by that listener — plumbing,
+       not an HTTP-authentication judgment call.
+     - **Structural coverage proof**: new `rbac.security.TenantContextFilterCoverageTest` asserts,
+       via `SecurityFilterChain#getFilters()` (public API), that `TenantContextFilter`'s index is
+       after `ApiKeyAuthFilter`'s on the api-key chain and after `SecurityContextHolderFilter`'s on
+       the session chain — a structural guarantee covering every route on either chain, present or
+       future, not a sampled route list. Chosen over a `MockMvc` route-enumeration sweep (would
+       duplicate `SecurityConfig`'s private path constants and go stale as routes are added) — see
+       the test's own Javadoc for the full rationale. Note: no pre-existing "public-path-list test"
+       was found in the codebase to reuse as a shared source of truth, despite a thorough search;
+       this test stands alone.
+     - **Guard regression test**: new `shared.TenantContextFailFastGuardTest` (5 cases) —
+       authenticated-principal-plus-unset-context throws for both `current()`/`currentSlug()`;
+       anonymous/no-authentication/explicitly-set-context all still fall back or return correctly,
+       never throwing.
+  3. **Bug-7 aftermath — `V9__resign_status_lists.sql`**: confirmed by reading
+     `status.domain.StatusListPublisher#publishIfStale` that it only republishes when
+     `artifact_version < version`, so a pre-fix, wrongly-signed-but-version-current status list
+     (from KH-2.1-BE bug 7, the sweep-signing bug) would never be re-signed by any future sweep
+     tick, worker restart, or upgrade — republish is not otherwise guaranteed. New append-only,
+     data-only migration bumps every `status_list.version` by one, forcing exactly one re-sign per
+     list on the next sweep tick with the now-correct per-tenant key (a list that was always
+     correctly signed just gets one harmless extra re-sign). Regression test added to
+     `StatusListPublishTest` proving a version-bump-alone is sufficient to make an
+     already-current artifact look stale again and trigger a real republish.
+  4. **V7 `tenant_id` backfill — verified, not a constant, no fix needed**: read the applied
+     migration directly — `consuming_party_schema.tenant_id` backfills from
+     `consuming_party.tenant_id` via `UPDATE ... FROM consuming_party cp WHERE cp.id =
+     cps.consuming_party_id`; `user_role.tenant_id` backfills from `app_user.tenant_id` via
+     `UPDATE ... FROM app_user au WHERE au.id = ur.user_id`. Both derive from the parent row
+     through an explicit join, confirming the review's concern did not materialize.
+  - V1–V8 untouched, `MigrationImmutabilityTest` green; `V9`'s checksum appended to
+    `db/migration-checksums.lock`.
+  - **Branch `chore/KH-2.1-review-followups` — PR opened, not yet merged** (pending Majd's
+    review).
 - **KH-2.1-BE — Multi-Tenancy Core** (session `feat/KH-2.1-BE-multi-tenancy-core`, 2026-07-27,
   spec `docs/specs/FS-2.1-multi-tenancy-core.md`): full multi-tenancy — tenant context resolution,
   a tenant admin/onboarding plane, per-tenant trust endpoints, and real Postgres Row Level
@@ -66,11 +126,6 @@
        suspends and cannot see an *ambient* test-method transaction's own uncommitted JPA writes
        (`ClaimCodeExpirySweepTest` et al., which deliberately wrap the whole test method in one
        transaction for unrelated reasons) — changed to `REQUIRED`, correct for both cases.
-    **Known, deliberate discrepancy — flagged, not fixed:** `docs/CONVENTIONS.md §5` still says
-    "Transactions at service layer (`@Transactional`), never controllers/repositories," which the
-    type-level repository annotation above now contradicts. `CONVENTIONS.md` is a contract this
-    session has no explicit approval to edit (CLAUDE.md session protocol) — flagging here for
-    Majd to fold into `CONVENTIONS.md §5` in a future session, or override.
     **Three more bugs found only by the live compose e2e run (3 real tenants, real Postgres) — none
     of these surfaced in the Testcontainers-backed suite, which is why the DoD requires the e2e
     step at all, not just `mvn verify`:**
@@ -493,41 +548,38 @@ out a first wave (KH-1.1-BE schema management + credential search + the consume 
 KH-1.4.4-BE the consuming-party admin plane + closed the `ensure()` race; KH-1.1.3-BE bulk issuance
 + the stats endpoint + OpenAPI security schemes; KH-1.1.5-BE Dashboard v2's five read endpoints,
 merged via PR #35), and **KH-2.1-BE (multi-tenancy core + real Postgres RLS) is now merged via PR
-#36** — every PR named in this document is merged; there is no PR outstanding as of this update.
+#36**. Its own review follow-ups (`chore/KH-2.1-review-followups` — see "Current phase / task"
+above) are complete on that branch with a PR open, **not yet merged** — pending Majd's review; this
+is the one outstanding PR as of this update.
 
-1. **`docs/CONVENTIONS.md §5` needs a decision** — KH-2.1-BE's platform-wide type-level
-   `@Transactional(readOnly = true)` on every `JpaRepository` interface contradicts §5's current
-   "Transactions at service layer, never controllers/repositories" line (flagged, not fixed, per
-   CLAUDE.md's no-touch-without-explicit-approval rule for that file — see "Current phase / task"
-   above for the full rationale). Needs Majd to fold the exception into §5 or override the pattern.
-2. **Console's four Dashboard v2 panels (other repo)** — now that KH-1.1.5-BE is merged, wiring the
+1. **Console's four Dashboard v2 panels (other repo)** — now that KH-1.1.5-BE is merged, wiring the
    console side to real data is the already-scoped follow-up this session's brief named
    (khatm-console's `docs/STATE.md`, "Next up" #5).
-3. **"Signing key approaching rotation" attention item — deliberately not built this session**
+2. **"Signing key approaching rotation" attention item — deliberately not built this session**
    (KH-1.1.5-BE spec D5): needs a new, narrow, state-only `key :: api` surface Majd declined to add
    for now, to keep `key`'s "other modules must never see rotation" stance untouched. Revisit only
    if that boundary decision changes — see `docs/specs/FS-1.5.4-dashboard-stats-v2.md` D5.
-4. **C2 / C2b / C3 / C4 (console, other repo)** — the console team's active milestone; the bulk-issue
+3. **C2 / C2b / C3 / C4 (console, other repo)** — the console team's active milestone; the bulk-issue
    + stats endpoints (plus KH-1.4.4-BE's consuming-parties admin plane and KH-1.1-BE's schema
    management/credential search) exist specifically to unblock the console's remaining screens
    (issue wizard, pilot-metrics dashboard, consuming-parties screen, consume simulator). No further
    platform-side work is scheduled ahead of a concrete console ask.
-5. ~~KH-1.1.3-BE — bulk issuance endpoint + a stats/counters endpoint~~ — **CLOSED:**
+4. ~~KH-1.1.3-BE — bulk issuance endpoint + a stats/counters endpoint~~ — **CLOSED:**
    `POST /api/v1/credentials/bulk` + `GET /api/v1/stats`, both scope-gated, both
    backed by the reused single-issue path / `audit_log` aggregation respectively — no new
    bookkeeping. See "Last completed" → Session KH-1.1.3-BE for the full breakdown.
-6. KH-0.3.3 activation — **config, not code**: set the staging secrets in `docs/deploy-staging.md`
+5. KH-0.3.3 activation — **config, not code**: set the staging secrets in `docs/deploy-staging.md`
    and the `release.yml` deploy job runs on the next push to `main`. (The publish half is already
    live; only the gated deploy half waits on a host — Majd.)
-7. ~~`ConsumingPartyRegistryService#ensure` find-or-create race~~ — **CLOSED (KH-1.4.4-BE):**
+6. ~~`ConsumingPartyRegistryService#ensure` find-or-create race~~ — **CLOSED (KH-1.4.4-BE):**
    `ensure` is no longer `@Transactional` and the entity forces a true `INSERT`
    (`Persistable`), so a lost race's `DataIntegrityViolationException` rolls back cleanly and the
    catch re-reads the winner's row directly — exactly the shape flagged here. Regression test
    `db.ConsumingPartyEnsureRaceTest`.
-8. KH-2.2 — full RBAC (replaces D5's lean `role.scopes text[]` with real Permission tables, admin
+7. KH-2.2 — full RBAC (replaces D5's lean `role.scopes text[]` with real Permission tables, admin
    console for user/role management, granular `schema:manage`/`consumer:manage` scopes replacing the
    MVP `admin`-scope stand-in) + RBAC-gated REST endpoint for `KeyLifecycleService.rotate()`.
-9. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM.
+8. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM.
 
 ## Standing conventions (promoted to docs/CONVENTIONS.md §7)
 - **Work rules 2 & 3 (error handling & i18n)** → `docs/CONVENTIONS.md §7.1`.

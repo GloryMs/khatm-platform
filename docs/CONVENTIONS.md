@@ -62,7 +62,14 @@ throw new NotFoundException(ErrorCode.KH_CRD_0404, "credential.not-found", ref);
 ## 5. Persistence
 - Repositories extend `JpaRepository`; custom queries with `@Query` JPQL; native SQL only
   for the atomic consume UPDATE and RLS-adjacent operations — each documented with WHY.
-- Transactions at service layer (`@Transactional`), never controllers/repositories.
+- Transactions live at the service layer (`@Transactional` on services, never controllers).
+  Codified exception: every `JpaRepository` interface carries a type-level
+  `@Transactional(readOnly = true)`, and every declared `@Modifying` method carries an explicit
+  method-level `@Transactional` override. Rationale: Spring Data derived-query methods are NOT
+  individually transactional when invoked bare; under RLS this closed-fails to zero rows and once
+  converted a fail-open fallback into an authorization bypass (see KH-2.1-BE, bug 4). Both
+  invariants are structurally enforced by `db.RepositoryDefaultTransactionsTest` — a new
+  repository added without them fails CI.
 - Optimistic locking (`@Version`) on mutable aggregates; the consume path relies on the
   conditional UPDATE, not on versions.
 - Pagination mandatory on list endpoints (`Pageable`, max 200).

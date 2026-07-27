@@ -1,0 +1,23 @@
+-- V9__resign_status_lists.sql — KH-2.1-BE review follow-up (bug 7 aftermath), data-only.
+--
+-- Before the fix in PR #36, status.worker.StatusListPublishSweepWorker signed every stale list
+-- with whichever tenant happened to be ambient for the scheduled worker thread (the platform
+-- default, in practice), not the list's own tenant — so a non-default tenant's already-published
+-- artifact, on any volume that ran the sweep before that fix landed, may carry a signature that
+-- does not verify against that tenant's own JWKS.
+--
+-- status.domain.StatusListPublisher#publishIfStale only republishes when
+-- artifact_version < version (or signed_artifact IS NULL) — a list whose artifact_version is
+-- already caught up to its (unchanged) version is never touched again by any future sweep tick,
+-- worker restart, or upgrade, no matter how long the process runs. A wrongly-signed-but-
+-- version-current artifact would therefore stay wrong forever without this migration; republish
+-- is not otherwise guaranteed.
+--
+-- Bumping every row's version by one makes every list artifact_version < version on the next
+-- sweep tick after this migration applies, forcing exactly one re-sign per list — with the
+-- now-correct per-tenant key — regardless of whether that specific list was ever actually
+-- mis-signed (a list that was always correct just gets one harmless extra re-sign with the same
+-- key; never-published lists are already covered by the existing signed_artifact IS NULL branch
+-- and are unaffected either way). No bitstring/business data changes — version is purely an
+-- internal staleness counter (spec FS-1.3 D5), never client-facing semantic versioning.
+UPDATE status_list SET version = version + 1;

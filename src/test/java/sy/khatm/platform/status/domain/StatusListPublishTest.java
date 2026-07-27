@@ -207,6 +207,60 @@ class StatusListPublishTest extends IntegrationTestSupport {
     assertThat(actualKid).isEqualTo(otherKid);
   }
 
+  /**
+   * KH-2.1 review follow-up, bug 7 aftermath — {@code V9__resign_status_lists.sql}'s intended
+   * effect: {@link StatusListPublisher#publishIfStale} only republishes when {@code
+   * artifact_version < version}, so an already-current (published, not stale) artifact is never
+   * touched again by any future sweep tick on its own — exactly the shape a pre-fix,
+   * wrongly-signed-but-version-current artifact would be stuck in forever without V9's one-time
+   * {@code version = version + 1} bump. This test proves that bump alone (applied here to a single
+   * row, the same statement V9 applies to every row) is sufficient to make {@code publishIfStale}
+   * treat the list as stale again and republish it — i.e. the migration's mechanism actually works,
+   * not just that it runs.
+   */
+  @Test
+  void publishIfStale_afterVersionBumpAlone_treatsAnAlreadyCurrentArtifactAsStale_andRepublishes()
+      throws Exception {
+    StatusAllocation a = allocator.allocate(uniqueListCode());
+    UUID listId = a.statusListId();
+    revoker.revoke(listId, a.idx());
+
+    boolean firstPublish = publisher.publishIfStale(listId);
+    assertThat(firstPublish).as("first publish must actually happen").isTrue();
+    long versionAfterFirstPublish =
+        ((Number)
+                jdbc.queryForMap("SELECT version FROM status_list WHERE id = ?", listId)
+                    .get("version"))
+            .longValue();
+    long artifactVersionAfterFirstPublish =
+        ((Number)
+                jdbc.queryForMap("SELECT artifact_version FROM status_list WHERE id = ?", listId)
+                    .get("artifact_version"))
+            .longValue();
+    assertThat(artifactVersionAfterFirstPublish)
+        .as("freshly published: artifact_version caught up to version, nothing left stale")
+        .isEqualTo(versionAfterFirstPublish);
+    long auditCountBeforeBump = auditCount(listId);
+
+    // The exact statement V9__resign_status_lists.sql applies to every row, scoped here to just
+    // this one for test isolation — simulating the migration's effect without needing Flyway to
+    // literally re-run mid-test.
+    jdbc.update("UPDATE status_list SET version = version + 1 WHERE id = ?", listId);
+
+    boolean republished = publisher.publishIfStale(listId);
+
+    assertThat(republished)
+        .as("the version bump alone must be sufficient to make this look stale again")
+        .isTrue();
+    assertThat(auditCount(listId)).isEqualTo(auditCountBeforeBump + 1);
+    long artifactVersionAfterResign =
+        ((Number)
+                jdbc.queryForMap("SELECT artifact_version FROM status_list WHERE id = ?", listId)
+                    .get("artifact_version"))
+            .longValue();
+    assertThat(artifactVersionAfterResign).isEqualTo(versionAfterFirstPublish + 1);
+  }
+
   private long auditCount(UUID listId) {
     String listCode = listCodeOf(listId);
     return jdbc.queryForObject(
