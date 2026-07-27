@@ -11,7 +11,10 @@ import sy.khatm.platform.support.IntegrationTestSupport;
 
 /**
  * FS-0.2 §5 acceptance criterion 5 — {@code UPDATE}/{@code DELETE} on {@code audit_log} are
- * rejected by the {@code audit_log_no_update} trigger (append-only, NFR-08).
+ * rejected, {@code UPDATE} by the {@code audit_log_no_update} trigger (append-only, NFR-08), {@code
+ * DELETE} even before reaching it — KH-2.1 Part B's {@code khatm_app} role (spec FS-2.1 D3) was
+ * never granted {@code DELETE} on this table at all (V7__rls_policies.sql), so that statement fails
+ * at the permission level, a stronger defense-in-depth guarantee than the trigger alone.
  *
  * <p>Uses plain JDBC rather than an entity because no Java code writes to {@code audit_log} yet
  * (see {@code shared}'s README) — the trigger itself is what this test verifies, independent of any
@@ -32,12 +35,15 @@ class AuditLogAppendOnlyTest extends IntegrationTestSupport {
   }
 
   @Test
-  void delete_onAuditLogRow_isRejectedByTrigger() {
+  void delete_onAuditLogRow_isRejectedByPermissionDenial() {
     long id = insertProbeRow();
 
+    // Spring's translated exception (BadSqlGrammarException here) doesn't repeat Postgres's own
+    // error text in its own getMessage() — the "permission denied" text lives on the root cause.
     assertThatThrownBy(() -> jdbcTemplate.update("DELETE FROM audit_log WHERE id = ?", id))
         .isInstanceOf(DataAccessException.class)
-        .hasMessageContaining("append-only");
+        .rootCause()
+        .hasMessageContaining("permission denied");
   }
 
   private long insertProbeRow() {

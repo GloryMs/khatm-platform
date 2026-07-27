@@ -58,7 +58,7 @@ class StatusListRevokerService implements StatusListRevoker {
     // genuinely landed. Proof-shaped payload (id + version + timestamp only, never the bitstring
     // itself — SEC §9 applies to the stream exactly as to logs).
     eventPublisher.publishEvent(
-        new StatusListChanged(list.getId(), list.getVersion(), Instant.now()));
+        new StatusListChanged(list.getId(), list.getVersion(), Instant.now(), list.getTenantId()));
 
     return new StatusListRef(list.getVersion(), uriBuilder.build(list.getListCode()));
   }

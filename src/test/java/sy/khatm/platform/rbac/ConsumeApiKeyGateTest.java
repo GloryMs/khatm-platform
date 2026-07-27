@@ -139,6 +139,26 @@ class ConsumeApiKeyGateTest extends RbacHttpTestSupport {
   }
 
   @Test
+  void consume_withUnresolvableCredentialId_returns403_notAllowed() throws Exception {
+    // KH-2.1 Part B regression pin: CredentialService#enforceSchemaAllowlist's fallback for "can't
+    // resolve this credential's schema" must be deny, not the pre-fix silent allow that a missing
+    // RLS tenant context on the bare findSchemaId call used to produce for every well-formed but
+    // unresolvable id (this test predates that bug existing, but a well-formed random UUID with no
+    // matching credential row exercises the exact same code path deterministically).
+    ConsumingPartyRef party =
+        consumingParties.ensure("gate-test-unresolvable-" + UUID.randomUUID());
+    CreatedApiKey consumerKey =
+        apiKeyService.create(ApiKeyOwnerType.CONSUMING_PARTY, party.id(), Set.of("consume"));
+
+    ResponseEntity<String> response =
+        consume(consumerKey.rawKey(), UUID.randomUUID().toString(), "gate-test-unresolvable");
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+    JsonNode body = JSON.readTree(response.getBody());
+    assertThat(body.get("code").asText()).isEqualTo("KH-CNS-0403");
+  }
+
+  @Test
   void consume_withTenantKeyHavingConsumeScope_returns403() throws Exception {
     // SEC §7: consumption belongs to CONSUMING_PARTY keys only — a TENANT key is rejected even
     // when explicitly granted the consume scope. Enforced today by SecurityConfig's

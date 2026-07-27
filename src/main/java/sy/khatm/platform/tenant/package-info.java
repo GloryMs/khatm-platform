@@ -1,19 +1,40 @@
 /**
  * Tenant module — multi-tenancy management for the Khatm platform.
  *
- * <p><b>Responsibilities:</b> tenant lifecycle (create, suspend, delete), tenant configuration,
- * per-tenant quota and feature flags. Tenant context propagation for the single-tenant MVP is
- * provided via {@link sy.khatm.platform.shared.TenantContext} instead of this module, so that no
- * other module needs to depend on {@code tenant} before KH-2.x.
+ * <p><b>Responsibilities (KH-2.1, spec FS-2.1):</b> tenant lifecycle (onboard, suspend, activate —
+ * {@code tenant.domain.TenantAdminService}), tenant resolution by id/slug ({@code
+ * tenant.domain.TenantDirectoryService}). Per-request tenant context propagation itself still lives
+ * in {@link sy.khatm.platform.shared.TenantContext} (a {@code ThreadLocal}, populated by {@code
+ * rbac.security.TenantContextFilter}), not this module — {@code shared} is the one place every
+ * module can reach without a cross-module dependency. Per-tenant quotas/feature flags remain out of
+ * scope (a later KH-2.x).
  *
- * <p><b>Exposed API:</b> (none yet — KH-2.x). {@code Tenant} entity + repository exist only so
- * {@code ddl-auto: validate} covers the {@code tenant} table (KH-0.2.1).
+ * <p><b>Exposed API</b> ({@code tenant.api}): {@link sy.khatm.platform.tenant.api.TenantDirectory}
+ * (read-only lookup by id/slug — the {@code rbac} module's runtime cross-module dependency) and
+ * {@link sy.khatm.platform.tenant.api.TenantAdmin} (the admin plane behind {@code
+ * /api/v1/admin/tenants}). This module depends one-way on {@code key :: api} ({@code
+ * TenantKeyProvisioner}) and {@code status :: api} ({@code StatusListAllocator#ensureList}) for
+ * onboarding — deliberately one-way, so {@code key}/{@code status} never depend back on {@code
+ * tenant :: api}, which would be a Modulith cycle. The two public, slug-keyed HTTP endpoints that
+ * would otherwise need such a reverse dependency ({@code GET /t/{tenantSlug}/.well-known/jwks.json}
+ * and {@code GET /sl/{tenantSlug}/{listCode}}, relocated from {@code status.web}) live in {@code
+ * tenant.web} instead, for the same reason.
  *
  * <p><b>Published events:</b> (none yet)
  *
  * <p><b>Tables owned:</b> {@code tenant}
  *
- * <p><b>Status:</b> persistence only — business logic (create/suspend, quotas) deferred to KH-2.x.
+ * <p><b>Status:</b> KH-2.1 Part A — tenant context resolution, the admin/onboarding plane, and the
+ * per-tenant trust endpoints. Part B added real Postgres Row Level Security enforcement ({@code
+ * V7__rls_policies.sql}), a locked-down {@code khatm_app} database role, transaction-scoped {@code
+ * app.tenant_id} propagation ({@link sy.khatm.platform.shared.TenantContext} → {@code
+ * shared.TenantContextTransactionExecutionListener}), and {@code shared.SystemAccessExecutor} for
+ * the handful of legitimately-anonymous read paths — see {@code shared}'s package-info and README
+ * for the mechanism, since it applies platform-wide, not just to this module's own tables. {@code
+ * TenantAdminService#create} runs its key/status-list provisioning steps (and the
+ * conflict-vs-resume {@code hasActiveKey} check) under an explicit {@code TenantContext.set} for
+ * the target tenant, never the calling admin's own ambient one — RLS would otherwise hide or reject
+ * a fresh tenant's own rows.
  */
 @org.springframework.modulith.ApplicationModule
 package sy.khatm.platform.tenant;

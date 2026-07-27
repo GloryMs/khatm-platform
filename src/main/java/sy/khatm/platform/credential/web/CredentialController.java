@@ -38,6 +38,7 @@ import sy.khatm.platform.credential.domain.BulkIssueItemOutcome;
 import sy.khatm.platform.credential.domain.BulkIssueOutcome;
 import sy.khatm.platform.credential.domain.ClaimCodeIssued;
 import sy.khatm.platform.credential.domain.CredentialService;
+import sy.khatm.platform.shared.SystemAccessExecutor;
 import sy.khatm.platform.shared.audit.AuditAction;
 import sy.khatm.platform.shared.audit.AuditService;
 import sy.khatm.platform.shared.error.ErrorCode;
@@ -69,16 +70,19 @@ class CredentialController {
   private final BulkIssuanceService bulkIssuance;
   private final MessageSource messageSource;
   private final AuditService audit;
+  private final SystemAccessExecutor systemAccess;
 
   CredentialController(
       CredentialService service,
       BulkIssuanceService bulkIssuance,
       MessageSource messageSource,
-      AuditService audit) {
+      AuditService audit,
+      SystemAccessExecutor systemAccess) {
     this.service = service;
     this.bulkIssuance = bulkIssuance;
     this.messageSource = messageSource;
     this.audit = audit;
+    this.systemAccess = systemAccess;
   }
 
   @Operation(
@@ -215,7 +219,11 @@ class CredentialController {
       })
   @PostMapping("/verify")
   VerifyResponse verify(@Valid @RequestBody VerifyRequest req) {
-    VerifyResponse result = service.verify(req.sdJwt());
+    // KH-2.1 (spec FS-2.1 D5): /verify is genuinely anonymous — a presented credential may belong
+    // to any tenant, so this lookup runs under system access rather than any one tenant's RLS
+    // scope. The audit write below stays outside it, attributed to the default tenant like any
+    // other unscoped write.
+    VerifyResponse result = systemAccess.runAsSystem(() -> service.verify(req.sdJwt()));
     String reasonMessage =
         messageSource.getMessage(
             "verify.reason." + result.reason(), null, LocaleContextHolder.getLocale());

@@ -79,6 +79,8 @@ import sy.khatm.platform.status.api.StatusListAllocator;
 import sy.khatm.platform.status.api.StatusListLookup;
 import sy.khatm.platform.status.api.StatusListRef;
 import sy.khatm.platform.status.api.StatusListRevoker;
+import sy.khatm.platform.tenant.api.TenantDirectory;
+import sy.khatm.platform.tenant.api.TenantRef;
 
 /**
  * Core credential lifecycle service.
@@ -132,6 +134,7 @@ public class CredentialService {
   private final AuditService audit;
   private final CurrentActorResolver currentActorResolver;
   private final AtomicConsumptionRecorder consumptionRecorder;
+  private final TenantDirectory tenants;
 
   @Value("${khatm.issuer-did:did:web:khatm.sy:demo}")
   private String issuerDid;
@@ -154,7 +157,8 @@ public class CredentialService {
       ApplicationEventPublisher eventPublisher,
       AuditService audit,
       CurrentActorResolver currentActorResolver,
-      AtomicConsumptionRecorder consumptionRecorder) {
+      AtomicConsumptionRecorder consumptionRecorder,
+      TenantDirectory tenants) {
     this.credentials = credentials;
     this.events = events;
     this.claimCodes = claimCodes;
@@ -173,6 +177,7 @@ public class CredentialService {
     this.audit = audit;
     this.currentActorResolver = currentActorResolver;
     this.consumptionRecorder = consumptionRecorder;
+    this.tenants = tenants;
   }
 
   // ── Issue ────────────────────────────────────────────────────────────────
@@ -274,7 +279,7 @@ public class CredentialService {
     // event_publication outbox now (same tx) and externalizes it to the khatm.credential.events
     // Redis Stream after commit. Proof-shaped payload only — ref + timestamps, never claims or
     // disclosures (SEC §9 applies to the stream exactly as to logs).
-    eventPublisher.publishEvent(new CredentialIssued(ref, null, now));
+    eventPublisher.publishEvent(new CredentialIssued(ref, null, now, c.getTenantId()));
     audit.record(AuditAction.CREDENTIAL_ISSUED, "credential", ref, null);
 
     return new IssueResponse(id.toString(), ref, presentation);
@@ -434,7 +439,7 @@ public class CredentialService {
     // and the `revoked` column are always consistent, so `revoked` below is the bitstring-grounded
     // truth. The early-exit branches above never reached a row, so they carry
     // statusListChecked=false.
-    Optional<StatusListRef> statusRef = statusLookup.findRef(c.getStatusListId());
+    Optional<StatusListRef> statusRef = findRefForTenant(c.getTenantId(), c.getStatusListId());
     boolean statusListChecked = statusRef.isPresent();
     Long statusListVersion = statusRef.map(StatusListRef::version).orElse(null);
     String statusListUri = statusRef.map(StatusListRef::uri).orElse(null);
@@ -652,16 +657,22 @@ public class CredentialService {
    * by {@code ConsumeApiKeyGateTest}'s own audit-row assertion, not by inspection.
    *
    * <p>One lean indexed read ({@link CredentialRepository#findSchemaId}, {@code schema_id} only) on
-   * the common/allowed path; an unknown or malformed credential id is left for {@link #consume}
-   * itself to report as it always has (this check cannot violate an allowlist for a schema it can't
-   * resolve). A second read (the full entity, for its {@code ref}) only happens on the rare denial
-   * path, to attribute the audit row correctly.
+   * the common/allowed path; a malformed credential id is left for {@link #consume} itself to
+   * report as it always has (this check never even reaches {@code findSchemaId} for one — the
+   * {@code UUID.fromString} parse itself fails first). An unresolvable but well-formed id — most
+   * commonly a genuinely unknown credential, but also the shape a bug in this check's own RLS
+   * plumbing would take (KH-2.1 Part B: a schema lookup missing its tenant context closed-fails to
+   * zero rows, not an error) — is deny-by-default (spec D2's isolation principle) rather than
+   * silently passed through: a consuming-party key that cannot be proven to be allowed for a
+   * credential's schema must never be allowed to consume it. A second read (the full entity, for
+   * its {@code ref}) only happens on a denial path, to attribute the audit row correctly.
    *
    * @param rawCredentialId the request's raw {@code id} field, exactly as {@link #consume} receives
    *     it — a malformed value is silently ignored here since {@link #consume} reports {@code
    *     bad_id} as its own domain result
    * @throws AuthorizationException {@link ErrorCode#KH_CNS_0403} if the resolved actor is a
-   *     consuming party whose allowlist does not cover this credential's schema
+   *     consuming party whose allowlist does not cover this credential's schema, or whose schema
+   *     could not be resolved at all
    */
   public void enforceSchemaAllowlist(String rawCredentialId) {
     UUID credentialId;
@@ -675,22 +686,25 @@ public class CredentialService {
     if (actor.isEmpty() || actor.get().kind() != CurrentActor.ActorKind.API_KEY_CONSUMING_PARTY) {
       return;
     }
-    Optional<UUID> schemaId = credentials.findSchemaId(credentialId);
-    if (schemaId.isEmpty()) {
-      return;
-    }
     UUID partyId = actor.get().ownerId();
-    if (partyId != null && consumingParties.isSchemaAllowed(partyId, schemaId.get())) {
+    Optional<UUID> schemaId = credentials.findSchemaId(credentialId);
+    if (schemaId.isPresent()
+        && partyId != null
+        && consumingParties.isSchemaAllowed(partyId, schemaId.get())) {
       return;
     }
     String ref =
         credentials.findById(credentialId).map(Credential::getRef).orElse(credentialId.toString());
+    String messageKey =
+        schemaId.isEmpty() ? "consumer.schema-unresolvable" : "consumer.schema-not-allowed";
     audit.record(
         AuditAction.CONSUME_SCHEMA_DENIED,
         "credential",
         ref,
-        Map.of("schemaId", schemaId.get().toString(), "party", String.valueOf(partyId)));
-    throw new AuthorizationException(ErrorCode.KH_CNS_0403, "consumer.schema-not-allowed");
+        Map.of(
+            "schemaId", schemaId.map(UUID::toString).orElse("unresolved"),
+            "party", String.valueOf(partyId)));
+    throw new AuthorizationException(ErrorCode.KH_CNS_0403, messageKey);
   }
 
   // ── Revoke ────────────────────────────────────────────────────────────────
@@ -779,6 +793,27 @@ public class CredentialService {
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────
+
+  /**
+   * Resolve a status list's reference (including its fully-qualified public URI) under {@code
+   * tenantId}'s own {@link TenantContext}, not whatever tenant happens to be ambient for the
+   * calling thread — KH-2.1 Part B: {@link #verify} runs under {@code SystemAccessExecutor} (no
+   * principal, no ambient tenant of its own), and {@code status.domain.StatusListUriBuilder} builds
+   * the {@code /sl/{tenantSlug}/...} URL from {@link TenantContext#currentSlug()} — without this,
+   * every verify call would embed the {@code statusListUri} convenience field using whichever
+   * tenant is ambient (the platform default in practice), even though the credential itself belongs
+   * to a different tenant. {@link #issue} needs no equivalent wrapping: it always runs under the
+   * issuing tenant's own ambient context already (an authenticated API-key request).
+   */
+  private Optional<StatusListRef> findRefForTenant(UUID tenantId, UUID statusListId) {
+    String slug = tenants.findById(tenantId).map(TenantRef::slug).orElse("");
+    TenantContext.set(tenantId, slug);
+    try {
+      return statusLookup.findRef(statusListId);
+    } finally {
+      TenantContext.clear();
+    }
+  }
 
   private String buildRef(String schemaCode) {
     String prefix = schemaCode.replaceAll("[^A-Za-z]", "");

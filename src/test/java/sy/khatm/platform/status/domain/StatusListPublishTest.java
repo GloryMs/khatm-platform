@@ -10,6 +10,10 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
+import sy.khatm.platform.key.api.TenantKeyProvisioner;
+import sy.khatm.platform.shared.SystemAccessExecutor;
+import sy.khatm.platform.shared.TenantContext;
+import sy.khatm.platform.shared.Uuidv7;
 import sy.khatm.platform.status.api.StatusAllocation;
 import sy.khatm.platform.status.api.StatusListAllocator;
 import sy.khatm.platform.status.api.StatusListRef;
@@ -32,6 +36,8 @@ class StatusListPublishTest extends IntegrationTestSupport {
   @Autowired private StatusListPublisher publisher;
   @Autowired private StatusListRepository statusLists;
   @Autowired private JdbcTemplate jdbc;
+  @Autowired private SystemAccessExecutor systemAccess;
+  @Autowired private TenantKeyProvisioner keyProvisioner;
 
   @Test
   void publishIfStale_signsAndStoresArtifact_andAudits_andIsIdempotent() throws Exception {
@@ -123,7 +129,8 @@ class StatusListPublishTest extends IntegrationTestSupport {
     StatusAllocation a = allocator.allocate(uniqueListCode());
     StatusListRef ref = revoker.revoke(a.statusListId(), a.idx());
     // No event handler in this (non-worker) context — the list is stale until the sweep runs.
-    StatusListPublishSweepWorker sweep = new StatusListPublishSweepWorker(statusLists, publisher);
+    StatusListPublishSweepWorker sweep =
+        new StatusListPublishSweepWorker(statusLists, publisher, systemAccess);
 
     int published = sweep.sweep();
 
@@ -136,6 +143,68 @@ class StatusListPublishTest extends IntegrationTestSupport {
                         .get("artifact_version"))
                 .longValue())
         .isEqualTo(ref.version());
+  }
+
+  /**
+   * KH-2.1 Part B regression pin: the sweep is cross-tenant by construction (it runs under {@code
+   * SystemAccessExecutor} to see every tenant's stale lists in one query), but each list must still
+   * be <em>signed</em> with its own tenant's key, never whichever tenant happens to be ambient for
+   * the scheduled worker thread. Provisions a second, non-default tenant with its own key,
+   * allocates/revokes a bit on one of its lists, then runs the sweep with {@link TenantContext}
+   * back at its shared-test-context default (exactly the real scheduled-worker shape, no ambient
+   * tenant of its own) — the published artifact's {@code kid} must resolve to the OTHER tenant's
+   * own key, not the default tenant's.
+   */
+  @Test
+  void sweep_signsEachListWithItsOwnTenantsKey_notTheAmbientDefault() throws Exception {
+    UUID otherTenant = Uuidv7.generate();
+    String otherSlug = "sweep-cross-tenant-" + otherTenant;
+    jdbc.update(
+        "INSERT INTO tenant (id, slug, name_i18n, type, deploy_mode, status, created_at,"
+            + " updated_at) VALUES (?, ?, ?::jsonb, ?, ?, ?, now(), now())",
+        otherTenant,
+        otherSlug,
+        "{\"en\":\"Sweep cross-tenant\",\"ar\":\"اختبار\"}",
+        "OTHER",
+        "SAAS",
+        "ACTIVE");
+
+    String otherKid;
+    UUID otherListId;
+    int otherIdx;
+    TenantContext.set(otherTenant, otherSlug);
+    try {
+      otherKid = keyProvisioner.provisionFirstKey(otherTenant, otherSlug).kid();
+      StatusAllocation allocation = allocator.allocate(uniqueListCode());
+      otherListId = allocation.statusListId();
+      otherIdx = allocation.idx();
+      revoker.revoke(otherListId, otherIdx);
+    } finally {
+      TenantContext.clear();
+    }
+
+    // Back at the shared test context's own default tenant — the sweep itself must resolve each
+    // list's tenant from the row, not from whatever is ambient here.
+    StatusListPublishSweepWorker sweep =
+        new StatusListPublishSweepWorker(statusLists, publisher, systemAccess);
+    int published = sweep.sweep();
+    assertThat(published).isGreaterThanOrEqualTo(1);
+
+    // status_list is RLS-protected and this verification query is otherTenant's own row, not the
+    // shared test context's default — same TenantContext.set/clear as the provisioning block
+    // above.
+    String artifact;
+    TenantContext.set(otherTenant, otherSlug);
+    try {
+      artifact =
+          jdbc.queryForObject(
+              "SELECT signed_artifact FROM status_list WHERE id = ?", String.class, otherListId);
+    } finally {
+      TenantContext.clear();
+    }
+    assertThat(artifact).isNotNull();
+    String actualKid = SignedJWT.parse(artifact).getHeader().getKeyID();
+    assertThat(actualKid).isEqualTo(otherKid);
   }
 
   private long auditCount(UUID listId) {

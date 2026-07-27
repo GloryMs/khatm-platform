@@ -23,6 +23,7 @@ import sy.khatm.platform.rbac.domain.CreatedApiKey;
 import sy.khatm.platform.rbac.domain.LoginResult;
 import sy.khatm.platform.rbac.domain.UserView;
 import sy.khatm.platform.rbac.security.SessionAuthenticator;
+import sy.khatm.platform.shared.TenantContext;
 import sy.khatm.platform.shared.web.ErrorEnvelope;
 
 /**
@@ -122,17 +123,25 @@ class AuthController {
       summary = "Create an API key",
       description =
           "The response's rawKey is shown exactly once — the platform stores only its SHA-256"
-              + " hash and prefix (spec FS-0.6b §4). Requires the admin scope.",
+              + " hash and prefix (spec FS-0.6b §4). tenantId (spec FS-2.1) defaults to the"
+              + " caller's own tenant — a platform admin provisioning a newly onboarded tenant's"
+              + " first key names it explicitly. Requires the admin scope.",
       responses = {
         @ApiResponse(responseCode = "200", description = "Key created"),
         @ApiResponse(
             responseCode = "403",
             description = "Missing the admin scope (KH-RBC-0403)",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "404",
+            description = "The named tenantId does not exist (KH-TNT-0404)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
       })
   @PostMapping("/api/v1/admin/api-keys")
   ResponseEntity<CreateApiKeyResponse> createApiKey(@Valid @RequestBody CreateApiKeyRequest req) {
-    CreatedApiKey created = apiKeyService.create(req.ownerType(), req.ownerId(), req.scopes());
+    UUID targetTenant = req.tenantId() != null ? req.tenantId() : TenantContext.current();
+    CreatedApiKey created =
+        apiKeyService.create(req.ownerType(), req.ownerId(), req.scopes(), targetTenant);
     return ResponseEntity.ok(
         new CreateApiKeyResponse(created.id(), created.keyPrefix(), created.rawKey()));
   }

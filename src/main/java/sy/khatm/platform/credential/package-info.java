@@ -141,6 +141,7 @@
       "status :: api",
       "consumer :: api",
       "rbac :: api",
+      "tenant :: api",
       "shared",
       "shared :: error",
       "shared :: web",

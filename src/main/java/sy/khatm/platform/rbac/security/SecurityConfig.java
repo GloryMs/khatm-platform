@@ -14,6 +14,7 @@ import org.springframework.security.config.annotation.web.configurers.AuthorizeH
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
@@ -37,16 +38,19 @@ import sy.khatm.platform.shared.audit.AuditService;
  * within one chain — hence two chains, matched by request shape rather than URL pattern (the same
  * endpoint, e.g. {@code /issue}, can legitimately be called either way).
  *
- * <p><b>Public endpoints (D9, extended KH-1.2.1 and KH-1.3):</b> {@code POST
+ * <p><b>Public endpoints (D9, extended KH-1.2.1, KH-1.3, KH-2.1):</b> {@code POST
  * /api/v1/credentials/verify}, {@code GET /.well-known/jwks.json}, {@code POST
- * /api/v1/claims/redeem}, and {@code GET /sl/{tenantSlug}/{listCode}} — exactly four, enforced
- * identically on both chains via {@link #configureAuthorization}. The third authenticates by
- * possession of a one-time claim code rather than a session or API key (spec FS-1.2.1 §9) — its own
- * per-IP throttle ({@code credential.domain.ClaimRedeemThrottleService}) is what keeps it from
- * being an open door, not this class. The fourth is the public signed status-list artifact (spec
- * FS-1.3 D2) — a read-only public resource exactly like JWKS, never behind auth. Every other
- * endpoint requires at least a valid session or API key; {@link ScopeGuard}'s per-route rules layer
- * the specific scope/actor-kind requirement spec §3 names explicitly on top.
+ * /api/v1/claims/redeem}, {@code GET /sl/{tenantSlug}/{listCode}}, and (spec FS-2.1 D8) {@code GET
+ * /t/{tenantSlug}/.well-known/jwks.json} — five, enforced identically on both chains via {@link
+ * #configureAuthorization}. The third authenticates by possession of a one-time claim code rather
+ * than a session or API key (spec FS-1.2.1 §9) — its own per-IP throttle ({@code
+ * credential.domain.ClaimRedeemThrottleService}) is what keeps it from being an open door, not this
+ * class. The fourth is the public signed status-list artifact (spec FS-1.3 D2) — a read-only public
+ * resource exactly like JWKS, never behind auth. The fifth is the per-tenant JWKS alias (spec
+ * FS-2.1 D8) — same public-by-nature reasoning as the legacy JWKS path, just slug-resolved instead
+ * of hardcoded to the default tenant. Every other endpoint requires at least a valid session or API
+ * key; {@link ScopeGuard}'s per-route rules layer the specific scope/actor-kind requirement spec §3
+ * names explicitly on top.
  *
  * <p><b>API versioning (KH-1.6-early):</b> every business and auth endpoint lives under {@code
  * /api/v1/**} — the one breaking path change this platform ever makes with a straight face, done
@@ -125,6 +129,15 @@ import sy.khatm.platform.shared.audit.AuditService;
  * /api/v1/stats} path prefix) but the exact same rule: session-only, no scope, no API key of any
  * kind — the same operator-dashboard judgment call as every other endpoint in this family.
  *
+ * <p><b>Tenant context (KH-2.1, spec FS-2.1 D1):</b> {@link TenantContextFilter} is wired into both
+ * chains, positioned right after whichever mechanism resolves the principal ({@link
+ * ApiKeyAuthFilter} on the api-key chain, {@link SecurityContextHolderFilter} on the session chain
+ * — the point session-restored authentication becomes available). It populates {@code
+ * shared.TenantContext} from the resolved principal's tenant for the rest of the request, and
+ * closes the one suspended-tenant gap {@code ApiKeyService#verify}/{@code AuthService#login} can't
+ * cover on their own: an existing session surviving its tenant being suspended mid-session (see its
+ * own Javadoc).
+ *
  * <p><b>Worker role:</b> this configuration class loads in every profile (nothing here is
  * conditional on {@code khatm.web.enabled}) — the worker image runs no business REST endpoints
  * regardless (ADR-09's {@code @ConditionalOnProperty} on the controllers themselves), so
@@ -145,6 +158,7 @@ class SecurityConfig {
 
   private static final String VERIFY_PATH = "/api/v1/credentials/verify";
   private static final String JWKS_PATH = "/.well-known/jwks.json";
+  private static final String TENANT_JWKS_PATH = "/t/*/.well-known/jwks.json";
   private static final String STATUS_LIST_PATH = "/sl/**";
   private static final String LOGIN_PATH = "/api/v1/auth/login";
   private static final String ISSUE_PATH = "/api/v1/credentials/issue";
@@ -171,6 +185,7 @@ class SecurityConfig {
       AuditService audit,
       KhatmAuthenticationEntryPoint entryPoint,
       KhatmAccessDeniedHandler accessDeniedHandler,
+      TenantContextFilter tenantContextFilter,
       Environment environment)
       throws Exception {
     boolean swaggerEnabled = environment.matchesProfiles("local", "dev");
@@ -182,7 +197,8 @@ class SecurityConfig {
         .exceptionHandling(
             ex -> ex.authenticationEntryPoint(entryPoint).accessDeniedHandler(accessDeniedHandler))
         .addFilterBefore(
-            new ApiKeyAuthFilter(apiKeyService, audit), UsernamePasswordAuthenticationFilter.class);
+            new ApiKeyAuthFilter(apiKeyService, audit), UsernamePasswordAuthenticationFilter.class)
+        .addFilterAfter(tenantContextFilter, ApiKeyAuthFilter.class);
     return http.build();
   }
 
@@ -192,6 +208,7 @@ class SecurityConfig {
       HttpSecurity http,
       KhatmAuthenticationEntryPoint entryPoint,
       KhatmAccessDeniedHandler accessDeniedHandler,
+      TenantContextFilter tenantContextFilter,
       Environment environment)
       throws Exception {
     boolean swaggerEnabled = environment.matchesProfiles("local", "dev");
@@ -208,7 +225,8 @@ class SecurityConfig {
                         SecurityConfig::hasNoSessionCookie))
         .exceptionHandling(
             ex -> ex.authenticationEntryPoint(entryPoint).accessDeniedHandler(accessDeniedHandler))
-        .addFilterAfter(new CsrfCookieFilter(), CsrfFilter.class);
+        .addFilterAfter(new CsrfCookieFilter(), CsrfFilter.class)
+        .addFilterAfter(tenantContextFilter, SecurityContextHolderFilter.class);
     return http.build();
   }
 
@@ -221,6 +239,8 @@ class SecurityConfig {
     auth.requestMatchers(HttpMethod.POST, VERIFY_PATH)
         .permitAll()
         .requestMatchers(HttpMethod.GET, JWKS_PATH)
+        .permitAll()
+        .requestMatchers(HttpMethod.GET, TENANT_JWKS_PATH)
         .permitAll()
         .requestMatchers(HttpMethod.GET, STATUS_LIST_PATH)
         .permitAll()

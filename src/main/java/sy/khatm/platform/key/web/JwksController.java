@@ -28,6 +28,14 @@ import sy.khatm.platform.shared.TenantContext;
  * No authentication: JWKS is public by nature. Cached by clients for {@code max-age=300} seconds,
  * balancing normal-path performance against how quickly an emergency rotation should become
  * visible.
+ *
+ * <p><b>Deprecated alias (spec FS-2.1 D8, V2):</b> since KH-2.1, this path is an alias for the
+ * default tenant only — {@link TenantContext#current()} falls back to {@link
+ * TenantContext#DEFAULT_TENANT_ID} here because this endpoint is always anonymous ({@code
+ * rbac.security.TenantContextFilter} never touches it). Every other tenant's JWKS is served at
+ * {@code GET /t/{tenantSlug}/.well-known/jwks.json} ({@code tenant.web.TenantJwksController}). This
+ * path stays through all of Phase 2 (never removed this phase) — cutting it breaks trust bootstrap
+ * for every wallet/verifier that already resolved it.
  */
 @RestController
 @Tag(name = "jwks", description = "Public JSON Web Key Set for signature verification")
@@ -49,10 +57,15 @@ class JwksController {
   /** Public JWKS ({@code ACTIVE} + {@code RETIRING} keys) — verifiers cache this. */
   @Operation(
       summary = "Fetch the JWKS",
-      description = "Public ACTIVE + RETIRING signing keys, no authentication required.")
+      description =
+          "Public ACTIVE + RETIRING signing keys, no authentication required. Deprecated"
+              + " (spec FS-2.1 V2): aliases the default tenant only — every other tenant's JWKS is"
+              + " at GET /t/{tenantSlug}/.well-known/jwks.json. Stays available through Phase 2.",
+      deprecated = true)
   @GetMapping(value = "/.well-known/jwks.json", produces = MediaType.APPLICATION_JSON_VALUE)
   ResponseEntity<String> jwks() {
-    List<PublishedKey> keys = lifecycle.publishableKeys(TenantContext.current());
+    List<PublishedKey> keys =
+        lifecycle.publishableKeysForDefaultTenantJwks(TenantContext.current());
     ArrayNode keysArray = json.createArrayNode();
     for (PublishedKey key : keys) {
       keysArray.add(readJwk(key.jwkJson()));

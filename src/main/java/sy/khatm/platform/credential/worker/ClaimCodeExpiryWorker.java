@@ -6,8 +6,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
 import sy.khatm.platform.credential.persistence.ClaimCodeRepository;
+import sy.khatm.platform.shared.SystemAccessExecutor;
 import sy.khatm.platform.shared.audit.AuditAction;
 import sy.khatm.platform.shared.audit.AuditService;
 
@@ -27,6 +27,12 @@ import sy.khatm.platform.shared.audit.AuditService;
  * changed rows, and carries only the count as non-sensitive metadata: no codes, no refs, no
  * disclosure material (SEC §9). The actor is always {@code SYSTEM} — this runs on a scheduler
  * thread with no {@code SecurityContext}.
+ *
+ * <p><b>System access (KH-2.1, spec FS-2.1 D5):</b> this sweep is inherently cross-tenant — it
+ * zeros expired codes platform-wide, not scoped to any one tenant — so the whole tick runs under
+ * {@link SystemAccessExecutor}, which owns the transaction boundary {@code @Transactional} used to
+ * live on this method directly (the bulk update + audit insert still commit/roll back together,
+ * just inside {@code runAsSystem}'s transaction instead).
  */
 @Component
 @ConditionalOnProperty(name = "khatm.worker.enabled", havingValue = "true")
@@ -36,32 +42,34 @@ public class ClaimCodeExpiryWorker {
 
   private final ClaimCodeRepository claimCodes;
   private final AuditService audit;
+  private final SystemAccessExecutor systemAccess;
 
-  public ClaimCodeExpiryWorker(ClaimCodeRepository claimCodes, AuditService audit) {
+  public ClaimCodeExpiryWorker(
+      ClaimCodeRepository claimCodes, AuditService audit, SystemAccessExecutor systemAccess) {
     this.claimCodes = claimCodes;
     this.audit = audit;
+    this.systemAccess = systemAccess;
   }
 
   /**
    * One sweep tick: zero every expired, unclaimed, still-populated claim code; log the count; and
    * record an audit row only when at least one row changed.
    *
-   * <p>{@code @Transactional} + {@code @Scheduled} on the same method works because the scheduler
-   * invokes the Spring proxy, so the transaction wraps the bulk update + audit insert together — if
-   * the audit write fails, the zeroing rolls back too (no silent partial result).
-   *
    * @return the number of claim codes zeroed, so tests can assert without re-querying
    */
-  @Transactional
   @Scheduled(fixedDelayString = "${khatm.worker.claim-code.expiry-sweep-ms:300000}")
   public int sweep() {
-    int zeroed = claimCodes.zeroExpiredUnclaimed();
-    if (zeroed > 0) {
-      log.info("claim_code expiry sweep zeroed {} expired unclaimed code(s)", zeroed);
-      audit.record(AuditAction.CLAIM_CODES_EXPIRED, "claim_code", null, Map.of("count", zeroed));
-    } else {
-      log.debug("claim_code expiry sweep: nothing to zero");
-    }
-    return zeroed;
+    return systemAccess.runAsSystem(
+        () -> {
+          int zeroed = claimCodes.zeroExpiredUnclaimed();
+          if (zeroed > 0) {
+            log.info("claim_code expiry sweep zeroed {} expired unclaimed code(s)", zeroed);
+            audit.record(
+                AuditAction.CLAIM_CODES_EXPIRED, "claim_code", null, Map.of("count", zeroed));
+          } else {
+            log.debug("claim_code expiry sweep: nothing to zero");
+          }
+          return zeroed;
+        });
   }
 }

@@ -76,3 +76,37 @@ exact match to `/api/v1/stats/**` to cover the new sub-paths without a separate 
 and `ErrorCodesDocGenerationTest` fail the build otherwise. This is deliberate (spec FS-0.6a): the
 whole point of this session was to make work rules 2 & 3 impossible to accidentally skip going
 forward.
+
+**Multi-tenancy core (KH-2.1-BE Part A/B, spec FS-2.1):**
+
+- `TenantContext` is now a `ThreadLocal`-backed holder (`set`/`clear`/`current`/`currentSlug`),
+  not a pure constant-returning utility — falls back to `DEFAULT_TENANT_ID`/`DEFAULT_TENANT_SLUG`
+  when nothing set it explicitly, so every pre-KH-2.1 call site kept working unchanged.
+  `rbac.security.TenantContextFilter` sets it from the authenticated principal per request; a
+  worker thread with no request restores it from an event payload instead
+  (`status.worker.StatusListChangedHandler`).
+- `TenantContextTransactionExecutionListener` + `TenantContextPropagationConfig` (Part B, spec D4)
+  set the Postgres session variable `app.tenant_id` at the start of every physical database
+  transaction (never session-scoped — a pooled connection reused across tenants would otherwise
+  leak context) — the mechanism Row Level Security's `tenant_isolation` policy
+  (`V7__rls_policies.sql`) reads. Registered on the app's `JpaTransactionManager` via a
+  `BeanPostProcessor`.
+- `SystemAccessExecutor` (Part B, spec D5) sets `app.khatm_system = 'on'` for the duration of a
+  transaction — for the small, enumerated set of genuinely anonymous-principal read paths (redeem
+  lookup, verify lookup, status-list read, JWKS read, API-key verification, the two cross-tenant
+  sweep workers) that RLS's `system_access` policy lets through regardless of `app.tenant_id`.
+  `SystemAccessCallerAllowlistTest` pins the caller list; a new caller is a deliberate addition, not
+  silent.
+- **Every `JpaRepository` interface across every module now carries a type-level
+  `@Transactional(readOnly = true)`**, with an explicit bare `@Transactional` override on every
+  `@Modifying` method (`RepositoryDefaultTransactionsTest`, `db` package, enforces both as a
+  structural invariant). This closes a real gap RLS exposed: a Spring Data derived-query method
+  called with no ambient service transaction (a handful of production call sites are deliberately
+  non-`@Transactional` for unrelated reasons, e.g. `credential.domain.CredentialService
+  #enforceSchemaAllowlist`'s independent-audit-commit requirement, and any test verifying state via
+  a bare repository call) runs via `SharedEntityManagerCreator`'s non-transactional path — this
+  listener never fires, `app.tenant_id` is never set, and RLS closed-fails to zero rows regardless
+  of the real data. That silently turned `enforceSchemaAllowlist`'s "can't resolve this schema,
+  don't block" fallback into "can never resolve any schema, always allow" — a real authorization
+  bypass, caught by `rbac.ConsumeApiKeyGateTest` and fixed alongside this annotation (the fallback
+  itself is now deny, not allow, on principle — spec D2's isolation stance).

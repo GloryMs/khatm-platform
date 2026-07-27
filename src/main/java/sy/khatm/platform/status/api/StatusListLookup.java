@@ -25,4 +25,20 @@ public interface StatusListLookup {
    *     from a {@code credential.status_list_id} foreign key)
    */
   Optional<StatusListRef> findRef(UUID statusListId);
+
+  /**
+   * Resolve a tenant's status list by its {@code listCode} and return its signed artifact,
+   * publishing it first if it has never been published or has fallen stale (spec FS-1.3 D3's
+   * lazy-publish fallback) — backs {@code tenant.web.TenantStatusListController}'s {@code GET
+   * /sl/{tenantSlug}/{listCode}} (spec FS-2.1 D8, relocated from {@code status.web} so the {@code
+   * status} module never needs a reverse dependency on {@code tenant :: api} to resolve the slug in
+   * that path — the caller resolves {@code tenantSlug} to {@code tenantId} itself and passes it in
+   * here).
+   *
+   * @param tenantId the tenant that owns the list
+   * @param listCode the list's code
+   * @return the signed artifact + version, or {@link Optional#empty()} if no such list exists for
+   *     this tenant
+   */
+  Optional<StatusListArtifact> findArtifact(UUID tenantId, String listCode);
 }

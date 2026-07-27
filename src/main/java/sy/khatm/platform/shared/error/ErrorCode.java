@@ -201,7 +201,28 @@ public enum ErrorCode {
    * request itself is malformed," not a per-item outcome (those are reported inside {@code
    * BulkIssueResponse.results}, never as this code).
    */
-  KH_CRD_0400(HttpStatus.BAD_REQUEST, "credential.bulk-validation-failed");
+  KH_CRD_0400(HttpStatus.BAD_REQUEST, "credential.bulk-validation-failed"),
+
+  /**
+   * A tenant admin request (KH-2.1, {@code POST /api/v1/admin/tenants}) carried a {@code slug} that
+   * is not a valid lowercase slug (same regex as {@link #KH_CNS_0400}'s consuming-party {@code
+   * code}: {@code ^[a-z0-9][a-z0-9-_]{1,62}$}).
+   */
+  KH_TNT_0400(HttpStatus.BAD_REQUEST, "tenant.invalid-slug"),
+
+  /**
+   * A requested tenant does not exist (KH-2.1 — the admin get/suspend/activate operations, and the
+   * per-tenant JWKS/status-list public endpoints resolving an unknown {@code tenantSlug}).
+   */
+  KH_TNT_0404(HttpStatus.NOT_FOUND, "tenant.not-found"),
+
+  /**
+   * Explicit admin creation of a tenant (KH-2.1 D6) whose {@code slug} already belongs to a
+   * fully-onboarded tenant (one with an {@code ACTIVE} signing key already). A slug that exists but
+   * has no key yet (a prior onboarding attempt died mid-way, spec V3) resumes instead of
+   * conflicting — see {@code tenant.api.TenantAdmin#create}'s Javadoc.
+   */
+  KH_TNT_0409(HttpStatus.CONFLICT, "tenant.duplicate-slug");
 
   private final HttpStatus httpStatus;
   private final String messageKey;

@@ -8,13 +8,22 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 import sy.khatm.platform.credential.domain.Credential;
 
 /**
  * Repository for {@link Credential} entities.
  *
  * <p>Module-private — only {@code CredentialService} in the domain sub-package may use this.
+ *
+ * <p>KH-2.1 Part B (spec FS-2.1 D4): type-level {@code @Transactional(readOnly = true)} — see
+ * {@code key.persistence.IssuerKeyRepository}'s Javadoc for the full rationale. {@link
+ * #findSchemaId} in particular is called from {@code CredentialService#enforceSchemaAllowlist},
+ * which is deliberately non-{@code @Transactional} itself (its audit-row write must commit
+ * independently of the authorization exception it's about to throw) — this annotation is what makes
+ * that one bare call RLS-safe without touching that design.
  */
+@Transactional(readOnly = true)
 public interface CredentialRepository extends JpaRepository<Credential, UUID> {
 
   Optional<Credential> findByRef(String ref);
@@ -31,6 +40,7 @@ public interface CredentialRepository extends JpaRepository<Credential, UUID> {
    * UPDATE with conditional decrement.
    */
   @Modifying(clearAutomatically = true)
+  @Transactional
   @Query(
       value =
           """

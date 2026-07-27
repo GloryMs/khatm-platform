@@ -5,6 +5,7 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
@@ -27,6 +28,7 @@ import org.testcontainers.containers.PostgreSQLContainer;
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.NONE)
 @ActiveProfiles("test")
+@Import(TransactionalTestJdbcTemplateConfig.class)
 public abstract class IntegrationTestSupport {
 
   protected static final PostgreSQLContainer<?> POSTGRES;
@@ -41,7 +43,12 @@ public abstract class IntegrationTestSupport {
   private static final Path TEST_KEYSTORE_PATH;
 
   static {
-    POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine");
+    POSTGRES =
+        new PostgreSQLContainer<>("postgres:16-alpine")
+            // KH-2.1 (spec FS-2.1 D3): provisions khatm_app before Flyway's first migration run —
+            // V7__rls_policies.sql GRANTs to it, so it must already exist. See
+            // src/test/resources/db/khatm-app-role-init.sql's own Javadoc-style header comment.
+            .withInitScript("db/khatm-app-role-init.sql");
     POSTGRES.start();
     try {
       TEST_KEYSTORE_PATH = Files.createTempFile("khatm-test-keys-", ".p12");
@@ -51,11 +58,21 @@ public abstract class IntegrationTestSupport {
     }
   }
 
+  /**
+   * KH-2.1 (spec FS-2.1 D3): the app's own datasource runs as {@code khatm_app} — no BYPASSRLS, not
+   * a table owner, RLS-bound ({@code V7__rls_policies.sql}). Flyway alone still runs as the
+   * container's owner role ({@link #datasourceProperties}'s old single-role shape, now split onto
+   * {@code spring.flyway.*} below) — Boot's Flyway autoconfiguration splits onto its own connection
+   * whenever {@code spring.flyway.url} is set.
+   */
   @DynamicPropertySource
   static void datasourceProperties(DynamicPropertyRegistry registry) {
     registry.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-    registry.add("spring.datasource.username", POSTGRES::getUsername);
-    registry.add("spring.datasource.password", POSTGRES::getPassword);
+    registry.add("spring.datasource.username", () -> "khatm_app");
+    registry.add("spring.datasource.password", () -> "khatm-app-test-only-password");
+    registry.add("spring.flyway.url", POSTGRES::getJdbcUrl);
+    registry.add("spring.flyway.user", POSTGRES::getUsername);
+    registry.add("spring.flyway.password", POSTGRES::getPassword);
   }
 
   @DynamicPropertySource

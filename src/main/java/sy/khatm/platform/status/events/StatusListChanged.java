@@ -27,6 +27,10 @@ import org.springframework.modulith.events.Externalized;
  * @param statusListId the status list whose bit changed
  * @param version the list's new version after the flip
  * @param occurredAt when the flip happened (UTC)
+ * @param tenantId the owning tenant (KH-2.1, spec FS-2.1 D5) — {@code
+ *     status.worker.StatusListChangedHandler} restores {@code shared.TenantContext} from this
+ *     before republishing, since a worker thread has no principal to resolve a tenant from
  */
 @Externalized("khatm.credential.events")
-public record StatusListChanged(UUID statusListId, long version, Instant occurredAt) {}
+public record StatusListChanged(
+    UUID statusListId, long version, Instant occurredAt, UUID tenantId) {}

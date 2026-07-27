@@ -9,8 +9,12 @@ import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import sy.khatm.platform.key.api.IssuerKeySummaryView;
+import sy.khatm.platform.key.api.JwksLookup;
 import sy.khatm.platform.key.api.PublicKeyHandle;
+import sy.khatm.platform.key.api.PublishedKeyView;
 import sy.khatm.platform.key.api.SignResult;
+import sy.khatm.platform.key.api.TenantKeyProvisioner;
 import sy.khatm.platform.key.persistence.IssuerKeyRepository;
 import sy.khatm.platform.shared.Uuidv7;
 import sy.khatm.platform.shared.audit.AuditAction;
@@ -37,7 +41,7 @@ import sy.khatm.platform.shared.audit.AuditService;
  * <p>Module-private.
  */
 @Service
-public class KeyLifecycleService {
+public class KeyLifecycleService implements TenantKeyProvisioner, JwksLookup {
 
   private static final String STATE_ACTIVE = "ACTIVE";
   private static final String STATE_RETIRING = "RETIRING";
@@ -140,14 +144,19 @@ public class KeyLifecycleService {
   }
 
   /**
-   * List the tenant's publicly publishable keys ({@code ACTIVE} + {@code RETIRING}) for the JWKS
-   * endpoint (spec FS-0.5 §6). {@code RETIRED} keys are never published.
+   * List the tenant's publicly publishable keys ({@code ACTIVE} + {@code RETIRING}) for the legacy,
+   * default-tenant-only JWKS endpoint (spec FS-0.5 §6, {@code key.web.JwksController}). {@code
+   * RETIRED} keys are never published.
+   *
+   * <p>Named distinctly from the {@link JwksLookup#publishableKeys(UUID)} cross-module override
+   * below — same underlying query, different return type ({@link PublishedKey} is module-private;
+   * {@link PublishedKeyView} is the {@code key :: api} shape other modules see).
    *
    * @param tenantId the tenant to list keys for
    * @return the publishable keys, public JWK material only
    */
   @Transactional(readOnly = true)
-  public List<PublishedKey> publishableKeys(UUID tenantId) {
+  public List<PublishedKey> publishableKeysForDefaultTenantJwks(UUID tenantId) {
     return repository.findByTenantIdAndStateIn(tenantId, PUBLISHABLE_STATES).stream()
         .map(k -> new PublishedKey(k.getKid(), k.getPublicJwkJson()))
         .toList();
@@ -167,6 +176,59 @@ public class KeyLifecycleService {
         .map(
             k ->
                 new IssuerKeyStatusView(k.getKid(), k.getState(), k.getValidFrom(), k.getValidTo()))
+        .toList();
+  }
+
+  /**
+   * Ensure {@code tenantId} has an {@code ACTIVE} signing key (spec FS-2.1 D6), for the tenant
+   * onboarding admin plane. Idempotent — returns the existing {@code ACTIVE} key's summary if one
+   * already exists, rather than creating a second one or throwing (the resumable-onboarding path,
+   * spec V3).
+   *
+   * @param tenantId the tenant to provision
+   * @param tenantSlug the tenant's slug, used to build the new key's {@code kid}
+   * @return the tenant's {@code ACTIVE} key summary
+   */
+  @Override
+  @Transactional
+  public IssuerKeySummaryView provisionFirstKey(UUID tenantId, String tenantSlug) {
+    Optional<IssuerKeySummary> created = bootstrapIfNeeded(tenantId, tenantSlug);
+    IssuerKeySummary summary =
+        created.orElseGet(
+            () ->
+                toSummary(
+                    repository
+                        .findByTenantIdAndState(tenantId, STATE_ACTIVE)
+                        .orElseThrow(
+                            () ->
+                                new IllegalStateException(
+                                    "No ACTIVE issuer key for tenant "
+                                        + tenantId
+                                        + " immediately after bootstrapIfNeeded reported one"
+                                        + " already existed"))));
+    return new IssuerKeySummaryView(summary.kid(), summary.state(), summary.validFrom());
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public boolean hasActiveKey(UUID tenantId) {
+    return repository.findByTenantIdAndState(tenantId, STATE_ACTIVE).isPresent();
+  }
+
+  /**
+   * List a tenant's publishable ({@code ACTIVE} + {@code RETIRING}) keys for {@code
+   * tenant.web.TenantJwksController}'s per-tenant JWKS endpoint (spec FS-2.1 D8) — the same
+   * underlying query as {@link #publishableKeysForDefaultTenantJwks(UUID)}, mapped to the
+   * cross-module view type.
+   *
+   * @param tenantId the tenant to list keys for
+   * @return the publishable keys, public JWK material only
+   */
+  @Override
+  @Transactional(readOnly = true)
+  public List<PublishedKeyView> publishableKeys(UUID tenantId) {
+    return repository.findByTenantIdAndStateIn(tenantId, PUBLISHABLE_STATES).stream()
+        .map(k -> new PublishedKeyView(k.getKid(), k.getPublicJwkJson()))
         .toList();
   }
 

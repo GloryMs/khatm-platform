@@ -26,6 +26,7 @@ import sy.khatm.platform.credential.api.IssueRequest;
 import sy.khatm.platform.credential.api.IssueResponse;
 import sy.khatm.platform.credential.persistence.ClaimCodeRepository;
 import sy.khatm.platform.credential.worker.ClaimCodeExpiryWorker;
+import sy.khatm.platform.shared.SystemAccessExecutor;
 import sy.khatm.platform.shared.audit.AuditService;
 import sy.khatm.platform.shared.error.NotFoundException;
 import sy.khatm.platform.support.IntegrationTestSupport;
@@ -48,6 +49,7 @@ class ClaimRedemptionConcurrencyTest extends IntegrationTestSupport {
   @Autowired private ClaimRedemptionService redemptionService;
   @Autowired private ClaimCodeRepository claimCodes;
   @Autowired private AuditService auditService;
+  @Autowired private SystemAccessExecutor systemAccess;
   @Autowired private JdbcTemplate jdbc;
   @Autowired private PlatformTransactionManager txManager;
 
@@ -140,7 +142,8 @@ class ClaimRedemptionConcurrencyTest extends IntegrationTestSupport {
         Timestamp.from(Instant.now().minus(1, ChronoUnit.HOURS)),
         UUID.fromString(issued.id()));
 
-    ClaimCodeExpiryWorker worker = new ClaimCodeExpiryWorker(claimCodes, auditService);
+    ClaimCodeExpiryWorker worker =
+        new ClaimCodeExpiryWorker(claimCodes, auditService, systemAccess);
     ExecutorService pool = Executors.newFixedThreadPool(2);
     CountDownLatch ready = new CountDownLatch(2);
     CountDownLatch start = new CountDownLatch(1);

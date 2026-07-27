@@ -1,6 +1,7 @@
 package sy.khatm.platform.credential.events;
 
 import java.time.Instant;
+import java.util.UUID;
 import org.springframework.modulith.events.Externalized;
 
 /**
@@ -23,6 +24,11 @@ import org.springframework.modulith.events.Externalized;
  * @param claimCodeExpiresAt when a claim code issued alongside this credential expires, or {@code
  *     null} if issuance created no claim code
  * @param occurredAt when the issuance happened (UTC)
+ * @param tenantId the issuing tenant (KH-2.1, spec FS-2.1 D5) — no consumer reads this yet (no
+ *     {@code StreamEventHandler} handles this event type today), added so a future one can restore
+ *     {@code shared.TenantContext} the same way {@code StatusListChangedHandler} does, without a
+ *     later non-additive payload change
  */
 @Externalized("khatm.credential.events")
-public record CredentialIssued(String ref, Instant claimCodeExpiresAt, Instant occurredAt) {}
+public record CredentialIssued(
+    String ref, Instant claimCodeExpiresAt, Instant occurredAt, UUID tenantId) {}

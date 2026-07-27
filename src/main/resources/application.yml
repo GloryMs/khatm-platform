@@ -32,6 +32,21 @@ spring:
       hibernate:
         dialect: org.hibernate.dialect.PostgreSQLDialect
   data:
+    jpa:
+      repositories:
+        # KH-2.1 Part B (spec FS-2.1 D4): without this, Spring Data JPA's derived query methods
+        # (e.g. IssuerKeyRepository#countByTenantId, CredentialRepository#findSchemaId) are only
+        # transactional when called from inside another @Transactional method — invoked bare (a
+        # handful of production call sites are deliberately non-transactional for unrelated reasons,
+        # e.g. CredentialService#enforceSchemaAllowlist's independent-commit requirement), they run
+        # with no Spring-managed transaction at all, so
+        # shared.TenantContextTransactionExecutionListener never fires and app.tenant_id is never
+        # set — RLS then closed-fails to zero rows regardless of the real data, which silently
+        # turned enforceSchemaAllowlist's "can't resolve this schema, don't block" fallback into
+        # "can never resolve any schema, always allow" (caught by ConsumeApiKeyGateTest). This makes
+        # every repository method safe to call standalone, matching Spring Data's own intended
+        # default.
+        enable-default-transactions: true
     redis:
       host: ${SPRING_DATA_REDIS_HOST:localhost}
       port: ${SPRING_DATA_REDIS_PORT:6379}

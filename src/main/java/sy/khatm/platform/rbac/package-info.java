@@ -40,7 +40,22 @@
  * local}/{@code dev}-only demo {@code CONSUMING_PARTY} API key needs a real consuming party to own
  * it, and — KH-1.4.3 — allowlists that party for the demo schema); {@code schema :: api} ({@code
  * SchemaCatalog#listAll}, KH-1.4.3 — {@code seed.DemoApiKeySeeder} resolves the demo schema's id by
- * code to allowlist it, same local/dev-only seeder).
+ * code to allowlist it, same local/dev-only seeder); {@code tenant :: api} ({@code
+ * TenantDirectory}, KH-2.1 spec FS-2.1 D1/D7 — {@code security.TenantContextFilter} resolves a
+ * principal's tenant and enforces suspension; {@code domain.ApiKeyService#verify}/{@code
+ * domain.AuthService#login} check the same tenant's active status directly, mirroring the KH-1.4.3
+ * suspended-consuming-party check).
+ *
+ * <p><b>KH-2.1 Part B:</b> {@code api_key} is Row-Level-Security-protected like every other
+ * business table, and {@code domain.ApiKeyService#verify} is, by construction, a lookup with no
+ * tenant known yet — resolving the tenant is the whole point, so it cannot rely on {@link
+ * sy.khatm.platform.shared.TenantContext}'s ambient value the way this module's other
+ * {@code @Transactional} methods do. It now runs under {@code shared.SystemAccessExecutor} (spec
+ * D5), the same mechanism the JWKS/status-list/redeem/verify anonymous-read paths use. {@code
+ * domain.ApiKeyService#create(..., UUID tenantId)} (the tenant-admin-plane overload that mints a
+ * key for a tenant other than the caller's own) sets {@link sy.khatm.platform.shared.TenantContext}
+ * explicitly to the target tenant around its insert, for the same reason {@code
+ * tenant.domain.TenantAdminService#create} does.
  */
 @org.springframework.modulith.ApplicationModule(
     allowedDependencies = {
@@ -49,6 +64,7 @@
       "shared :: audit",
       "shared :: web",
       "consumer :: api",
-      "schema :: api"
+      "schema :: api",
+      "tenant :: api"
     })
 package sy.khatm.platform.rbac;

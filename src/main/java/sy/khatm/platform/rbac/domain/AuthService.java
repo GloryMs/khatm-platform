@@ -18,6 +18,8 @@ import sy.khatm.platform.shared.audit.AuditAction;
 import sy.khatm.platform.shared.audit.AuditService;
 import sy.khatm.platform.shared.error.AuthenticationException;
 import sy.khatm.platform.shared.error.ErrorCode;
+import sy.khatm.platform.tenant.api.TenantDirectory;
+import sy.khatm.platform.tenant.api.TenantRef;
 
 /**
  * Console login/logout and the temporary-lockout counter (spec FS-0.6b D1, D6, D7).
@@ -51,6 +53,7 @@ public class AuthService {
   private final PasswordEncoder passwordEncoder;
   private final StringRedisTemplate redis;
   private final AuditService audit;
+  private final TenantDirectory tenants;
   private final int maxAttempts;
   private final Duration lockoutWindow;
 
@@ -60,6 +63,7 @@ public class AuthService {
       PasswordEncoder passwordEncoder,
       StringRedisTemplate redis,
       AuditService audit,
+      TenantDirectory tenants,
       @Value("${khatm.auth.lockout.max-attempts:5}") int maxAttempts,
       @Value("${khatm.auth.lockout.window:15m}") Duration lockoutWindow) {
     this.users = users;
@@ -67,6 +71,7 @@ public class AuthService {
     this.passwordEncoder = passwordEncoder;
     this.redis = redis;
     this.audit = audit;
+    this.tenants = tenants;
     this.maxAttempts = maxAttempts;
     this.lockoutWindow = lockoutWindow;
   }
@@ -88,6 +93,21 @@ public class AuthService {
   @Transactional(noRollbackFor = AuthenticationException.class)
   public LoginResult login(String username, String rawPassword) {
     UUID tenantId = TenantContext.current();
+
+    // Spec FS-2.1 D7: a SUSPENDED tenant's own users can't log in at all — same generic failure as
+    // every other reason (D7's "one generic failure, always"), checked before anything
+    // user-specific so no login attempt against a suspended tenant leaks whether the username/
+    // password would otherwise have been valid. An already-existing session survives independently
+    // of this check; rbac.security.TenantContextFilter closes that separate gap per-request.
+    if (!tenants.findById(tenantId).map(TenantRef::isActive).orElse(false)) {
+      audit.record(
+          AuditAction.AUTH_LOGIN_FAILED,
+          "app_user",
+          username,
+          Map.of("reason", "tenant_suspended"));
+      throw unauthenticated();
+    }
+
     String lockKey = LOCKOUT_KEY_PREFIX + tenantId + ":" + username;
 
     if (isLockedOut(lockKey)) {

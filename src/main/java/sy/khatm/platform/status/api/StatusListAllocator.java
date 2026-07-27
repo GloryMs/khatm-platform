@@ -1,5 +1,7 @@
 package sy.khatm.platform.status.api;
 
+import java.util.UUID;
+
 /**
  * SPI for allocating status-list bit positions.
  *
@@ -22,4 +24,23 @@ public interface StatusListAllocator {
    * @return the allocated status list id + bit index
    */
   StatusAllocation allocate(String listCode);
+
+  /**
+   * Ensure a status list named {@code listCode} exists for {@code tenantId}, creating an empty one
+   * (default capacity, no bit allocated) if it does not — spec FS-2.1 D6's tenant-onboarding step.
+   *
+   * <p>Takes an explicit {@code tenantId} rather than resolving {@code TenantContext.current()} the
+   * way {@link #allocate} does: the platform-admin tenant onboarding plane is a cross-tenant
+   * control surface (an admin operator's own ambient tenant is never the tenant being onboarded),
+   * unlike {@link #allocate}'s single-tenant-scoped issuance caller.
+   *
+   * <p>Unlike {@link #allocate}, this never consumes a bit: onboarding just needs the list to exist
+   * (for the console/dashboards, before any credential is ever issued under it), not a phantom
+   * allocation with no credential behind it. Idempotent — calling this on a tenant that already has
+   * the list does nothing.
+   *
+   * @param tenantId the tenant to create the list for
+   * @param listCode the status list code, e.g. {@code acme-2026}; must not be {@code null} or blank
+   */
+  void ensureList(UUID tenantId, String listCode);
 }
