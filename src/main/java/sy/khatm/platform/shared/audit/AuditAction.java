@@ -84,6 +84,47 @@ public enum AuditAction {
   USER_CREATED,
 
   /**
+   * A user's role set was replaced (KH-2.2b, {@code POST /api/v1/users/{id}/roles}, spec FS-2.2
+   * D5). {@code entityRef} is the username; {@code detail.roles} carries the new role-code set —
+   * never credentials.
+   */
+  USER_ROLES_CHANGED,
+
+  /**
+   * A user was administratively locked (KH-2.2b, {@code POST /api/v1/users/{id}/lock}, spec FS-2.2
+   * D5). {@code entityRef} is the username.
+   */
+  USER_LOCKED,
+
+  /**
+   * A locked user was restored to active (KH-2.2b, {@code POST /api/v1/users/{id}/unlock}, spec
+   * FS-2.2 D5). {@code entityRef} is the username.
+   */
+  USER_UNLOCKED,
+
+  /**
+   * A user was administratively disabled (KH-2.2b, {@code POST /api/v1/users/{id}/disable}, spec
+   * FS-2.2 D5). {@code entityRef} is the username.
+   */
+  USER_DISABLED,
+
+  /**
+   * A user's password was administratively reset to a new temporary one (KH-2.2b, {@code POST
+   * /api/v1/users/{id}/reset-password}, spec FS-2.2 D5) — the temporary password is shown to the
+   * caller exactly once (plaintext-once, like an API key) and the {@code must_change_password} flag
+   * is set. {@code entityRef} is the username; the one-time password itself is never audited.
+   */
+  USER_PASSWORD_RESET,
+
+  /**
+   * A user set their own real password via the self-service endpoint (KH-2.2b, {@code POST
+   * /api/v1/users/me/password}) — the one call allowed while {@code must_change_password} is set,
+   * and the call that clears it. {@code entityRef} is the username; the new password is never
+   * audited.
+   */
+  USER_PASSWORD_CHANGED,
+
+  /**
    * A wallet successfully redeemed a claim code ({@code credential} module, KH-1.2.1). {@code
    * entityRef} is the credential's ref — never the code itself.
    */
