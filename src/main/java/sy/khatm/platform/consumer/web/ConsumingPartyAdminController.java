@@ -25,11 +25,10 @@ import sy.khatm.platform.shared.web.ErrorEnvelope;
  * Consuming-party admin plane (KH-1.4.4, {@code /api/v1/admin/consuming-parties}) — register
  * verifiers, flip their {@code ACTIVE}/{@code SUSPENDED} status, and manage their schema allowlist.
  *
- * <p>Guarded by the {@code admin} scope: every {@code /api/v1/admin/**} path already resolves to
- * {@code rbac.security.SecurityConfig}'s {@code ScopeGuard.requireScope("admin")} rule (session or
- * {@code TENANT} key with {@code admin}; {@code CONSUMING_PARTY} keys are rejected here as
- * everywhere on the admin plane). A real per-permission {@code consumer:manage} scope waits for
- * KH-2.2's full RBAC; {@code admin} is the deliberate MVP stand-in.
+ * <p>Guarded by the {@code consumer:manage} scope (spec FS-2.2 D2) — {@code
+ * rbac.security.SecurityConfig}'s {@code ADMIN_CONSUMING_PARTIES_PATH} rule (session or {@code
+ * TENANT} key holding {@code consumer:manage}; {@code CONSUMING_PARTY} keys are rejected here as
+ * everywhere on the admin plane).
  *
  * <p>Consuming-party API-key minting ({@code POST /{id}/api-keys}) lives in {@code rbac.web}
  * instead — only the {@code rbac} module may create {@code api_key} rows, and having {@code
@@ -58,7 +57,7 @@ class ConsumingPartyAdminController {
       summary = "List consuming parties",
       description =
           "Every consuming party registered for the tenant (newest first), each with its status"
-              + " and resolved schema allowlist. Requires the admin scope.",
+              + " and resolved schema allowlist. Requires the consumer:manage scope.",
       responses = {
         @ApiResponse(responseCode = "200", description = "The tenant's consuming parties"),
         @ApiResponse(
@@ -67,7 +66,7 @@ class ConsumingPartyAdminController {
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "403",
-            description = "Missing the admin scope (KH-RBC-0403)",
+            description = "Missing the consumer:manage scope (KH-RBC-0403)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
       })
   @GetMapping
@@ -82,7 +81,7 @@ class ConsumingPartyAdminController {
               + " (^[a-z0-9][a-z0-9-_]{1,62}$); the row's id is derived deterministically from"
               + " (tenant, code), so this is idempotent by identity — but registering an"
               + " already-registered code is a conflict (KH-CNS-0409), not a silent overwrite."
-              + " Requires the admin scope.",
+              + " Requires the consumer:manage scope.",
       responses = {
         @ApiResponse(responseCode = "200", description = "Party registered"),
         @ApiResponse(
@@ -95,7 +94,7 @@ class ConsumingPartyAdminController {
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "403",
-            description = "Missing the admin scope (KH-RBC-0403)",
+            description = "Missing the consumer:manage scope (KH-RBC-0403)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "409",
@@ -111,7 +110,8 @@ class ConsumingPartyAdminController {
       summary = "Suspend a consuming party",
       description =
           "Flips the party to SUSPENDED — its API keys immediately stop authenticating (KH-1.4.4"
-              + " D4), the same outcome as a revoked key. Idempotent. Requires the admin scope.",
+              + " D4), the same outcome as a revoked key. Idempotent. Requires the consumer:manage"
+              + " scope.",
       responses = {
         @ApiResponse(responseCode = "200", description = "Party suspended"),
         @ApiResponse(
@@ -120,7 +120,7 @@ class ConsumingPartyAdminController {
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "403",
-            description = "Missing the admin scope (KH-RBC-0403)",
+            description = "Missing the consumer:manage scope (KH-RBC-0403)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "404",
@@ -136,7 +136,7 @@ class ConsumingPartyAdminController {
       summary = "Reactivate a consuming party",
       description =
           "Flips a SUSPENDED party back to ACTIVE — its API keys authenticate again. Idempotent."
-              + " Requires the admin scope.",
+              + " Requires the consumer:manage scope.",
       responses = {
         @ApiResponse(responseCode = "200", description = "Party activated"),
         @ApiResponse(
@@ -145,7 +145,7 @@ class ConsumingPartyAdminController {
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "403",
-            description = "Missing the admin scope (KH-RBC-0403)",
+            description = "Missing the consumer:manage scope (KH-RBC-0403)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "404",
@@ -172,7 +172,7 @@ class ConsumingPartyAdminController {
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "403",
-            description = "Missing the admin scope (KH-RBC-0403)",
+            description = "Missing the consumer:manage scope (KH-RBC-0403)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "404",
@@ -189,7 +189,7 @@ class ConsumingPartyAdminController {
       summary = "Remove a schema from a party's allowlist",
       description =
           "Idempotent — removing a pair that is not allowed (including for an unknown party) is a"
-              + " successful 204 no-op. Requires the admin scope.",
+              + " successful 204 no-op. Requires the consumer:manage scope.",
       responses = {
         @ApiResponse(responseCode = "204", description = "Removed, or nothing to remove"),
         @ApiResponse(
@@ -198,7 +198,7 @@ class ConsumingPartyAdminController {
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "403",
-            description = "Missing the admin scope (KH-RBC-0403)",
+            description = "Missing the consumer:manage scope (KH-RBC-0403)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
       })
   @DeleteMapping("/{id}/allowed-schemas/{schemaId}")

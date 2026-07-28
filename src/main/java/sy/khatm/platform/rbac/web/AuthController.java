@@ -23,8 +23,13 @@ import sy.khatm.platform.rbac.domain.CreatedApiKey;
 import sy.khatm.platform.rbac.domain.LoginResult;
 import sy.khatm.platform.rbac.domain.UserView;
 import sy.khatm.platform.rbac.security.SessionAuthenticator;
+import sy.khatm.platform.shared.OnBehalfOfExecutor;
 import sy.khatm.platform.shared.TenantContext;
+import sy.khatm.platform.shared.error.ErrorCode;
+import sy.khatm.platform.shared.error.NotFoundException;
 import sy.khatm.platform.shared.web.ErrorEnvelope;
+import sy.khatm.platform.tenant.api.TenantDirectory;
+import sy.khatm.platform.tenant.api.TenantRef;
 
 /**
  * Console session auth ({@code /api/v1/auth/*}) and admin API-key management ({@code
@@ -45,16 +50,22 @@ class AuthController {
   private final ApiKeyService apiKeyService;
   private final SessionAuthenticator sessionAuthenticator;
   private final CurrentActorResolver currentActorResolver;
+  private final TenantDirectory tenantDirectory;
+  private final OnBehalfOfExecutor onBehalfOf;
 
   AuthController(
       AuthService authService,
       ApiKeyService apiKeyService,
       SessionAuthenticator sessionAuthenticator,
-      CurrentActorResolver currentActorResolver) {
+      CurrentActorResolver currentActorResolver,
+      TenantDirectory tenantDirectory,
+      OnBehalfOfExecutor onBehalfOf) {
     this.authService = authService;
     this.apiKeyService = apiKeyService;
     this.sessionAuthenticator = sessionAuthenticator;
     this.currentActorResolver = currentActorResolver;
+    this.tenantDirectory = tenantDirectory;
+    this.onBehalfOf = onBehalfOf;
   }
 
   @Operation(
@@ -124,13 +135,18 @@ class AuthController {
       description =
           "The response's rawKey is shown exactly once — the platform stores only its SHA-256"
               + " hash and prefix (spec FS-0.6b §4). tenantId (spec FS-2.1) defaults to the"
-              + " caller's own tenant — a platform admin provisioning a newly onboarded tenant's"
-              + " first key names it explicitly. Requires the admin scope.",
+              + " caller's own tenant, requiring only the tenant:admin scope (spec FS-2.2 V4)."
+              + " Naming a tenantId other than the caller's own — a platform admin provisioning a"
+              + " newly onboarded tenant's first key — additionally requires the platform:admin"
+              + " scope (spec FS-2.2 D4), enforced by shared.OnBehalfOfExecutor and recorded as"
+              + " AuditAction.ON_BEHALF_OF.",
       responses = {
         @ApiResponse(responseCode = "200", description = "Key created"),
         @ApiResponse(
             responseCode = "403",
-            description = "Missing the admin scope (KH-RBC-0403)",
+            description =
+                "Missing the tenant:admin scope, or (when tenantId names another tenant) missing"
+                    + " the platform:admin scope (KH-RBC-0403)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "404",
@@ -139,9 +155,25 @@ class AuthController {
       })
   @PostMapping("/api/v1/admin/api-keys")
   ResponseEntity<CreateApiKeyResponse> createApiKey(@Valid @RequestBody CreateApiKeyRequest req) {
-    UUID targetTenant = req.tenantId() != null ? req.tenantId() : TenantContext.current();
-    CreatedApiKey created =
-        apiKeyService.create(req.ownerType(), req.ownerId(), req.scopes(), targetTenant);
+    UUID callerTenant = TenantContext.current();
+    CreatedApiKey created;
+    if (req.tenantId() == null || req.tenantId().equals(callerTenant)) {
+      created = apiKeyService.create(req.ownerType(), req.ownerId(), req.scopes());
+    } else {
+      // Spec FS-2.2 D4: naming a foreign tenantId is a cross-tenant on-behalf-of action — gated on
+      // platform:admin by OnBehalfOfExecutor, not by this endpoint's baseline tenant:admin scope
+      // (a request body's tenantId can't be inspected by a URL-pattern SecurityConfig rule).
+      TenantRef target =
+          tenantDirectory
+              .findById(req.tenantId())
+              .orElseThrow(() -> new NotFoundException(ErrorCode.KH_TNT_0404, "tenant.not-found"));
+      created =
+          onBehalfOf.runAsTenant(
+              target.id(),
+              target.slug(),
+              () ->
+                  apiKeyService.create(req.ownerType(), req.ownerId(), req.scopes(), target.id()));
+    }
     return ResponseEntity.ok(
         new CreateApiKeyResponse(created.id(), created.keyPrefix(), created.rawKey()));
   }
@@ -150,12 +182,14 @@ class AuthController {
       summary = "Revoke an API key",
       description =
           "The key stops authenticating on the very next request (spec FS-0.6b DoD #5)."
-              + " Idempotent — revoking an already-revoked or unknown key still returns 200.",
+              + " Idempotent — revoking an already-revoked or unknown key still returns 200."
+              + " Requires the tenant:admin scope (spec FS-2.2 V4); RLS scopes visibility to the"
+              + " caller's own tenant's keys regardless.",
       responses = {
         @ApiResponse(responseCode = "200", description = "Revoked (or already inactive)"),
         @ApiResponse(
             responseCode = "403",
-            description = "Missing the admin scope (KH-RBC-0403)",
+            description = "Missing the tenant:admin scope (KH-RBC-0403)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
       })
   @PostMapping("/api/v1/admin/api-keys/{id}/revoke")

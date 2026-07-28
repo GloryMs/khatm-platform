@@ -30,3 +30,8 @@
 | `KH-TNT-0400` | 400 | `tenant.invalid-slug` |
 | `KH-TNT-0404` | 404 | `tenant.not-found` |
 | `KH-TNT-0409` | 409 | `tenant.duplicate-slug` |
+| `KH-USR-0400` | 400 | `user.validation-failed` |
+| `KH-USR-0403` | 403 | `user.must-change-password` |
+| `KH-USR-0404` | 404 | `user.not-found` |
+| `KH-USR-0409` | 409 | `user.duplicate-username` |
+| `KH-USR-0423` | 409 | `user.last-admin` |

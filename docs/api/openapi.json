@@ -217,6 +217,20 @@
         },
         "type" : "object"
       },
+      "ChangePasswordRequest" : {
+        "properties" : {
+          "currentPassword" : {
+            "type" : "string"
+          },
+          "newPassword" : {
+            "maxLength" : 128,
+            "minLength" : 8,
+            "type" : "string"
+          }
+        },
+        "required" : [ "currentPassword", "newPassword" ],
+        "type" : "object"
+      },
       "ClaimCodeMintRequest" : {
         "description" : "Request to mint a fresh wallet claim code for an already-issued credential",
         "properties" : {
@@ -477,24 +491,38 @@
         "required" : [ "nameI18n" ],
         "type" : "object"
       },
-      "CreateTenantRequest" : {
+      "CreateUserRequest" : {
         "properties" : {
-          "deployMode" : {
-            "pattern" : "SAAS|ONPREM|FEDERATED",
-            "type" : "string"
+          "displayNameI18n" : {
+            "$ref" : "#/components/schemas/DisplayNameI18nRequest"
           },
-          "nameI18n" : {
-            "$ref" : "#/components/schemas/NameI18nRequest"
+          "roles" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array",
+            "uniqueItems" : true
           },
-          "slug" : {
-            "type" : "string"
-          },
-          "type" : {
-            "pattern" : "GOVERNMENT|EDUCATION|PRIVATE|OTHER",
+          "username" : {
             "type" : "string"
           }
         },
-        "required" : [ "nameI18n", "type" ],
+        "required" : [ "displayNameI18n", "username" ],
+        "type" : "object"
+      },
+      "CreateUserResponse" : {
+        "properties" : {
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "temporaryPassword" : {
+            "type" : "string"
+          },
+          "username" : {
+            "type" : "string"
+          }
+        },
         "type" : "object"
       },
       "CredentialPage" : {
@@ -634,6 +662,18 @@
         },
         "type" : "object"
       },
+      "DisplayNameI18nRequest" : {
+        "properties" : {
+          "ar" : {
+            "type" : "string"
+          },
+          "en" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "ar", "en" ],
+        "type" : "object"
+      },
       "ErrorDetail" : {
         "description" : "One field-level validation failure",
         "properties" : {
@@ -704,6 +744,31 @@
           "usesRemaining" : {
             "format" : "int32",
             "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "InitialAdminRequest" : {
+        "description" : "The tenant's first administrator (optional)",
+        "properties" : {
+          "displayNameI18n" : {
+            "$ref" : "#/components/schemas/DisplayNameI18nRequest"
+          },
+          "username" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "displayNameI18n", "username" ],
+        "type" : "object"
+      },
+      "InitialAdminResponse" : {
+        "description" : "The first administrator (null when none was requested)",
+        "properties" : {
+          "temporaryPassword" : {
+            "type" : "string"
+          },
+          "username" : {
+            "type" : "string"
           }
         },
         "type" : "object"
@@ -810,6 +875,74 @@
           }
         },
         "required" : [ "ar", "en" ],
+        "type" : "object"
+      },
+      "OnboardTenantRequest" : {
+        "description" : "Onboard a tenant, optionally with its first administrator",
+        "properties" : {
+          "deployMode" : {
+            "pattern" : "SAAS|ONPREM|FEDERATED",
+            "type" : "string"
+          },
+          "initialAdmin" : {
+            "$ref" : "#/components/schemas/InitialAdminRequest"
+          },
+          "nameI18n" : {
+            "$ref" : "#/components/schemas/DisplayNameI18nRequest"
+          },
+          "slug" : {
+            "type" : "string"
+          },
+          "type" : {
+            "pattern" : "GOVERNMENT|EDUCATION|PRIVATE|OTHER",
+            "type" : "string"
+          }
+        },
+        "required" : [ "nameI18n", "slug", "type" ],
+        "type" : "object"
+      },
+      "OnboardTenantResponse" : {
+        "description" : "An onboarded tenant, optionally with its first administrator's one-time password",
+        "properties" : {
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "deployMode" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "initialAdmin" : {
+            "$ref" : "#/components/schemas/InitialAdminResponse"
+          },
+          "nameI18n" : {
+            "$ref" : "#/components/schemas/LocalizedText"
+          },
+          "slug" : {
+            "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "type" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "ReplaceRolesRequest" : {
+        "properties" : {
+          "roles" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array",
+            "uniqueItems" : true
+          }
+        },
         "type" : "object"
       },
       "SchemaAuthoringRequest" : {
@@ -1057,6 +1190,34 @@
         },
         "type" : "object"
       },
+      "UserSummary" : {
+        "properties" : {
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "displayNameI18n" : {
+            "$ref" : "#/components/schemas/LocalizedText"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "roles" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "username" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "VerifyRequest" : {
         "description" : "Request to verify an SD-JWT credential presentation",
         "properties" : {
@@ -1206,7 +1367,7 @@
     },
     "/api/v1/admin/api-keys" : {
       "post" : {
-        "description" : "The response's rawKey is shown exactly once — the platform stores only its SHA-256 hash and prefix (spec FS-0.6b §4). tenantId (spec FS-2.1) defaults to the caller's own tenant — a platform admin provisioning a newly onboarded tenant's first key names it explicitly. Requires the admin scope.",
+        "description" : "The response's rawKey is shown exactly once — the platform stores only its SHA-256 hash and prefix (spec FS-0.6b §4). tenantId (spec FS-2.1) defaults to the caller's own tenant, requiring only the tenant:admin scope (spec FS-2.2 V4). Naming a tenantId other than the caller's own — a platform admin provisioning a newly onboarded tenant's first key — additionally requires the platform:admin scope (spec FS-2.2 D4), enforced by shared.OnBehalfOfExecutor and recorded as AuditAction.ON_BEHALF_OF.",
         "operationId" : "createApiKey",
         "requestBody" : {
           "content" : {
@@ -1237,7 +1398,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the tenant:admin scope, or (when tenantId names another tenant) missing the platform:admin scope (KH-RBC-0403)"
           },
           "404" : {
             "content" : {
@@ -1256,7 +1417,7 @@
     },
     "/api/v1/admin/api-keys/{id}/revoke" : {
       "post" : {
-        "description" : "The key stops authenticating on the very next request (spec FS-0.6b DoD #5). Idempotent — revoking an already-revoked or unknown key still returns 200.",
+        "description" : "The key stops authenticating on the very next request (spec FS-0.6b DoD #5). Idempotent — revoking an already-revoked or unknown key still returns 200. Requires the tenant:admin scope (spec FS-2.2 V4); RLS scopes visibility to the caller's own tenant's keys regardless.",
         "operationId" : "revokeApiKey",
         "parameters" : [ {
           "in" : "path",
@@ -1278,7 +1439,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the tenant:admin scope (KH-RBC-0403)"
           }
         },
         "summary" : "Revoke an API key",
@@ -1287,8 +1448,8 @@
     },
     "/api/v1/admin/consuming-parties" : {
       "get" : {
-        "description" : "Every consuming party registered for the tenant (newest first), each with its status and resolved schema allowlist. Requires the admin scope.",
-        "operationId" : "list_3",
+        "description" : "Every consuming party registered for the tenant (newest first), each with its status and resolved schema allowlist. Requires the consumer:manage scope.",
+        "operationId" : "list_4",
         "responses" : {
           "200" : {
             "content" : {
@@ -1321,14 +1482,14 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the consumer:manage scope (KH-RBC-0403)"
           }
         },
         "summary" : "List consuming parties",
         "tags" : [ "consuming-parties-admin" ]
       },
       "post" : {
-        "description" : "Creates a party with the given code and bilingual name. The code is a lowercase slug (^[a-z0-9][a-z0-9-_]{1,62}$); the row's id is derived deterministically from (tenant, code), so this is idempotent by identity — but registering an already-registered code is a conflict (KH-CNS-0409), not a silent overwrite. Requires the admin scope.",
+        "description" : "Creates a party with the given code and bilingual name. The code is a lowercase slug (^[a-z0-9][a-z0-9-_]{1,62}$); the row's id is derived deterministically from (tenant, code), so this is idempotent by identity — but registering an already-registered code is a conflict (KH-CNS-0409), not a silent overwrite. Requires the consumer:manage scope.",
         "operationId" : "create_2",
         "requestBody" : {
           "content" : {
@@ -1379,7 +1540,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the consumer:manage scope (KH-RBC-0403)"
           },
           "409" : {
             "content" : {
@@ -1398,7 +1559,7 @@
     },
     "/api/v1/admin/consuming-parties/{id}/activate" : {
       "post" : {
-        "description" : "Flips a SUSPENDED party back to ACTIVE — its API keys authenticate again. Idempotent. Requires the admin scope.",
+        "description" : "Flips a SUSPENDED party back to ACTIVE — its API keys authenticate again. Idempotent. Requires the consumer:manage scope.",
         "operationId" : "activate_1",
         "parameters" : [ {
           "in" : "path",
@@ -1437,7 +1598,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the consumer:manage scope (KH-RBC-0403)"
           },
           "404" : {
             "content" : {
@@ -1505,7 +1666,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the consumer:manage scope (KH-RBC-0403)"
           },
           "404" : {
             "content" : {
@@ -1524,7 +1685,7 @@
     },
     "/api/v1/admin/consuming-parties/{id}/allowed-schemas/{schemaId}" : {
       "delete" : {
-        "description" : "Idempotent — removing a pair that is not allowed (including for an unknown party) is a successful 204 no-op. Requires the admin scope.",
+        "description" : "Idempotent — removing a pair that is not allowed (including for an unknown party) is a successful 204 no-op. Requires the consumer:manage scope.",
         "operationId" : "disallowSchema",
         "parameters" : [ {
           "in" : "path",
@@ -1563,7 +1724,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the consumer:manage scope (KH-RBC-0403)"
           }
         },
         "summary" : "Remove a schema from a party's allowlist",
@@ -1572,7 +1733,7 @@
     },
     "/api/v1/admin/consuming-parties/{id}/api-keys" : {
       "post" : {
-        "description" : "Creates a CONSUMING_PARTY-owned API key (scope: consume) for the given party. The response's rawKey is shown exactly once — the platform stores only its SHA-256 hash and prefix (spec FS-0.6b §4). Revoke it later via POST /api/v1/admin/api-keys/{id}/revoke. Requires the admin scope.",
+        "description" : "Creates a CONSUMING_PARTY-owned API key (scope: consume) for the given party. The response's rawKey is shown exactly once — the platform stores only its SHA-256 hash and prefix (spec FS-0.6b §4). Revoke it later via POST /api/v1/admin/api-keys/{id}/revoke. Requires the consumer:manage scope.",
         "operationId" : "mintKey",
         "parameters" : [ {
           "in" : "path",
@@ -1611,7 +1772,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the consumer:manage scope (KH-RBC-0403)"
           },
           "404" : {
             "content" : {
@@ -1630,7 +1791,7 @@
     },
     "/api/v1/admin/consuming-parties/{id}/suspend" : {
       "post" : {
-        "description" : "Flips the party to SUSPENDED — its API keys immediately stop authenticating (KH-1.4.4 D4), the same outcome as a revoked key. Idempotent. Requires the admin scope.",
+        "description" : "Flips the party to SUSPENDED — its API keys immediately stop authenticating (KH-1.4.4 D4), the same outcome as a revoked key. Idempotent. Requires the consumer:manage scope.",
         "operationId" : "suspend_1",
         "parameters" : [ {
           "in" : "path",
@@ -1669,7 +1830,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the consumer:manage scope (KH-RBC-0403)"
           },
           "404" : {
             "content" : {
@@ -1688,7 +1849,7 @@
     },
     "/api/v1/admin/signing-keys" : {
       "get" : {
-        "description" : "Every signing key for the tenant, newest first, every state including RETIRED — lifecycle fields only (kid/state/validFrom/validTo), never the public JWK or any private material. Requires the admin scope (any actor kind).",
+        "description" : "Every signing key for the tenant, newest first, every state including RETIRED — lifecycle fields only (kid/state/validFrom/validTo), never the public JWK or any private material. Requires the key:manage scope (any actor kind).",
         "operationId" : "signingKeys",
         "responses" : {
           "200" : {
@@ -1719,7 +1880,7 @@
                 }
               }
             },
-            "description" : "Authenticated without the admin scope"
+            "description" : "Authenticated without the key:manage scope"
           }
         },
         "summary" : "List every signing key's lifecycle status",
@@ -1729,7 +1890,7 @@
     "/api/v1/admin/tenants" : {
       "get" : {
         "description" : "Every tenant registered on the platform (newest first). Requires the admin scope.",
-        "operationId" : "list_2",
+        "operationId" : "list_3",
         "responses" : {
           "200" : {
             "content" : {
@@ -1762,20 +1923,20 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the platform:admin scope (KH-RBC-0403)"
           }
         },
         "summary" : "List tenants",
         "tags" : [ "tenants-admin" ]
       },
       "post" : {
-        "description" : "Full onboarding: creates the tenant row, provisions its first ACTIVE signing key, and creates its default status list (<slug>-<year>, capacity 131072) before this call returns. Calling this again with a slug that already has a fully-onboarded tenant is a conflict (KH-TNT-0409); calling it again with a slug whose onboarding previously died partway through resumes it instead of conflicting. Requires the admin scope.",
-        "operationId" : "create_1",
+        "description" : "Full onboarding: tenant row + first ACTIVE signing key + default status list (delegated to tenant::api), the three-role catalog seeded, and — when initialAdmin is present — the tenant's first TENANT_ADMIN with a one-time temporary password. Resumable: a retried slug fills whatever a prior partial onboarding left missing (catalog and/or admin), never duplicates. Requires the platform:admin scope.",
+        "operationId" : "onboard",
         "requestBody" : {
           "content" : {
             "application/json" : {
               "schema" : {
-                "$ref" : "#/components/schemas/CreateTenantRequest"
+                "$ref" : "#/components/schemas/OnboardTenantRequest"
               }
             }
           },
@@ -1786,7 +1947,7 @@
             "content" : {
               "*/*" : {
                 "schema" : {
-                  "$ref" : "#/components/schemas/TenantView"
+                  "$ref" : "#/components/schemas/OnboardTenantResponse"
                 }
               }
             },
@@ -1800,7 +1961,7 @@
                 }
               }
             },
-            "description" : "Bean Validation failed, or an invalid slug format (KH-TNT-0400)"
+            "description" : "Bean Validation failed, or an invalid slug (KH-TNT-0400)"
           },
           "401" : {
             "content" : {
@@ -1820,7 +1981,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the platform:admin scope (KH-RBC-0403)"
           },
           "409" : {
             "content" : {
@@ -1839,7 +2000,7 @@
     },
     "/api/v1/admin/tenants/{id}" : {
       "get" : {
-        "description" : "One tenant by id. Requires the admin scope.",
+        "description" : "One tenant by id. Requires the platform:admin scope.",
         "operationId" : "get_2",
         "parameters" : [ {
           "in" : "path",
@@ -1878,7 +2039,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the platform:admin scope (KH-RBC-0403)"
           },
           "404" : {
             "content" : {
@@ -1897,7 +2058,7 @@
     },
     "/api/v1/admin/tenants/{id}/activate" : {
       "post" : {
-        "description" : "Flips a SUSPENDED tenant back to ACTIVE — its users'/API keys' authentication resumes. Idempotent. Requires the admin scope.",
+        "description" : "Flips a SUSPENDED tenant back to ACTIVE — its users'/API keys' authentication resumes. Idempotent. Requires the platform:admin scope.",
         "operationId" : "activate",
         "parameters" : [ {
           "in" : "path",
@@ -1936,7 +2097,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the platform:admin scope (KH-RBC-0403)"
           },
           "404" : {
             "content" : {
@@ -1955,7 +2116,7 @@
     },
     "/api/v1/admin/tenants/{id}/suspend" : {
       "post" : {
-        "description" : "Flips the tenant to SUSPENDED — its own users' sessions and API keys immediately stop authenticating (spec D7), the same outcome as a revoked key. Already-issued credentials keep verifying/consuming, and the tenant's JWKS + status lists stay public (spec V4) — suspension blocks new issuance only. Idempotent. Requires the admin scope.",
+        "description" : "Flips the tenant to SUSPENDED — its own users' sessions and API keys immediately stop authenticating (spec D7), the same outcome as a revoked key. Already-issued credentials keep verifying/consuming, and the tenant's JWKS + status lists stay public (spec V4) — suspension blocks new issuance only. Idempotent. Requires the platform:admin scope.",
         "operationId" : "suspend",
         "parameters" : [ {
           "in" : "path",
@@ -1994,7 +2155,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the platform:admin scope (KH-RBC-0403)"
           },
           "404" : {
             "content" : {
@@ -2008,6 +2169,95 @@
           }
         },
         "summary" : "Suspend a tenant",
+        "tags" : [ "tenants-admin" ]
+      }
+    },
+    "/api/v1/admin/tenants/{id}/users" : {
+      "post" : {
+        "description" : "Creates a user in a tenant other than the caller's own — the same creation shape as a tenant admin's own-user create, run on behalf of the named tenant via OnBehalfOfExecutor (audited ON_BEHALF_OF). Requires the platform:admin scope.",
+        "operationId" : "createUserInTenant",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CreateUserRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CreateUserResponse"
+                }
+              }
+            },
+            "description" : "User created; temporary password returned once"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Invalid username or role code (KH-USR-0400)"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the platform:admin scope (KH-RBC-0403)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Target tenant not found (KH-TNT-0404)"
+          },
+          "409" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Username already exists in that tenant (KH-USR-0409)"
+          }
+        },
+        "summary" : "Add a user to an existing tenant",
         "tags" : [ "tenants-admin" ]
       }
     },
@@ -2190,7 +2440,7 @@
     "/api/v1/credentials" : {
       "get" : {
         "description" : "Console-facing search over this tenant's credentials (KH-1.1.4) — proof/status metadata rows only, never claim content (P1 rule). Every filter is optional and AND-combined: ref (exact), pseudoRef (exact, resolved against the holder who was issued the credential), schemaId (exact), revoked (exact), status (repeatable — ACTIVE/EXHAUSTED/REVOKED/SUSPENDED/EXPIRED; multiple status values OR together, e.g. ?status=EXHAUSTED&status=REVOKED). status is the same explicit lifecycle value each row's own status field carries (spec FS-1.6 D1/D5) — filtered server-side against that identical derivation, so a row can never appear in a status filter's results while displaying a different status itself. Sorted by issuedAt descending; page/size are zero-based/1-100, defaulting to 0/20. Requires a console session — no API key of any kind works here (see rbac.security.SecurityConfig's Javadoc).",
-        "operationId" : "list_1",
+        "operationId" : "list_2",
         "parameters" : [ {
           "in" : "query",
           "name" : "ref",
@@ -2732,7 +2982,7 @@
     "/api/v1/schemas" : {
       "get" : {
         "description" : "Read-only tenant metadata (id, display name, version, status) — every authenticated actor kind may call this, no specific scope required (a deliberate, documented decision: see rbac.security.SecurityConfig's Javadoc). The optional status filter (KH-1.1.1) lets the console's schema management view show DRAFT rows too; the issue-form picker keeps filtering to PUBLISHED client-side, as before.",
-        "operationId" : "list",
+        "operationId" : "list_1",
         "parameters" : [ {
           "in" : "query",
           "name" : "status",
@@ -2770,8 +3020,8 @@
         "tags" : [ "schema" ]
       },
       "post" : {
-        "description" : "Requires the admin scope. Server-side validation rejects an empty claimsDef, a claim field with an unsupported type (text/number/date), a nameI18n or claim labelI18n missing en or ar, an sdFields entry not among the claim field names, or a code already registered at version 1 — all as KH-SCH-0400. The schema starts DRAFT and unavailable for issuance until POST /{id}/publish.",
-        "operationId" : "create",
+        "description" : "Requires the schema:manage scope. Server-side validation rejects an empty claimsDef, a claim field with an unsupported type (text/number/date), a nameI18n or claim labelI18n missing en or ar, an sdFields entry not among the claim field names, or a code already registered at version 1 — all as KH-SCH-0400. The schema starts DRAFT and unavailable for issuance until POST /{id}/publish.",
+        "operationId" : "create_1",
         "requestBody" : {
           "content" : {
             "application/json" : {
@@ -2821,7 +3071,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope"
+            "description" : "Missing the schema:manage scope"
           }
         },
         "summary" : "Create a new DRAFT credential schema (version 1)",
@@ -2876,7 +3126,7 @@
         "tags" : [ "schema" ]
       },
       "put" : {
-        "description" : "Requires the admin scope. DRAFT only — fixes mistakes before publish. Validated identically to POST /api/v1/schemas.",
+        "description" : "Requires the schema:manage scope. DRAFT only — fixes mistakes before publish. Validated identically to POST /api/v1/schemas.",
         "operationId" : "update",
         "parameters" : [ {
           "in" : "path",
@@ -2935,7 +3185,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope"
+            "description" : "Missing the schema:manage scope"
           },
           "404" : {
             "content" : {
@@ -2964,7 +3214,7 @@
     },
     "/api/v1/schemas/{id}/archive" : {
       "post" : {
-        "description" : "Requires the admin scope. PUBLISHED -> ARCHIVED — stops NEW issuance against this schema (POST /api/v1/credentials/issue and the internal find-or-create path both reject it, KH-SCH-1409); every credential already issued against it, and its verification/consumption, is completely unaffected.",
+        "description" : "Requires the schema:manage scope. PUBLISHED -> ARCHIVED — stops NEW issuance against this schema (POST /api/v1/credentials/issue and the internal find-or-create path both reject it, KH-SCH-1409); every credential already issued against it, and its verification/consumption, is completely unaffected.",
         "operationId" : "archive",
         "parameters" : [ {
           "in" : "path",
@@ -3003,7 +3253,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope"
+            "description" : "Missing the schema:manage scope"
           },
           "404" : {
             "content" : {
@@ -3032,7 +3282,7 @@
     },
     "/api/v1/schemas/{id}/publish" : {
       "post" : {
-        "description" : "Requires the admin scope. DRAFT -> PUBLISHED — the immutability line: a published schema's claim fields can never be mutated again (no general update endpoint exists for a PUBLISHED schema); a mistake found later needs a new version (POST /{id}/versions) instead. A PUBLISHED schema becomes a valid issuance target for POST /api/v1/credentials/issue's schemaCode.",
+        "description" : "Requires the schema:manage scope. DRAFT -> PUBLISHED — the immutability line: a published schema's claim fields can never be mutated again (no general update endpoint exists for a PUBLISHED schema); a mistake found later needs a new version (POST /{id}/versions) instead. A PUBLISHED schema becomes a valid issuance target for POST /api/v1/credentials/issue's schemaCode.",
         "operationId" : "publish",
         "parameters" : [ {
           "in" : "path",
@@ -3071,7 +3321,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope"
+            "description" : "Missing the schema:manage scope"
           },
           "404" : {
             "content" : {
@@ -3100,7 +3350,7 @@
     },
     "/api/v1/schemas/{id}/versions" : {
       "post" : {
-        "description" : "Requires the admin scope. Same code, version + 1. The console is responsible for prefilling the request body from the source schema's current fields — this endpoint validates the submitted body exactly like POST /api/v1/schemas, with no server-side default-merging.",
+        "description" : "Requires the schema:manage scope. Same code, version + 1. The console is responsible for prefilling the request body from the source schema's current fields — this endpoint validates the submitted body exactly like POST /api/v1/schemas, with no server-side default-merging.",
         "operationId" : "createVersion",
         "parameters" : [ {
           "in" : "path",
@@ -3159,7 +3409,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope"
+            "description" : "Missing the schema:manage scope"
           },
           "404" : {
             "content" : {
@@ -3381,6 +3631,445 @@
         "tags" : [ "stats" ]
       }
     },
+    "/api/v1/users" : {
+      "get" : {
+        "description" : "Every user of the caller's tenant, newest first. Requires the tenant:admin scope.",
+        "operationId" : "list",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/UserSummary"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "The tenant's users"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the tenant:admin scope (KH-RBC-0403)"
+          }
+        },
+        "summary" : "List tenant users",
+        "tags" : [ "users" ]
+      },
+      "post" : {
+        "description" : "Creates a user with a generated temporary password (shown once) and forces a change at first login. Roles are chosen from the fixed seeded catalog. Requires the tenant:admin scope.",
+        "operationId" : "create",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CreateUserRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CreateUserResponse"
+                }
+              }
+            },
+            "description" : "User created; temporary password returned once"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Invalid username or role code (KH-USR-0400)"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the tenant:admin scope (KH-RBC-0403)"
+          },
+          "409" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Username already exists (KH-USR-0409)"
+          }
+        },
+        "summary" : "Create a tenant user",
+        "tags" : [ "users" ]
+      }
+    },
+    "/api/v1/users/me/password" : {
+      "post" : {
+        "description" : "The self-service password change — the one call a temporary-password user may make while must_change_password is set, and the call that clears it. Any authenticated console user may call it; the target user is taken from the session principal, never the body.",
+        "operationId" : "changeMyPassword",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ChangePasswordRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "description" : "Password changed"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Current password incorrect (KH-USR-0400)"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session"
+          }
+        },
+        "summary" : "Change own password",
+        "tags" : [ "users" ]
+      }
+    },
+    "/api/v1/users/{id}/disable" : {
+      "post" : {
+        "description" : "Sets the user DISABLED. Requires the tenant:admin scope. Refused with 409 (KH-USR-0423) if this is the tenant's last active administrator.",
+        "operationId" : "disable",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/UserSummary"
+                }
+              }
+            },
+            "description" : "User disabled"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the tenant:admin scope (KH-RBC-0403)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "User not found (KH-USR-0404)"
+          },
+          "409" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Would remove the last active administrator (KH-USR-0423)"
+          }
+        },
+        "summary" : "Disable a user",
+        "tags" : [ "users" ]
+      }
+    },
+    "/api/v1/users/{id}/lock" : {
+      "post" : {
+        "description" : "Sets the user LOCKED. Requires the tenant:admin scope. Refused with 409 (KH-USR-0423) if this is the tenant's last active administrator.",
+        "operationId" : "lock",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/UserSummary"
+                }
+              }
+            },
+            "description" : "User locked"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the tenant:admin scope (KH-RBC-0403)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "User not found (KH-USR-0404)"
+          },
+          "409" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Would remove the last active administrator (KH-USR-0423)"
+          }
+        },
+        "summary" : "Lock a user",
+        "tags" : [ "users" ]
+      }
+    },
+    "/api/v1/users/{id}/reset-password" : {
+      "post" : {
+        "description" : "Generates a new temporary password (shown once) and forces a change at next login. Requires the tenant:admin scope.",
+        "operationId" : "resetPassword",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CreateUserResponse"
+                }
+              }
+            },
+            "description" : "Password reset; temporary password returned once"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the tenant:admin scope (KH-RBC-0403)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "User not found (KH-USR-0404)"
+          }
+        },
+        "summary" : "Reset a user's password",
+        "tags" : [ "users" ]
+      }
+    },
+    "/api/v1/users/{id}/roles" : {
+      "post" : {
+        "description" : "Replaces the user's entire role set. Requires the tenant:admin scope. Refused with 409 (KH-USR-0423) if it would remove the tenant's last active administrator.",
+        "operationId" : "replaceRoles",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/ReplaceRolesRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/UserSummary"
+                }
+              }
+            },
+            "description" : "Roles replaced"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Unknown role code (KH-USR-0400)"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the tenant:admin scope (KH-RBC-0403)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "User not found (KH-USR-0404)"
+          },
+          "409" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Would remove the last active administrator (KH-USR-0423)"
+          }
+        },
+        "summary" : "Replace a user's roles",
+        "tags" : [ "users" ]
+      }
+    },
+    "/api/v1/users/{id}/unlock" : {
+      "post" : {
+        "description" : "Restores a LOCKED/DISABLED user to ACTIVE. Requires the tenant:admin scope.",
+        "operationId" : "unlock",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/UserSummary"
+                }
+              }
+            },
+            "description" : "User unlocked"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the tenant:admin scope (KH-RBC-0403)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "User not found (KH-USR-0404)"
+          }
+        },
+        "summary" : "Unlock a user",
+        "tags" : [ "users" ]
+      }
+    },
     "/sl/{tenantSlug}/{listCode}" : {
       "get" : {
         "description" : "The public, unauthenticated source of revocation truth for offline verifiers (spec FS-1.3 D2, SAD §6). Returns the list's signed bitstring as a compact JWS (application/jose) — a verifier validates its signature against the tenant's own JWKS, then base64url-decodes and gunzips the `bits` claim to read the per-credential revocation bit at the index named in the credential's `status` claim. The ETag is the list's `version`; a matching If-None-Match returns 304 with no body. Cached for 60s.",
@@ -3525,6 +4214,9 @@
   }, {
     "description" : "Per-consuming-party call-volume stats",
     "name" : "stats"
+  }, {
+    "description" : "Tenant user management (tenant:admin)",
+    "name" : "users"
   }, {
     "description" : "Console session login/logout and admin API-key management",
     "name" : "auth"

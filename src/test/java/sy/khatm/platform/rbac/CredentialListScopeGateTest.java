@@ -48,7 +48,18 @@ class CredentialListScopeGateTest extends RbacHttpTestSupport {
   void list_withApiKeyHoldingEveryScope_returns403() throws Exception {
     CreatedApiKey fullKey =
         apiKeyService.create(
-            ApiKeyOwnerType.TENANT, null, Set.of("issue", "verify", "consume", "revoke", "admin"));
+            ApiKeyOwnerType.TENANT,
+            null,
+            Set.of(
+                "issue",
+                "verify",
+                "consume",
+                "revoke",
+                "schema:manage",
+                "consumer:manage",
+                "key:manage",
+                "tenant:admin",
+                "platform:admin"));
     HttpHeaders headers = new HttpHeaders();
     headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + fullKey.rawKey());
 

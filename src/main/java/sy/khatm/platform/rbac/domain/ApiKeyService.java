@@ -98,7 +98,9 @@ public class ApiKeyService {
    * Create a new API key for an explicitly named tenant (spec FS-2.1 — the tenant admin plane's
    * only way to provision a newly onboarded tenant's first operational key, since {@code
    * TenantContext.current()} always resolves to the calling platform admin's own tenant, never the
-   * tenant just onboarded).
+   * tenant just onboarded). Called with a foreign {@code tenantId} only from inside {@code
+   * shared.OnBehalfOfExecutor#runAsTenant} (spec FS-2.2 D4) — this method itself does not check who
+   * is calling it, so every caller must go through that gate first.
    *
    * @param ownerType who this key acts on behalf of
    * @param ownerId the owning consuming party's id ({@code CONSUMING_PARTY} only); must be {@code

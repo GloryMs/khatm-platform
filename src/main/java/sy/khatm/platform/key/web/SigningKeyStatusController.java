@@ -20,8 +20,8 @@ import sy.khatm.platform.shared.web.ErrorEnvelope;
  * <p>Unlike {@link JwksController} (public, {@code ACTIVE}/{@code RETIRING} only, public JWK
  * material), this is an admin-only, full-lifecycle view — every state including {@code RETIRED} —
  * of the key's status fields only, never any key material. Gated by {@code
- * rbac.security.SecurityConfig}'s existing {@code /api/v1/admin/**} wildcard ({@code admin} scope,
- * any actor kind) — no new {@code SecurityConfig} entry needed.
+ * rbac.security.SecurityConfig}'s {@code ADMIN_SIGNING_KEYS_PATH} rule ({@code key:manage} scope,
+ * spec FS-2.2 D2, any actor kind).
  */
 @RestController
 @Tag(name = "admin-signing-keys", description = "Signing-key lifecycle status for the console")
@@ -40,7 +40,7 @@ class SigningKeyStatusController {
       description =
           "Every signing key for the tenant, newest first, every state including RETIRED —"
               + " lifecycle fields only (kid/state/validFrom/validTo), never the public JWK or any"
-              + " private material. Requires the admin scope (any actor kind).",
+              + " private material. Requires the key:manage scope (any actor kind).",
       responses = {
         @ApiResponse(responseCode = "200", description = "Every signing key's lifecycle status"),
         @ApiResponse(
@@ -49,7 +49,7 @@ class SigningKeyStatusController {
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "403",
-            description = "Authenticated without the admin scope",
+            description = "Authenticated without the key:manage scope",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
       })
   @GetMapping("/api/v1/admin/signing-keys")

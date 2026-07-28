@@ -5,14 +5,12 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import sy.khatm.platform.shared.web.ErrorEnvelope;
@@ -20,14 +18,22 @@ import sy.khatm.platform.tenant.api.TenantAdmin;
 import sy.khatm.platform.tenant.api.TenantView;
 
 /**
- * Tenant admin/onboarding plane (spec FS-2.1 D6, {@code /api/v1/admin/tenants}) — register new
- * tenants (full onboarding: tenant row + first {@code ACTIVE} signing key + default status list),
- * list every tenant platform-wide, and flip a tenant's {@code ACTIVE}/{@code SUSPENDED} status.
+ * Tenant admin plane (spec FS-2.1 D6, {@code /api/v1/admin/tenants}) — list every tenant
+ * platform-wide, fetch one, and flip a tenant's {@code ACTIVE}/{@code SUSPENDED} status.
  *
- * <p>Guarded by the {@code admin} scope: every {@code /api/v1/admin/**} path already resolves to
- * {@code rbac.security.SecurityConfig}'s {@code ScopeGuard.requireScope("admin")} rule. A real
- * per-permission {@code tenant:manage} scope waits for KH-2.2; {@code admin} is the deliberate MVP
- * stand-in, same precedent as the consuming-party admin plane.
+ * <p><b>KH-2.2b — onboarding create relocated:</b> {@code POST /api/v1/admin/tenants} (onboard a
+ * tenant, now optionally with its first administrator, spec FS-2.2 D6) moved to {@code
+ * rbac.web.TenantProvisioningController}. The onboarding flow creates an {@code app_user} (the
+ * first admin) and seeds the {@code rbac}-owned role catalog, so it lives in {@code rbac.web} for
+ * the same Modulith-cycle avoidance that put {@code rbac.web.ConsumingPartyKeyController} there —
+ * {@code tenant → rbac} would cycle against the existing {@code rbac → tenant :: api} edge. The
+ * URL, the {@code platform:admin} gate, and {@code TenantAdmin#create}'s resumable-onboarding
+ * semantics are all unchanged; only the handling bean moved modules.
+ *
+ * <p>Guarded by the {@code platform:admin} scope exclusively (spec FS-2.2 D2) — {@code
+ * rbac.security.SecurityConfig}'s {@code ADMIN_TENANTS_PATH} rule, {@code
+ * ScopeGuard.requireScope(ScopeRegistry.PLATFORM_ADMIN)}. This is the one cross-tenant plane on the
+ * platform; no other scope grants access here, not even {@code tenant:admin}.
  *
  * <p>Thin: validate → call {@link TenantAdmin} → map. Module-private — Spring MVC discovers it via
  * component scan; no other module references this class.
@@ -56,7 +62,7 @@ class TenantAdminController {
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "403",
-            description = "Missing the admin scope (KH-RBC-0403)",
+            description = "Missing the platform:admin scope (KH-RBC-0403)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
       })
   @GetMapping
@@ -66,7 +72,7 @@ class TenantAdminController {
 
   @Operation(
       summary = "Fetch a tenant",
-      description = "One tenant by id. Requires the admin scope.",
+      description = "One tenant by id. Requires the platform:admin scope.",
       responses = {
         @ApiResponse(responseCode = "200", description = "The tenant"),
         @ApiResponse(
@@ -75,7 +81,7 @@ class TenantAdminController {
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "403",
-            description = "Missing the admin scope (KH-RBC-0403)",
+            description = "Missing the platform:admin scope (KH-RBC-0403)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "404",
@@ -88,46 +94,13 @@ class TenantAdminController {
   }
 
   @Operation(
-      summary = "Onboard a tenant",
-      description =
-          "Full onboarding: creates the tenant row, provisions its first ACTIVE signing key, and"
-              + " creates its default status list (<slug>-<year>, capacity 131072) before this call"
-              + " returns. Calling this again with a slug that already has a fully-onboarded tenant"
-              + " is a conflict (KH-TNT-0409); calling it again with a slug whose onboarding"
-              + " previously died partway through resumes it instead of conflicting. Requires the"
-              + " admin scope.",
-      responses = {
-        @ApiResponse(responseCode = "200", description = "Tenant onboarded (or resumed)"),
-        @ApiResponse(
-            responseCode = "400",
-            description = "Bean Validation failed, or an invalid slug format (KH-TNT-0400)",
-            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
-        @ApiResponse(
-            responseCode = "401",
-            description = "No valid session or API key",
-            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
-        @ApiResponse(
-            responseCode = "403",
-            description = "Missing the admin scope (KH-RBC-0403)",
-            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
-        @ApiResponse(
-            responseCode = "409",
-            description = "A fully-onboarded tenant with this slug already exists (KH-TNT-0409)",
-            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
-      })
-  @PostMapping
-  TenantView create(@Valid @RequestBody CreateTenantRequest req) {
-    return admin.create(req.slug(), req.nameI18n().toLocalizedText(), req.type(), req.deployMode());
-  }
-
-  @Operation(
       summary = "Suspend a tenant",
       description =
           "Flips the tenant to SUSPENDED — its own users' sessions and API keys immediately stop"
               + " authenticating (spec D7), the same outcome as a revoked key. Already-issued"
               + " credentials keep verifying/consuming, and the tenant's JWKS + status lists stay"
               + " public (spec V4) — suspension blocks new issuance only. Idempotent. Requires the"
-              + " admin scope.",
+              + " platform:admin scope.",
       responses = {
         @ApiResponse(responseCode = "200", description = "Tenant suspended"),
         @ApiResponse(
@@ -136,7 +109,7 @@ class TenantAdminController {
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "403",
-            description = "Missing the admin scope (KH-RBC-0403)",
+            description = "Missing the platform:admin scope (KH-RBC-0403)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "404",
@@ -152,7 +125,7 @@ class TenantAdminController {
       summary = "Reactivate a tenant",
       description =
           "Flips a SUSPENDED tenant back to ACTIVE — its users'/API keys' authentication resumes."
-              + " Idempotent. Requires the admin scope.",
+              + " Idempotent. Requires the platform:admin scope.",
       responses = {
         @ApiResponse(responseCode = "200", description = "Tenant activated"),
         @ApiResponse(
@@ -161,7 +134,7 @@ class TenantAdminController {
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "403",
-            description = "Missing the admin scope (KH-RBC-0403)",
+            description = "Missing the platform:admin scope (KH-RBC-0403)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "404",

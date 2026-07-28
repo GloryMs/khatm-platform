@@ -49,8 +49,8 @@ keystore alias). Private key material is never written to this table.
   types (module-private `PublishedKey` vs. `key.api.PublishedKeyView`).
   `SigningKeyStatusController` (KH-1.1.5-BE, spec FS-1.5.4 #4): `GET /api/v1/admin/signing-keys`,
   every key regardless of state (including `RETIRED`), lifecycle fields only via
-  `KeyLifecycleService#listAllStatuses` — no JWK material, no new `key :: api` surface (falls under
-  the existing `/api/v1/admin/**` → `admin` scope wildcard, entirely inside this module).
+  `KeyLifecycleService#listAllStatuses` — no JWK material, no new `key :: api` surface (gated on the
+  `key:manage` scope, spec FS-2.2 D2, entirely inside this module).
 
 **`kid` format:** `{tenant-slug}:key-{seq}` (e.g. `khatm-default:key-1`). Verification resolves
 strictly by `kid` — an unknown or `RETIRED` `kid` is always `bad_signature`; there is no

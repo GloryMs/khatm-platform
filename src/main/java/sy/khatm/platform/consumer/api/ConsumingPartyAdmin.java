@@ -6,7 +6,7 @@ import sy.khatm.platform.shared.LocalizedText;
 
 /**
  * Admin-plane SPI for managing consuming parties (KH-1.4.4) — the surface behind {@code
- * /api/v1/admin/consuming-parties}, guarded by the {@code admin} scope.
+ * /api/v1/admin/consuming-parties}, guarded by the {@code consumer:manage} scope (spec FS-2.2 D2).
  *
  * <p>Separate from {@link ConsumingPartyRegistry} (the runtime consume-path SPI: resolve-by-code,
  * schema-scoping checks) because these are console-operator management operations, not something

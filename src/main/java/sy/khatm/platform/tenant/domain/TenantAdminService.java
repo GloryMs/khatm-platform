@@ -87,6 +87,17 @@ class TenantAdminService implements TenantAdmin {
     // already independently idempotent per the resumable-onboarding design below, and each needs
     // its own fresh physical transaction anyway so shared.TenantContextTransactionExecutionListener
     // re-fires and picks up the target tenant set here, not the admin caller's own).
+    //
+    // KH-2.2a note (spec FS-2.2 D4): NOT wired through shared.OnBehalfOfExecutor — unlike {@code
+    // rbac.web.AuthController#createApiKey} (one endpoint serving both a self-service and a
+    // cross-tenant caller, so the platform:admin check can only live in code, not a URL-pattern
+    // rule), this whole /api/v1/admin/tenants/** path is already platform:admin-exclusive at the
+    // HTTP boundary (rbac.security.SecurityConfig's ADMIN_TENANTS_PATH rule) with no other caller,
+    // so an additional in-service check here would be pure redundancy — and would break every
+    // service-level test in this suite (TenantAdminServiceTest calls create() directly,
+    // deliberately
+    // with no SecurityContext at all, per this codebase's established "service tests bypass HTTP
+    // auth, *GateTest classes cover it" convention).
     TenantContext.set(tenant.getId(), tenant.getSlug());
     try {
       if (!freshRow && keyProvisioner.hasActiveKey(tenant.getId())) {

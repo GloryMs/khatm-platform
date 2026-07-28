@@ -20,6 +20,14 @@ import sy.khatm.platform.shared.LocalizedTextConverter;
  * operator) from the Redis-TTL-based temporary lockout {@link AuthService} enforces after repeated
  * failed logins (spec FS-0.6b D6) — the two are deliberately independent (D6).
  *
+ * <p><b>KH-2.2b — {@code mustChangePassword}:</b> set when a user is provisioned with a temporary
+ * password (D5 create / reset-password, D6 onboarding's first admin) and cleared the moment they
+ * set a real password via {@code POST /api/v1/users/me/password}. While set, every authenticated
+ * call except that one endpoint is rejected with {@code 403 KH-USR-0403} by {@code
+ * rbac.security.PasswordChangeEnforcementFilter} (read live per request — the flag can flip
+ * mid-session on an admin password reset, and the spec's guarantee is that the very next call is
+ * blocked, so the value is never cached in the session principal).
+ *
  * <p>This class is module-private; external code must depend on {@code rbac :: api} instead.
  */
 @Entity
@@ -51,6 +59,9 @@ public class AppUser {
 
   @Column(nullable = false)
   private String status;
+
+  @Column(name = "must_change_password", nullable = false)
+  private boolean mustChangePassword;
 
   @Column(name = "created_at", nullable = false)
   private Instant createdAt;
@@ -109,6 +120,14 @@ public class AppUser {
 
   public void setStatus(String status) {
     this.status = status;
+  }
+
+  public boolean isMustChangePassword() {
+    return mustChangePassword;
+  }
+
+  public void setMustChangePassword(boolean mustChangePassword) {
+    this.mustChangePassword = mustChangePassword;
   }
 
   public Instant getCreatedAt() {

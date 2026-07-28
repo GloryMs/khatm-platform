@@ -1,5 +1,6 @@
 package sy.khatm.platform.rbac.persistence;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -42,6 +43,21 @@ public interface RoleRepository extends JpaRepository<Role, UUID> {
   List<String> findScopesByUserId(@Param("userId") UUID userId);
 
   /**
+   * The codes of every role assigned to a user (spec FS-2.2 D5 — the {@code roles[]} field of a
+   * {@code UserSummary}). Distinct is harmless: a user can hold a given catalog role at most once
+   * per the {@code user_role} composite primary key.
+   *
+   * @param userId the user
+   * @return the user's assigned role codes
+   */
+  @Query(
+      value =
+          "SELECT r.code FROM role r JOIN user_role ur ON ur.role_id = r.id WHERE ur.user_id ="
+              + " :userId",
+      nativeQuery = true)
+  List<String> findRoleCodesByUserId(@Param("userId") UUID userId);
+
+  /**
    * Assign a role to a user via the {@code user_role} join table.
    *
    * <p>{@code tenant_id} (KH-2.1, spec FS-2.1 D2 — backfilled onto this join table by {@code
@@ -59,4 +75,28 @@ public interface RoleRepository extends JpaRepository<Role, UUID> {
               + " SELECT :userId, :roleId, tenant_id FROM app_user WHERE id = :userId",
       nativeQuery = true)
   void assignRole(@Param("userId") UUID userId, @Param("roleId") UUID roleId);
+
+  /**
+   * Resolve the tenant's catalog roles matching a set of codes (spec FS-2.2 D5 — a user's roles are
+   * chosen from the fixed three-role seeded catalog). Used to validate that every requested code is
+   * a real catalog role in this tenant and to map codes to role ids for assignment.
+   *
+   * @param tenantId the tenant whose catalog to resolve against
+   * @param codes the requested role codes
+   * @return the matching catalog roles (fewer than {@code codes} if any code is unknown)
+   */
+  List<Role> findByTenantIdAndCodeIn(UUID tenantId, Collection<String> codes);
+
+  /**
+   * Remove every role assignment for a user (spec FS-2.2 D5 — role-set replacement is
+   * delete-all-then-reinsert). Backed by the {@code DELETE} grant {@code V11__user_password_change
+   * _and_role_grants.sql} added to {@code user_role} for exactly this operation (the same
+   * documented exception {@code V7} already made for {@code consuming_party_schema}).
+   *
+   * @param userId the user whose role set is being replaced
+   */
+  @Modifying
+  @Transactional
+  @Query(value = "DELETE FROM user_role WHERE user_id = :userId", nativeQuery = true)
+  void deleteAllByUserId(@Param("userId") UUID userId);
 }
