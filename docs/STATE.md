@@ -5,6 +5,89 @@
 
 ## Current phase / task
 - Phase 0 — Production Foundation, fully closed (see prior sessions).
+- **KH-2.2a-BE — RBAC scope registry (D1–D4)** (session `feat/KH-2.2a-BE-scope-registry`,
+  2026-07-28, spec `docs/specs/FS-2.2-rbac-granularity.md`): replaces the KH-0.6b coarse `admin`
+  scope stand-in with a nine-scope deny-by-default registry (`issue, verify, consume, revoke,
+  schema:manage, consumer:manage, key:manage, tenant:admin, platform:admin`) and re-gates every
+  `/api/v1/admin/**` endpoint per its own family. `mvn verify` green, **344/344 tests (17 new)**.
+  **PR #43 opened, NOT merged** — pending Majd's review (breaking scope-semantics change by
+  design, spec V3 — flagged prominently in the PR body). No new `ErrorCode`/message key (every
+  403 reuses `KH-RBC-0403`/`error.rbc.forbidden`), so no Arabic-review gate.
+  - **Verify-against-code findings (recorded before writing, per the brief):** built the full live
+    endpoint→gate inventory directly from `SecurityConfig`/`ScopeGuard`/every `@RestController`
+    (not assumed from the spec's D2 mapping shape) — the entire `/api/v1/admin/**` surface was one
+    `ScopeGuard.requireScope("admin")` wildcard covering four independent controllers.
+    Session-scoped scopes are baked into the `HttpSession` at login time
+    (`rbac.domain.AuthService#login`) and not otherwise cached — confirmed the only staleness
+    window is "existing sessions need re-login post-deploy" (already the documented, accepted
+    trade-off), while API-key scopes are read fresh from `api_key.scopes` on every request
+    (`ApiKeyService#verify`), no caching concern there at all.
+  - **D1 — `rbac.security.ScopeRegistry`:** the nine-scope catalog. Deny-by-default pinned by two
+    new source-scan tests (same technique as `SystemAccessCallerAllowlistTest`):
+    `LegacyAdminScopeAbsenceTest` (no source file anywhere passes the literal string `"admin"` as
+    a scope value) and `AdminPathScopeCoverageTest` (every live `/api/v1/admin/**` mapping falls
+    under one of `SecurityConfig`'s four declared path families, never a silent fall-through to
+    `anyRequest().authenticated()`).
+  - **D2 — full re-gate, verified endpoint-by-endpoint:** schema reads (`GET
+    /api/v1/schemas[/{id}]`) tightened from bare `authenticated()` to any of `issue/verify/consume
+    /revoke/schema:manage` (spec V2 — an `ISSUER_OPERATOR` needs schema read without
+    `schema:manage`); schema writes → `schema:manage`; `/api/v1/admin/tenants/**` →
+    `platform:admin` exclusively (the one cross-tenant plane); `/api/v1/admin/consuming-parties/**`
+    (+ its key-mint sub-path, `rbac.web.ConsumingPartyKeyController`) → `consumer:manage`;
+    `/api/v1/admin/api-keys/**` → `tenant:admin` (self-service) **or** `platform:admin` (explicit
+    foreign `tenantId`, see D4); `/api/v1/admin/signing-keys` → `key:manage`. Full
+    endpoint→scope table in the PR body. Action-scoped endpoints (`issue`/`consume`/`revoke`) and
+    the session-only family (credential search/stats/activity/attention) are unchanged, out of
+    this rescoping's scope.
+  - **D3 — `V10__scope_registry_rescope.sql`** (append-only, data-only): `PLATFORM_ADMIN` = all
+    nine scopes; `TENANT_ADMIN` = all except `platform:admin`; `ISSUER_OPERATOR` = `issue, verify,
+    revoke`. `admin` scrubbed from every role, clean cut (spec V3, no coexistence period).
+    V1–V9 untouched, `MigrationImmutabilityTest`/`MigrationCleanBootTest` green, checksum
+    appended. New `db.SeededRoleScopesTest` pins the exact post-migration scope sets per role and
+    asserts zero roles anywhere still carry `admin`.
+  - **D4 — a real cross-tenant gap found while re-gating, closed:** `POST
+    /api/v1/admin/api-keys`'s explicit-`tenantId` branch (a platform admin provisioning a newly
+    onboarded tenant's first key) let `ApiKeyService.create(..., tenantId)` switch
+    `TenantContext` with **no check that the caller actually held `platform:admin`** — masked
+    pre-rescoping because `PLATFORM_ADMIN` and `TENANT_ADMIN` shared the same coarse `admin`
+    scope; re-gating this endpoint to bare `tenant:admin` would have *widened* the exposure (any
+    tenant admin naming an arbitrary foreign tenant) had it shipped unfixed. New
+    `shared.OnBehalfOfExecutor` (mirrors `SystemAccessExecutor`'s shape, spec D4): re-verifies
+    `platform:admin` directly against the live `SecurityContextHolder` authorities (duplicates the
+    `SCOPE_<scope>` convention rather than importing module-private `rbac.security` —
+    `shared.audit.AuditService` already reads `SecurityContextHolder` directly for the identical
+    reason), records `AuditAction.ON_BEHALF_OF` (entityRef = target tenant slug, written under the
+    caller's own ambient tenant *before* the switch, per spec D4's own wording), then switches
+    `TenantContext` to the explicit target. `shared.OnBehalfOfCallerAllowlistTest` pins its one
+    enumerated caller (`AuthController#createApiKey`'s explicit-`tenantId` branch — the only
+    endpoint shared by a self-service and a cross-tenant caller, so the authorization split can
+    only live in code, never a URL-pattern rule). **Deliberately NOT wired into
+    `tenant.domain.TenantAdminService#create`** (`POST /api/v1/admin/tenants` — no `{id}`, so not
+    literally the brief's `/admin/tenants/{id}/...` wording either): that whole path is already
+    `platform:admin`-exclusive at the HTTP boundary with no other caller, so an in-service
+    re-check would be pure redundancy — and would have broken `TenantAdminServiceTest`'s
+    established no-`SecurityContext` service-level tests (this codebase's convention: domain
+    services stay auth-agnostic, `*GateTest` classes cover the HTTP gate). Judgment call recorded
+    on that class's own Javadoc, not silently decided.
+  - **Contract:** `docs/api/openapi.json` regenerated via `OpenApiContractTest`'s own mechanism —
+    additive/description-text-only diff (38 insertions / 38 deletions), no path or shape change;
+    every `"Requires the admin scope"` string became its granular equivalent. This is flagged as a
+    **breaking change to scope semantics by design** (spec V3) in the PR body, not a silent
+    behavior change.
+  - **Tests (17 new):** `ScopeRegistry`-backed updates across every existing scope-gate test
+    family (`SchemaManagementScopeGateTest`, `ConsumingPartyAdminGateTest`, `TenantAdminGateTest`,
+    `ActivityAttentionScopeGateTest`, `StatsScopeGateTest`, `CredentialListScopeGateTest`,
+    `AuthLoginCycleTest`) plus new `AdminApiKeyEndpointTest` cases proving the D4 gap is closed
+    (tenant:admin-only cross-tenant mint → 403 + zero rows created, verified under the *target*
+    tenant's own RLS context so the assertion can't pass vacuously; platform:admin cross-tenant
+    mint → 200 + `ON_BEHALF_OF` audit row).
+  - **DoD:** `mvn verify` green (344/344); live compose e2e against the rebuilt image (real
+    Postgres, `V10` applied cleanly against the existing dev volume) — PLATFORM_ADMIN session →
+    `/admin/tenants` 200; `schema:manage`-only key → schema create 200, `/admin/tenants` 403;
+    `consumer:manage`-only key → consuming-party create 200, `/admin/tenants` 403;
+    `tenant:admin`-only key → `/admin/tenants` 403 and cross-tenant key mint 403; PLATFORM_ADMIN
+    session → cross-tenant key mint 200 with `ON_BEHALF_OF` audit row confirmed in `audit_log`.
+    `CrossTenantIsolationTest`/`ModulithBoundariesTest` green throughout.
 - **chore/credential-search-status-filter — server-side status filter on credential search**
   (session `chore/credential-search-status-filter`, 2026-07-28): closes the console's recorded
   platform ask (`khatm-console` `docs/STATE.md`, 2026-07-28, C6b chore — logged there, now marked
@@ -438,6 +521,11 @@
 
 
 ## Last completed
+- 2026-07-28: KH-2.2a-BE — RBAC scope registry (D1–D4): nine-scope deny-by-default registry
+  replaces the coarse `admin` scope; every `/api/v1/admin/**` endpoint re-gated per family; found
+  and closed a real cross-tenant gap in cross-tenant API-key minting via new
+  `shared.OnBehalfOfExecutor`. `mvn verify` green, 344/344 tests (17 new). **PR #43 opened, NOT
+  merged.** See "Current phase / task" above for the full D1–D4 breakdown.
 - 2026-07-28: chore/credential-search-status-filter — server-side `status` query param on `GET
   /api/v1/credentials`, closing the console's recorded C6b platform ask. `mvn verify` green,
   329/329 tests (9 new). **PR #41 opened, NOT merged.** Also opened `khatm-console` PR #18
@@ -713,12 +801,21 @@ KH-1.4.4-BE the consuming-party admin plane + closed the `ensure()` race; KH-1.1
 + the stats endpoint + OpenAPI security schemes; KH-1.1.5-BE Dashboard v2's five read endpoints,
 merged via PR #35), **KH-2.1-BE (multi-tenancy core + real Postgres RLS) merged via PR #36** with
 its review follow-ups merged via PR #38, **KH-1.6-BE (consumption lifecycle visibility —
-`EXHAUSTED` status, holder-status endpoint) merged via PR #39**, and
+`EXHAUSTED` status, holder-status endpoint) merged via PR #39**,
 **chore/credential-search-status-filter (server-side `status` filter, closing the console's C6b
-ask) built and verified, PR #41 opened, not yet merged** — the one outstanding
-`khatm-platform` PR as of this update (plus a small docs-only `khatm-console` PR #18 marking that
-ask addressed-pending-merge).
+ask) built and verified, PR #41 opened, not yet merged**, and **KH-2.2a-BE (RBAC scope registry,
+D1–D4) built and verified, PR #43 opened, not yet merged** — the two outstanding `khatm-platform`
+PRs as of this update (plus a small docs-only `khatm-console` PR #18 marking the C6b ask
+addressed-pending-merge).
 
+0. **KH-2.2b-BE — next planned session** (spec `docs/specs/FS-2.2-rbac-granularity.md` §3, D5+D6
+   +D8): the tenant user-management surface (`GET/POST /api/v1/users`, roles/lock/unlock/disable
+   /reset-password, `tenant:admin`-gated), onboarding completion (`initialAdmin` on tenant create +
+   `POST /admin/tenants/{id}/users`, spec D4's on-behalf-of pattern for real this time — these
+   {id}-suffixed endpoints genuinely will touch tenant-scoped RLS data, unlike anything
+   `shared.OnBehalfOfExecutor` covers today), and the last-tenant-admin guard (`KH-USR-0423`,
+   `ConcurrentLastAdminTest`). Depends on KH-2.2a-BE (PR #43) merging first — its scope registry is
+   what D5's `tenant:admin` gate and D8's new `KH-USR-*` error codes/Arabic keys build on.
 1. **C6 (console) / W4 (wallet) — unblocked, KH-1.6-BE is merged**: the two follow-on session
    briefs spec `docs/specs/FS-1.6-consumption-lifecycle-visibility.md` §"Brief — C6"/"Brief — W4"
    already scope in full — console credential-lifecycle badges/uses-column/filter and wallet's live
