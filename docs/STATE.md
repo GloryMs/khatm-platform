@@ -11,9 +11,9 @@
   e2e run for real (DoD): issue `maxUses=2` → consume ×2 (2nd returns `remaining=0`) → 3rd rejected
   (`already_consumed`) → `holder-status` shows `EXHAUSTED 0/2` → `/verify` returns `valid:false`
   `reason:exhausted` → status-list bit (idx 7, MSB-first decode against the live artifact) reads
-  set → search row shows `status:EXHAUSTED, usesConsumed:2`. **PR #39 opened, NOT
-  merged** — pending Majd's review (spec's own Arabic-review gate applies: new `verify.reason
-  .exhausted` key).
+  set → search row shows `status:EXHAUSTED, usesConsumed:2`. **DONE & MERGED via PR #39**
+  (2026-07-28, merge commit `9223a63`, fast-forward); branch `feat/KH-1.6-BE-consumption-lifecycle`
+  deleted.
   - **Verify-against-code findings (recorded before writing, per the brief):** `Credential` had no
     status-like column at all — D1 needed no migration, since the exactly-once `EXHAUSTED`
     transition falls out for free from `CredentialRepository#consumeOne`'s existing atomic `WHERE
@@ -77,11 +77,31 @@
     mechanism (95 insertions, 0 deletions — additive-only, confirmed via `git diff --stat`).
     `docs/error-codes.md` **unchanged** — no new `ErrorCode` this session (holder-status reuses
     `KH_CRD_0404`). `MessageBundleParityTest` green throughout.
-  - **STATE sweep (this update):** the previous entry below claimed `chore/KH-2.1-review-followups`
-    "PR opened, not yet merged" — `git log` at this session's start already showed it merged (PR
-    #38, merge commit `8d6a927`, which is `origin/main`'s tip this branch was cut from); corrected
-    below, same "confirm main's actual state via git log, don't trust a stale STATE note" pattern
-    KH-1.4.4-BE/KH-1.1.3-BE/KH-2.1-BE sessions already established.
+  - **STATE sweep (recorded at PR-open time):** the previous entry below claimed
+    `chore/KH-2.1-review-followups` "PR opened, not yet merged" — `git log` at this session's start
+    already showed it merged (PR #38, merge commit `8d6a927`, which is `origin/main`'s tip this
+    branch was cut from); corrected below, same "confirm main's actual state via git log, don't
+    trust a stale STATE note" pattern KH-1.4.4-BE/KH-1.1.3-BE/KH-2.1-BE sessions already established.
+  - **Pre-merge CI fix — gitleaks false positive, real (not skipped):** PR #39's own `gitleaks
+    (secrets)` check failed on every push, red on an otherwise fully green PR (Build/verify, Trivy,
+    compose-smoke all passed). Confirmed a genuine false positive by running gitleaks locally
+    unredacted (`docker run zricethezav/gitleaks:latest detect ... --redact=0`) against the exact
+    commit range CI scans: the `generic-api-key` rule's trigger word "token" appeared a few
+    characters before a 20-char unbroken run — `unresolvable/retired`, a plain English phrase in
+    `CredentialService#holderStatus`'s Javadoc (no `/`-joined identifier is anywhere near a real
+    secret in this codebase; the slash alone was enough to keep the run unbroken past the rule's
+    20-char/3.5-entropy threshold). **Fix chosen over allowlisting**: reworded the sentence
+    ("a malformed JWT, an unresolvable or retired `kid`") to break the run with spaces — a smaller,
+    safer change than adding a permanent `.gitleaks.toml` allowlist entry for a common English
+    phrase pattern that could otherwise mask a real future finding using similar wording. **Because
+    gitleaks scans the PR's commit-by-commit diff, not just the final tree**, a fix-up commit alone
+    would not have cleared it — the bad phrasing was already baked into an already-pushed commit's
+    diff within the scanned range. Majd chose (offered two options) to squash the branch's three
+    commits into one clean commit with the reworded Javadoc already applied, `--force-with-lease`
+    push it (branch was solo/unshared — low risk), and let CI re-run clean before merging, rather
+    than merging over the red check. Verified locally with the same dockerized gitleaks scan before
+    *and* after the force-push (`no leaks found`) — not just trusted to CI. New CI run (all 4 checks
+    green) confirmed before merge.
 - **chore/KH-2.1-review-followups — post-merge review actions for KH-2.1-BE** (session
   `chore/KH-2.1-review-followups`, 2026-07-27): four follow-ups from KH-2.1-BE's review (PR #36,
   merged), `mvn verify` green, **316/316 tests (8 new)**. No contract change (additive-only
@@ -368,10 +388,16 @@
 
 
 ## Last completed
-- 2026-07-27: KH-1.6-BE — Consumption Lifecycle Visibility (D1–D6). `mvn verify` green, 320/320
-  tests (8 new); live compose e2e run for real end-to-end. **PR #39 opened, NOT
-  merged** — pending Majd's review (Arabic-review gate on the new `verify.reason.exhausted` key).
-  See "Current phase / task" above for the full D1–D6 breakdown and verify-against-code findings.
+- 2026-07-28: KH-1.6-BE — Consumption Lifecycle Visibility (D1–D6). `mvn verify` green, 320/320
+  tests (8 new); live compose e2e run for real end-to-end. **DONE & MERGED via PR #39**
+  (2026-07-28, merge commit `9223a63`, fast-forward); branch
+  `feat/KH-1.6-BE-consumption-lifecycle` deleted, merged on Majd's explicit instruction. **Note:**
+  no separate Arabic-wording review pass was surfaced as a distinct step this session for the new
+  `verify.reason.exhausted` key before merge — flag for a follow-up read if that matters, unlike
+  prior sessions' recorded "confirmed by Majd, no wording changes" pattern. See "Current phase /
+  task" above for the full D1–D6 breakdown, verify-against-code findings, and the pre-merge
+  gitleaks false-positive fix (branch squashed + force-pushed to clear a stale finding from an
+  already-pushed commit's diff, CI reconfirmed green before merge).
 - 2026-07-22: KH-1.1.3-BE — bulk issuance + stats endpoint (+ OpenAPI security schemes).
   Support-mode session, brief itself was the spec. `mvn verify` green, 230/230 tests (22 new, up
   from 208). **DONE & MERGED via PR #29** (2026-07-22, merge commit `c138da7`); branch
@@ -631,15 +657,14 @@ KH-1.4.4-BE the consuming-party admin plane + closed the `ensure()` race; KH-1.1
 + the stats endpoint + OpenAPI security schemes; KH-1.1.5-BE Dashboard v2's five read endpoints,
 merged via PR #35), **KH-2.1-BE (multi-tenancy core + real Postgres RLS) merged via PR #36** with
 its review follow-ups merged via PR #38, and **KH-1.6-BE (consumption lifecycle visibility —
-`EXHAUSTED` status, holder-status endpoint) is now built and verified** (see "Current phase /
-task" above) — **PR #39 opened, not yet merged**; this is the one outstanding PR as of
-this update.
+`EXHAUSTED` status, holder-status endpoint) merged via PR #39**. No outstanding PR as of this
+update.
 
-1. **C6 (console) / W4 (wallet) — consume `feat/KH-1.6-BE-consumption-lifecycle` once merged**: the
-   two follow-on session briefs spec `docs/specs/FS-1.6-consumption-lifecycle-visibility.md` §"Brief
-   — C6"/"Brief — W4" already scope in full — console credential-lifecycle badges/uses-column/filter
-   and wallet's live holder-status refresh + exhausted-vs-revoked verifier distinction. Both are
-   blocked on this PR merging first (they self-stop if the contract fields they need are absent).
+1. **C6 (console) / W4 (wallet) — now unblocked, KH-1.6-BE is merged**: the two follow-on session
+   briefs spec `docs/specs/FS-1.6-consumption-lifecycle-visibility.md` §"Brief — C6"/"Brief — W4"
+   already scope in full — console credential-lifecycle badges/uses-column/filter and wallet's live
+   holder-status refresh + exhausted-vs-revoked verifier distinction. Both self-stop if a contract
+   field they need is somehow absent, but the contract now carries everything both briefs ask for.
 2. **Console's four Dashboard v2 panels (other repo)** — now that KH-1.1.5-BE is merged, wiring the
    console side to real data is the already-scoped follow-up this session's brief named
    (khatm-console's `docs/STATE.md`, "Next up" #5).
