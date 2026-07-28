@@ -5,14 +5,12 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import sy.khatm.platform.shared.web.ErrorEnvelope;
@@ -20,9 +18,17 @@ import sy.khatm.platform.tenant.api.TenantAdmin;
 import sy.khatm.platform.tenant.api.TenantView;
 
 /**
- * Tenant admin/onboarding plane (spec FS-2.1 D6, {@code /api/v1/admin/tenants}) — register new
- * tenants (full onboarding: tenant row + first {@code ACTIVE} signing key + default status list),
- * list every tenant platform-wide, and flip a tenant's {@code ACTIVE}/{@code SUSPENDED} status.
+ * Tenant admin plane (spec FS-2.1 D6, {@code /api/v1/admin/tenants}) — list every tenant
+ * platform-wide, fetch one, and flip a tenant's {@code ACTIVE}/{@code SUSPENDED} status.
+ *
+ * <p><b>KH-2.2b — onboarding create relocated:</b> {@code POST /api/v1/admin/tenants} (onboard a
+ * tenant, now optionally with its first administrator, spec FS-2.2 D6) moved to {@code
+ * rbac.web.TenantProvisioningController}. The onboarding flow creates an {@code app_user} (the
+ * first admin) and seeds the {@code rbac}-owned role catalog, so it lives in {@code rbac.web} for
+ * the same Modulith-cycle avoidance that put {@code rbac.web.ConsumingPartyKeyController} there —
+ * {@code tenant → rbac} would cycle against the existing {@code rbac → tenant :: api} edge. The
+ * URL, the {@code platform:admin} gate, and {@code TenantAdmin#create}'s resumable-onboarding
+ * semantics are all unchanged; only the handling bean moved modules.
  *
  * <p>Guarded by the {@code platform:admin} scope exclusively (spec FS-2.2 D2) — {@code
  * rbac.security.SecurityConfig}'s {@code ADMIN_TENANTS_PATH} rule, {@code
@@ -85,39 +91,6 @@ class TenantAdminController {
   @GetMapping("/{id}")
   TenantView get(@PathVariable String id) {
     return admin.get(UUID.fromString(id));
-  }
-
-  @Operation(
-      summary = "Onboard a tenant",
-      description =
-          "Full onboarding: creates the tenant row, provisions its first ACTIVE signing key, and"
-              + " creates its default status list (<slug>-<year>, capacity 131072) before this call"
-              + " returns. Calling this again with a slug that already has a fully-onboarded tenant"
-              + " is a conflict (KH-TNT-0409); calling it again with a slug whose onboarding"
-              + " previously died partway through resumes it instead of conflicting. Requires the"
-              + " platform:admin scope.",
-      responses = {
-        @ApiResponse(responseCode = "200", description = "Tenant onboarded (or resumed)"),
-        @ApiResponse(
-            responseCode = "400",
-            description = "Bean Validation failed, or an invalid slug format (KH-TNT-0400)",
-            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
-        @ApiResponse(
-            responseCode = "401",
-            description = "No valid session or API key",
-            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
-        @ApiResponse(
-            responseCode = "403",
-            description = "Missing the platform:admin scope (KH-RBC-0403)",
-            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
-        @ApiResponse(
-            responseCode = "409",
-            description = "A fully-onboarded tenant with this slug already exists (KH-TNT-0409)",
-            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
-      })
-  @PostMapping
-  TenantView create(@Valid @RequestBody CreateTenantRequest req) {
-    return admin.create(req.slug(), req.nameI18n().toLocalizedText(), req.type(), req.deployMode());
   }
 
   @Operation(

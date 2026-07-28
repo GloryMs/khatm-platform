@@ -77,6 +77,34 @@ class TenantContextFilterCoverageTest extends IntegrationTestSupport {
         .isGreaterThan(securityContextHolderIndex);
   }
 
+  /**
+   * KH-2.2b — {@link PasswordChangeEnforcementFilter} needs {@code shared.TenantContext} already
+   * resolved (its live {@code app_user} read is RLS-scoped to the user's own tenant), so it must
+   * run after {@link TenantContextFilter} on the session chain. It has no place on the api-key
+   * chain at all — API keys carry no human password and are unaffected by the forced-change gate.
+   */
+  @Test
+  void sessionChain_runsPasswordChangeEnforcementFilter_afterTenantContextFilter() {
+    List<Filter> filters = sessionChain.getFilters();
+    int tenantContextIndex = indexOfType(filters, TenantContextFilter.class);
+    int passwordChangeIndex = indexOfType(filters, PasswordChangeEnforcementFilter.class);
+
+    assertThat(passwordChangeIndex)
+        .as("PasswordChangeEnforcementFilter must be present on the session chain")
+        .isGreaterThanOrEqualTo(0);
+    assertThat(passwordChangeIndex)
+        .as("PasswordChangeEnforcementFilter must run after TenantContextFilter")
+        .isGreaterThan(tenantContextIndex);
+  }
+
+  @Test
+  void apiKeyChain_hasNoPasswordChangeEnforcementFilter() {
+    List<Filter> filters = apiKeyChain.getFilters();
+    assertThat(indexOfType(filters, PasswordChangeEnforcementFilter.class))
+        .as("the api-key chain must not run the password-change gate at all")
+        .isEqualTo(-1);
+  }
+
   private static int indexOfType(List<Filter> filters, Class<?> type) {
     for (int i = 0; i < filters.size(); i++) {
       if (type.isInstance(filters.get(i))) {

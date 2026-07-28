@@ -58,6 +58,16 @@ import org.springframework.http.HttpStatus;
  * schema isn't yours" is a materially different, support-relevant situation from a generic
  * missing-scope 403.
  *
+ * <p><b>{@code USR} batch</b> (KH-2.2b, spec FS-2.2 D5/D6/D8): a new module tag for the tenant
+ * user-management surface. {@code USR} is the second tag (after {@code CLM}) that names a bounded
+ * concern rather than its owning Java module 1:1 — user management lives inside the {@code rbac}
+ * module (no new Modulith module for one surface), but its failure vocabulary ({@code KH-USR-0400}
+ * validation, {@code KH-USR-0403} must-change-password, {@code KH-USR-0404} not-found, {@code
+ * KH-USR-0409} duplicate-username, {@code KH-USR-0423} last-admin guard) is conceptually separate
+ * from {@code RBC}'s auth/forbidden vocabulary, the same separation {@code CLM} made from {@code
+ * CRD}. {@code KH_USR_0423} is the first code whose suffix ({@code 423}) does not mirror its HTTP
+ * status ({@code 409}) — see its own Javadoc.
+ *
  * <p>{@code docs/error-codes.md} is generated from this enum by a test ({@code
  * ErrorCodesDocGenerationTest}) — never hand-edited (CLAUDE.md work rule 1).
  */
@@ -222,7 +232,52 @@ public enum ErrorCode {
    * has no key yet (a prior onboarding attempt died mid-way, spec V3) resumes instead of
    * conflicting — see {@code tenant.api.TenantAdmin#create}'s Javadoc.
    */
-  KH_TNT_0409(HttpStatus.CONFLICT, "tenant.duplicate-slug");
+  KH_TNT_0409(HttpStatus.CONFLICT, "tenant.duplicate-slug"),
+
+  /**
+   * A tenant user-management request (KH-2.2b, spec FS-2.2 D5, {@code
+   * rbac.web.UserAdminController}) failed a business-level check Bean Validation cannot express —
+   * an unknown role code, an empty {@code roles} set, or a username that is not a valid slug. One
+   * code for every flavor (the reason is substituted into the message via {@code {0}}), the same
+   * collapsing judgment call {@link #KH_SCH_0400} already made.
+   */
+  KH_USR_0400(HttpStatus.BAD_REQUEST, "user.validation-failed"),
+
+  /**
+   * An authenticated user whose {@code must_change_password} flag is set called any endpoint other
+   * than the self-service password-change one (KH-2.2b, {@code rbac.security
+   * .PasswordChangeEnforcementFilter}). The flag is set on temporary-password provisioning (D5
+   * create/reset-password, D6 onboarding's first admin) and cleared on first real password change;
+   * while it is set, this 403 with its distinct code is how the console routes to the change screen
+   * rather than treating the user as merely lacking a scope ({@link #KH_RBC_0403}).
+   */
+  KH_USR_0403(HttpStatus.FORBIDDEN, "user.must-change-password"),
+
+  /** A requested tenant user does not exist in the current tenant (KH-2.2b, spec FS-2.2 D5). */
+  KH_USR_0404(HttpStatus.NOT_FOUND, "user.not-found"),
+
+  /**
+   * Explicit creation of a tenant user (KH-2.2b, spec FS-2.2 D5) whose {@code username} already
+   * exists in this tenant. The unique constraint {@code (tenant_id, username)} makes a second row
+   * impossible; a second explicit create is reported as a conflict rather than silently
+   * overwriting.
+   */
+  KH_USR_0409(HttpStatus.CONFLICT, "user.duplicate-username"),
+
+  /**
+   * The last-tenant-admin guard (KH-2.2b, spec FS-2.2 D5): a lock, disable, or role-change that
+   * would leave the tenant with zero {@code ACTIVE} users holding the {@code tenant:admin} scope.
+   * Atomically rejected — race-proofed by a per-tenant advisory lock so two concurrent operations
+   * against the final two administrators cannot both succeed ({@code db.ConcurrentLastAdminTest}).
+   *
+   * <p><b>Code suffix vs. HTTP status — first documented divergence.</b> The code is {@code 0423}
+   * (HTTP 423 Locked is thematically exact: the operation would lock the tenant out of its own
+   * administration), but the wire status is {@code 409 Conflict}, per the approved brief's explicit
+   * {@code "409 KH-USR-0423"}. The "last three digits mirror the HTTP status" rule recorded in this
+   * enum's class Javadoc is a mnemonic, not a contract; this is its first exception, recorded here
+   * and in {@code docs/error-codes.md} rather than silently breaking the pattern.
+   */
+  KH_USR_0423(HttpStatus.CONFLICT, "user.last-admin");
 
   private final HttpStatus httpStatus;
   private final String messageKey;

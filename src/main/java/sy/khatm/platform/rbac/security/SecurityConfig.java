@@ -211,6 +211,11 @@ class SecurityConfig {
   private static final String STATS_PATH = "/api/v1/stats/**";
   private static final String ACTIVITY_PATH = "/api/v1/activity";
   private static final String ATTENTION_PATH = "/api/v1/attention";
+  // KH-2.2b (spec FS-2.2 D5): the tenant user-management surface. The self-service password-change
+  // endpoint is declared before the wildcard so it gets the looser "any session" rule, not
+  // tenant:admin — any authenticated console user may change their own password.
+  private static final String USERS_PATH = "/api/v1/users/**";
+  private static final String USER_PASSWORD_PATH = "/api/v1/users/me/password";
   private static final String[] SWAGGER_PATHS = {
     "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html"
   };
@@ -247,6 +252,7 @@ class SecurityConfig {
       KhatmAuthenticationEntryPoint entryPoint,
       KhatmAccessDeniedHandler accessDeniedHandler,
       TenantContextFilter tenantContextFilter,
+      PasswordChangeEnforcementFilter passwordChangeFilter,
       Environment environment)
       throws Exception {
     boolean swaggerEnabled = environment.matchesProfiles("local", "dev");
@@ -264,7 +270,12 @@ class SecurityConfig {
         .exceptionHandling(
             ex -> ex.authenticationEntryPoint(entryPoint).accessDeniedHandler(accessDeniedHandler))
         .addFilterAfter(new CsrfCookieFilter(), CsrfFilter.class)
-        .addFilterAfter(tenantContextFilter, SecurityContextHolderFilter.class);
+        .addFilterAfter(tenantContextFilter, SecurityContextHolderFilter.class)
+        // KH-2.2b: after the tenant context is resolved (so the live app_user read targets the
+        // user's own tenant under RLS), enforce the forced-password-change gate on the session
+        // chain
+        // only — API keys carry no human password and are unaffected.
+        .addFilterAfter(passwordChangeFilter, TenantContextFilter.class);
     return http.build();
   }
 
@@ -322,6 +333,16 @@ class SecurityConfig {
         .access(ScopeGuard.requireUserSession())
         .requestMatchers(HttpMethod.GET, ATTENTION_PATH)
         .access(ScopeGuard.requireUserSession())
+        // KH-2.2b (spec FS-2.2 D5): tenant user management. The self-service change-password
+        // endpoint
+        // is matched first and needs only a console session (any operator changes their own
+        // password); every other /api/v1/users/** path requires the tenant:admin scope
+        // specifically,
+        // as a console session (ACTOR_USER), never an API key.
+        .requestMatchers(HttpMethod.POST, USER_PASSWORD_PATH)
+        .access(ScopeGuard.requireUserSession())
+        .requestMatchers(USERS_PATH)
+        .access(ScopeGuard.requireScopeAndUserSession(ScopeRegistry.TENANT_ADMIN))
         .anyRequest()
         .authenticated();
   }

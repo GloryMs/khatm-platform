@@ -18,6 +18,166 @@ section once CI is confirmed green again post-2026-08-01.
 
 ## Current phase / task
 - Phase 0 — Production Foundation, fully closed (see prior sessions).
+- **KH-2.2b-BE — tenant user management + onboarding completion (D5+D6+D8)** (session
+  `feat/KH-2.2b-BE-tenant-users`, 2026-07-28, spec `docs/specs/FS-2.2-rbac-granularity.md` §3):
+  the tenant-staff user-management surface (`GET/POST /api/v1/users`, roles/lock/unlock/disable/
+  reset-password, `tenant:admin`-gated, console-session-only), onboarding completion (`initialAdmin`
+  on tenant create + `POST /admin/tenants/{id}/users`), the forced-password-change gate, and the
+  race-proofed last-tenant-admin guard. `mvn verify` green, **375/375 tests (31 new)**. New
+  `user.*` message keys in both bundles — **Arabic-speaker review gate applies, PR merge blocker**
+  (not yet confirmed by Majd as of this writing). **PR #45 opened, NOT merged** (gitleaks scanned
+  locally, clean).
+  - **Verify-against-code findings (recorded before writing, per the brief):** `app_user` (V1
+    baseline) had no `must_change_password` column and no `updated_at`/`@Version` — added the flag
+    via new migration, confirmed argon2id password hashing end-to-end
+    (`Argon2PasswordEncoder.defaultsForSpringSecurity_v5_8()`, `AuthService#login`/
+    `AdminBootstrap#bootstrapIfNeeded`), and confirmed a user's roles are loaded into the session
+    principal as the **union of their roles' scopes** (`RoleRepository#findScopesByUserId` →
+    `LoginResult.scopes` → `KhatmAuthenticationToken`'s `SCOPE_*` authorities) — no role codes and
+    no live per-request re-read, which is exactly why the last-admin guard reasons about the
+    `tenant:admin` **scope** (via a native `role.scopes` join query), not the `TENANT_ADMIN` role
+    code, and why the forced-change flag needed its own live-read filter rather than living in the
+    principal. The plaintext-once pattern (`ApiKeyService`'s `CreatedApiKey` domain record +
+    `CreateApiKeyResponse` web record) was confirmed and mirrored verbatim as `CreatedUser`/
+    `CreateUserResponse` for temporary passwords.
+  - **A genuine architectural fork, found and resolved before writing (per the brief's own
+    self-stop trigger):** `POST /admin/tenants` with `initialAdmin` must create an `app_user` +
+    seed `rbac`'s role catalog — but `rbac` already declares `allowedDependencies` including
+    `tenant :: api` (for `TenantDirectory`), so `tenant → rbac` would be a Modulith cycle
+    (`ModulithBoundariesTest` verifies acyclicity). Presented as an explicit architect decision
+    rather than guessed: **approved resolution** — the onboarding *create* endpoint relocates to a
+    new `rbac.web.TenantProvisioningController`, mirroring the exact precedent
+    `rbac.web.ConsumingPartyKeyController` already set for the identical class of problem
+    (KH-1.4.4, a cross-module endpoint that must live in the module owning the extra tables it
+    touches). `tenant.web.TenantAdminController` keeps list/get/suspend/activate; the URL
+    (`POST /api/v1/admin/tenants`), its `platform:admin` gate, and `TenantAdmin#create`'s own
+    resumable-onboarding semantics are all unchanged — only the handling bean moved modules. New
+    `rbac.domain.TenantProvisioningService` orchestrates both halves (calls `tenant :: api` for the
+    tenant+key+status-list, then `RoleCatalogSeeder`/`UserAdminService` for the rbac-side half),
+    wrapped in `shared.OnBehalfOfExecutor#runAsTenant` for the genuinely cross-tenant steps — the
+    first *real* exercise of that D4 mechanism (KH-2.2a wired it but never actually needed the
+    cross-tenant switch on a request that also does other RLS-protected writes). Recorded here as a
+    reinforced convention: **cross-module orchestration endpoints live in the module that owns the
+    extra tables**, not the module that conceptually "owns" the feature.
+  - **A second, real bug found only by running the new orchestration (caught by its own new
+    tests, not by inspection):** `OnBehalfOfExecutor#runAsTenant`'s `finally` block clears
+    `TenantContext`'s `ThreadLocal` entirely rather than restoring whatever was ambient before it
+    ran — correct for its original, single-step call site (`AuthController#createApiKey`), but
+    `TenantProvisioningService#onboard` calls `TenantAdmin#create` (which also sets-then-clears
+    `TenantContext` internally) *before* calling `runAsTenant`, wiping the calling platform admin's
+    own ambient tenant that `runAsTenant` needs alive to write its pre-switch `ON_BEHALF_OF` audit
+    row. Fixed by capturing the caller's tenant id/slug before `create()` runs and re-`set`ting it
+    immediately after, before `runAsTenant` is invoked. Confirmed via the live compose e2e (DoD) —
+    surfaced originally as a 500 in `TenantAdminGateTest`/`CrossTenantIsolationTest`/
+    `SuspendedTenantAuthTest`, all of which route through `POST /api/v1/admin/tenants`.
+  - **Resumable onboarding, extended exactly where the brief asked, scoped narrowly:**
+    `TenantAdmin#create`'s own `KH-TNT-0409` fires once tenant+key are both done — this session's
+    orchestration introduces a *later* crash window (tenant+key done, catalog/admin not yet
+    provisioned). `TenantProvisioningService#onboard` catches that specific conflict **only when
+    `initialAdminUsername` is non-null** (there is new rbac-side work to resume only in that case),
+    resolves the already-onboarded tenant by slug, and continues into the catalog/admin resume —
+    preserving the pre-existing KH-2.1 contract that a plain re-create with no `initialAdmin`
+    against an already-onboarded slug still conflicts (a real regression caught by the existing,
+    unrelated `TenantAdminGateTest.create_duplicateSlug_returns409_andLeavesOneRow`, which pinned
+    exactly this boundary). Verified live: retrying the same onboard call with the same
+    `initialAdminUsername` resumes (200, `temporaryPassword: null` since the admin already exists,
+    exactly one `app_user` row); retrying with no `initialAdmin` still 409s.
+  - **Per-tenant role catalog — a real gap, not originally scoped, found during verification:**
+    `V1__baseline.sql` seeded the three catalog roles (`PLATFORM_ADMIN`/`TENANT_ADMIN`/
+    `ISSUER_OPERATOR`) only for the default tenant; `V10`'s `WHERE code = ...` rescoping matched
+    only those same rows, since no other tenant had any role rows at all. Every tenant onboarded
+    before this session (from KH-2.1's own e2e tenants onward) has **zero** role rows — would have
+    broken both D5 (assign from catalog) and D6 (first `TENANT_ADMIN`) silently. Fixed two ways,
+    per the approved plan: (a) new `rbac.domain.RoleCatalogSeeder#ensureCatalog` (idempotent,
+    find-or-create per role) called from the onboarding orchestration for every newly/resumed
+    onboarded tenant; (b) new `V12__seed_tenant_role_catalogs.sql`, a data-only, idempotent
+    (`WHERE NOT EXISTS`) backfill for every tenant that already existed, seeding the identical V1 +
+    V10 granular-scope values — confirmed via `db.SeededRoleScopesTest`-style assertions that no
+    role anywhere ever carries the retired `admin` scope.
+  - **V12's own mechanism, verified against the code, not assumed:** confirmed Flyway runs on a
+    *separate owner/superuser* datasource (`SPRING_FLYWAY_USER`/`spring.flyway.user`, distinct from
+    the locked-down `khatm_app` runtime role, `docker-compose.yml`/`support.IntegrationTestSupport`)
+    — the same mechanism `V9__resign_status_lists.sql` and `V10` already relied on to mutate every
+    row of a `FORCE ROW LEVEL SECURITY`-protected table with plain DML and no `app.tenant_id`
+    needed. The precedent transferred cleanly; no stop-and-report was needed.
+  - **D5 — tenant user management, `rbac.web.UserAdminController`, `/api/v1/users/**`:** `GET`
+    (list, newest-first) / `POST` (create — username slug validated, roles from the fixed catalog,
+    temp password plaintext-once, `must_change_password` set) / `POST /{id}/roles` (replace,
+    delete-all-then-reinsert) / `/{id}/lock` / `/{id}/unlock` (no last-admin guard — can only add an
+    active admin) / `/{id}/disable` / `/{id}/reset-password` (new temp password, forces change).
+    Gated `ScopeGuard.requireScopeAndUserSession(TENANT_ADMIN)` — console session only, no API key
+    of any kind (same "operator tool, not an integration" judgment call credential search/stats
+    already made). `V11__user_password_change_and_role_grants.sql` also grants `DELETE` on
+    `user_role` to `khatm_app` (role-set replacement needs it) — the same documented,
+    table-scoped exception `V7` already made for `consuming_party_schema`.
+  - **Last-tenant-admin guard, race-proofed (D5/D8):** `UserAdminService` takes a per-tenant
+    Postgres `pg_advisory_xact_lock` (keyed on `hashtext(tenantId)`) before any guarded mutation
+    (lock/disable/role-change), serializing concurrent operations within a tenant so the
+    count-then-act guard (`AppUserRepository#countActiveAdminsExcluding`, a native join counting
+    `ACTIVE` users holding the `tenant:admin` scope via any role) is never raced. New
+    `db.ConcurrentLastAdminTest` (joins the `ConcurrentConsumeTest` race-test family, per the
+    brief): two concurrent locks against a tenant's final two admins → exactly one succeeds, one
+    409s, tenant retains exactly one active admin.
+  - **Forced password-change gate (D5), live per-request:** new
+    `rbac.security.PasswordChangeEnforcementFilter`, wired into the session chain only (API keys
+    carry no human password) immediately after `TenantContextFilter` (needs the tenant context
+    resolved first, both for the RLS-scoped read and to target the right tenant) — reads
+    `app_user.must_change_password` **fresh on every request**, never cached in the session
+    principal, since an admin's `reset-password` call must bite on the target's very next request
+    even mid-session. Every call except `POST /api/v1/users/me/password` (+ logout + the existing
+    public paths) is rejected with the new, distinct `403 KH-USR-0403` so the console can route to
+    a change screen rather than a generic missing-scope 403. New
+    `rbac.PasswordChangeEnforcementFilterExemptionTest` pins the exemption list exactly; extended
+    `TenantContextFilterCoverageTest` proves filter ordering structurally (session chain only,
+    always after `TenantContextFilter`).
+  - **D8 — errors/audit:** new `KH-USR-0400/0403/0404/0409/0423` (a new `USR` module tag —
+    second, after `CLM`, to name a bounded concern rather than a 1:1 Java module; documented in
+    `ErrorCode`'s own class Javadoc). `KH-USR-0423` is the **first code whose suffix diverges from
+    its HTTP status** — `0423` (mnemonic for HTTP 423 Locked, thematically exact for "locks the
+    tenant out of its own administration") but wire status `409 Conflict` per the approved brief's
+    exact wording; documented as a deliberate, first-time exception in both the enum Javadoc and
+    `docs/error-codes.md`. New `AuditAction.USER_ROLES_CHANGED/LOCKED/UNLOCKED/DISABLED/
+    PASSWORD_RESET/PASSWORD_CHANGED` (`USER_CREATED` already existed, reused, not duplicated). Five
+    new `user.*` keys in both bundles, same commit — **Arabic-review gate applies**.
+  - **Contract:** `docs/api/openapi.json` regenerated via `OpenApiContractTest`'s own mechanism —
+    additive-only (8 new paths: `/api/v1/users` + its 6 action sub-paths +
+    `/api/v1/admin/tenants/{id}/users`; `CreateTenantRequest` schema replaced by
+    `OnboardTenantRequest`/`OnboardTenantResponse`/`InitialAdminRequest`/`InitialAdminResponse`/
+    `CreateUserRequest`/`CreateUserResponse`/`ChangePasswordRequest`/`DisplayNameI18nRequest` —
+    confirmed via path-set diff, no path removed). `docs/error-codes.md` regenerated (5 new
+    `KH-USR-*` rows).
+  - **Tests (31 new):** `db.ConcurrentLastAdminTest` (1, the mandatory race test), `db
+    .TenantRoleCatalogTest` (4 — V12 backfill-statement idempotency proven directly rather than
+    asserted over the shared suite's incidental fixture data, since several pre-existing test
+    classes deliberately create tenants via `TenantAdmin#create` service-level with no rbac
+    orchestration involved; `RoleCatalogSeeder` exact-scope-set + idempotency), `rbac
+    .UserAdminGateTest` (10 — scope gate, full lifecycle with audit rows, duplicate-username 409,
+    unknown-role 400, sole-admin disable/role-change 409, second-admin disable succeeds, the
+    forced-change gate end-to-end over real HTTP), `rbac.domain.UserAdminServiceTest` (9 — service
+    level), `rbac.domain.TenantProvisioningServiceTest` (4 — onboard-with-admin, onboard-without,
+    resume-fills-missing-never-duplicates, cross-tenant user create + `ON_BEHALF_OF` audit), `rbac
+    .PasswordChangeEnforcementFilterExemptionTest` (1), plus 2 new cases in the existing
+    `TenantContextFilterCoverageTest` and the extended `OnBehalfOfCallerAllowlistTest`/
+    `OpenApiContractTest`/`ErrorCodesDocGenerationTest`/`SeededRoleScopesTest`-style assertions
+    (no new test files for these, existing suites extended).
+  - **DoD:** `mvn verify` green (375/375, up from 344). Live compose e2e against the rebuilt image
+    (existing dev volume, V11/V12 applied cleanly, confirmed via `docker logs`) — onboard tenant
+    WITH `initialAdmin` in one call (temp password shown once) → **documented pre-existing gap,
+    not introduced this session**: bare `POST /api/v1/auth/login` cannot resolve a non-default
+    tenant's user at all (`AuthService#login` reads the anonymous request's `TenantContext.current()`,
+    which always falls back to the default tenant — `SuspendedTenantAuthTest`'s own Javadoc already
+    documents this as out-of-scope multi-tenant console-login support), so the login-dependent DoD
+    steps were run against a second user created under the **default** tenant instead (same
+    mechanics, same code paths) — forced-password-change login → blocked on `/api/v1/auth/me` with
+    `KH-USR-0403` → self-service change → flag cleared, normal access resumes on the same session →
+    operator issues fine, 403 on schema writes and on `/api/v1/users` → disabling the sole
+    `TENANT_ADMIN` → 409 `KH-USR-0423` → platform-admin adds a user to the OTHER (non-default)
+    tenant via `/admin/tenants/{id}/users` → `ON_BEHALF_OF` audit row confirmed in `audit_log` →
+    retried onboarding of the same slug+`initialAdmin` resumes idempotently (200,
+    `temporaryPassword: null`, exactly one `app_user` row) → retried onboarding of the same slug
+    with no `initialAdmin` still 409s (pre-existing contract preserved). **Arabic-speaker review
+    gate for the five new `user.*` keys: not yet confirmed by Majd — merge blocker, PR not yet
+    opened.**
 - **KH-2.2a-BE — RBAC scope registry (D1–D4)** (session `feat/KH-2.2a-BE-scope-registry`,
   2026-07-28, spec `docs/specs/FS-2.2-rbac-granularity.md`): replaces the KH-0.6b coarse `admin`
   scope stand-in with a nine-scope deny-by-default registry (`issue, verify, consume, revoke,
@@ -535,6 +695,17 @@ section once CI is confirmed green again post-2026-08-01.
 
 
 ## Last completed
+- 2026-07-28: KH-2.2b-BE — tenant user management + onboarding completion (D5+D6+D8): the
+  `/api/v1/users/**` surface, `initialAdmin` on tenant onboarding + `POST
+  /admin/tenants/{id}/users`, the race-proofed last-tenant-admin guard, and the forced-password-
+  change gate. `mvn verify` green, 375/375 tests (31 new). **PR #45 opened, NOT merged** —
+  Arabic-review gate for the new `user.*` keys not yet confirmed by Majd (merge blocker). See
+  "Current phase / task" above for the full
+  breakdown: the Modulith-cycle fork (onboarding create relocated to `rbac.web` per the
+  `ConsumingPartyKeyController` precedent), the `OnBehalfOfExecutor`/`TenantContext` interaction
+  bug found and fixed via the live e2e, the per-tenant role-catalog gap (found + fixed both ways —
+  `RoleCatalogSeeder` for new tenants, `V12` backfill for existing ones), and the narrowly-scoped
+  resume-conflict extension that preserves the pre-existing KH-2.1 duplicate-slug contract.
 - 2026-07-28: KH-2.2a-BE — RBAC scope registry (D1–D4): nine-scope deny-by-default registry
   replaces the coarse `admin` scope; every `/api/v1/admin/**` endpoint re-gated per family; found
   and closed a real cross-tenant gap in cross-tenant API-key minting via new
@@ -819,20 +990,23 @@ merged via PR #35), **KH-2.1-BE (multi-tenancy core + real Postgres RLS) merged 
 its review follow-ups merged via PR #38, **KH-1.6-BE (consumption lifecycle visibility —
 `EXHAUSTED` status, holder-status endpoint) merged via PR #39**,
 **chore/credential-search-status-filter (server-side `status` filter, closing the console's C6b
-ask) built and verified, PR #41 opened, not yet merged**, and **KH-2.2a-BE (RBAC scope registry,
-D1–D4) merged via PR #43** (2026-07-28, merge commit `238c54d`) — PR #41 is the one outstanding
-`khatm-platform` PR as of this update (plus a small docs-only `khatm-console` PR #18 marking the
-C6b ask addressed-pending-merge).
+ask) built and verified, PR #41 opened, not yet merged**, **KH-2.2a-BE (RBAC scope registry,
+D1–D4) merged via PR #43** (2026-07-28, merge commit `238c54d`), and **KH-2.2b-BE (tenant user
+management + onboarding completion, D5+D6+D8) built and verified, PR #45 opened, not yet
+merged** — PR #41 and PR #45 are the two outstanding `khatm-platform` PRs as of this update (plus
+a small docs-only `khatm-console` PR #18 marking the C6b ask addressed-pending-merge).
 
-0. **KH-2.2b-BE — next planned session, unblocked (KH-2.2a-BE/PR #43 merged)** (spec
-   `docs/specs/FS-2.2-rbac-granularity.md` §3, D5+D6+D8): the tenant user-management surface
-   (`GET/POST /api/v1/users`, roles/lock/unlock/disable/reset-password, `tenant:admin`-gated),
-   onboarding completion (`initialAdmin` on tenant create + `POST /admin/tenants/{id}/users`, spec
-   D4's on-behalf-of pattern for real this time — these {id}-suffixed endpoints genuinely will
-   touch tenant-scoped RLS data, unlike anything `shared.OnBehalfOfExecutor` covers today), and
-   the last-tenant-admin guard (`KH-USR-0423`, `ConcurrentLastAdminTest`). Its scope registry is
-   what D5's `tenant:admin` gate and D8's new `KH-USR-*` error codes/Arabic keys build on.
-1. **C6 (console) / W4 (wallet) — unblocked, KH-1.6-BE is merged**: the two follow-on session
+0. **KH-2.2b-BE — DONE (this session), PR #45 opened, not yet merged; Arabic-review gate on
+   `user.*` keys is the merge blocker.** See "Current phase / task" above for the full D5+D6+D8
+   breakdown.
+1. **C7 (console) — unblocked now that both KH-2.2a-BE and KH-2.2b-BE are built**: spec FS-2.2 D7,
+   scoped in full (re-gate every console screen on the granular scopes, new Users screen, tenant
+   details' by-proxy Users tab for `platform:admin`, one-time temp-password display). Per the
+   spec's own session table, C7's preamble is `contract:update` + self-stop if D5/D6 surfaces or a
+   lingering `admin` scope are somehow absent from the contract — neither is the case as of this
+   update, but C7 should still wait for KH-2.2b-BE's own PR to merge first (its contract diff isn't
+   on `main` yet).
+2. **C6 (console) / W4 (wallet) — unblocked, KH-1.6-BE is merged**: the two follow-on session
    briefs spec `docs/specs/FS-1.6-consumption-lifecycle-visibility.md` §"Brief — C6"/"Brief — W4"
    already scope in full — console credential-lifecycle badges/uses-column/filter and wallet's live
    holder-status refresh + exhausted-vs-revoked verifier distinction. Both self-stop if a contract
@@ -840,34 +1014,38 @@ C6b ask addressed-pending-merge).
    **C6b's own status-filter-dropdown follow-up** (khatm-console, self-stopped 2026-07-28 on the
    missing `status` param) is what PR #41 above unblocks — still needs PR #41 merged, then
    khatm-console's own `npm run contract:update` re-run, before the dropdown itself can be built.
-2. **Console's four Dashboard v2 panels (other repo)** — now that KH-1.1.5-BE is merged, wiring the
+3. **Console's four Dashboard v2 panels (other repo)** — now that KH-1.1.5-BE is merged, wiring the
    console side to real data is the already-scoped follow-up this session's brief named
    (khatm-console's `docs/STATE.md`, "Next up" #5).
-3. **"Signing key approaching rotation" attention item — deliberately not built this session**
+4. **"Signing key approaching rotation" attention item — deliberately not built this session**
    (KH-1.1.5-BE spec D5): needs a new, narrow, state-only `key :: api` surface Majd declined to add
    for now, to keep `key`'s "other modules must never see rotation" stance untouched. Revisit only
    if that boundary decision changes — see `docs/specs/FS-1.5.4-dashboard-stats-v2.md` D5.
-4. **C2 / C2b / C3 / C4 (console, other repo)** — the console team's active milestone; the bulk-issue
+5. **C2 / C2b / C3 / C4 (console, other repo)** — the console team's active milestone; the bulk-issue
    + stats endpoints (plus KH-1.4.4-BE's consuming-parties admin plane and KH-1.1-BE's schema
    management/credential search) exist specifically to unblock the console's remaining screens
    (issue wizard, pilot-metrics dashboard, consuming-parties screen, consume simulator). No further
    platform-side work is scheduled ahead of a concrete console ask.
-5. ~~KH-1.1.3-BE — bulk issuance endpoint + a stats/counters endpoint~~ — **CLOSED:**
+6. ~~KH-1.1.3-BE — bulk issuance endpoint + a stats/counters endpoint~~ — **CLOSED:**
    `POST /api/v1/credentials/bulk` + `GET /api/v1/stats`, both scope-gated, both
    backed by the reused single-issue path / `audit_log` aggregation respectively — no new
    bookkeeping. See "Last completed" → Session KH-1.1.3-BE for the full breakdown.
-6. KH-0.3.3 activation — **config, not code**: set the staging secrets in `docs/deploy-staging.md`
+7. KH-0.3.3 activation — **config, not code**: set the staging secrets in `docs/deploy-staging.md`
    and the `release.yml` deploy job runs on the next push to `main`. (The publish half is already
    live; only the gated deploy half waits on a host — Majd.)
-7. ~~`ConsumingPartyRegistryService#ensure` find-or-create race~~ — **CLOSED (KH-1.4.4-BE):**
+8. ~~`ConsumingPartyRegistryService#ensure` find-or-create race~~ — **CLOSED (KH-1.4.4-BE):**
    `ensure` is no longer `@Transactional` and the entity forces a true `INSERT`
    (`Persistable`), so a lost race's `DataIntegrityViolationException` rolls back cleanly and the
    catch re-reads the winner's row directly — exactly the shape flagged here. Regression test
    `db.ConsumingPartyEnsureRaceTest`.
-8. KH-2.2 — full RBAC (replaces D5's lean `role.scopes text[]` with real Permission tables, admin
-   console for user/role management, granular `schema:manage`/`consumer:manage` scopes replacing the
-   MVP `admin`-scope stand-in) + RBAC-gated REST endpoint for `KeyLifecycleService.rotate()`.
-9. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM.
+9. ~~KH-2.2 — full RBAC~~ — **CLOSED (KH-2.2a-BE + KH-2.2b-BE):** the granular
+   `schema:manage`/`consumer:manage`/`key:manage`/`tenant:admin`/`platform:admin` scopes replaced
+   the MVP `admin`-scope stand-in (KH-2.2a-BE), and the tenant user-management console/onboarding
+   surface (D5+D6+D8) is this session's KH-2.2b-BE. `role.scopes text[]` (spec D5's lean choice,
+   not real Permission tables) stays as-is — not revisited this session, no need identified. An
+   RBAC-gated REST endpoint for `KeyLifecycleService.rotate()` remains open, folded into KH-2.3
+   below (KMS rotation needs it regardless).
+10. KH-2.3 — KMS-backed `KeyProvider` (D3 swap) + its RBAC-gated rotation endpoint, KH-3.1 — HSM.
 
 ## Standing conventions (promoted to docs/CONVENTIONS.md §7)
 - **Work rules 2 & 3 (error handling & i18n)** → `docs/CONVENTIONS.md §7.1`.
