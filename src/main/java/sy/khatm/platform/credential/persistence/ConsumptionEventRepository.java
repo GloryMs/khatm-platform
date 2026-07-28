@@ -22,4 +22,10 @@ public interface ConsumptionEventRepository extends JpaRepository<ConsumptionEve
    * idempotency_key}, look up the row the winning concurrent caller actually recorded.
    */
   Optional<ConsumptionEvent> findByIdempotencyKey(String idempotencyKey);
+
+  /**
+   * The most recent consumption of a credential, if any (spec FS-1.6 D3's {@code holder-status}'s
+   * {@code lastConsumedAt} field).
+   */
+  Optional<ConsumptionEvent> findTopByCredentialIdOrderByConsumedAtDesc(UUID credentialId);
 }

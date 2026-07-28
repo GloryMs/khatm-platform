@@ -16,6 +16,9 @@ import java.time.Instant;
  * @param revoked whether this credential has been revoked
  * @param validTo expiry timestamp
  * @param jwt compact JWS string
+ * @param status explicit lifecycle status (spec FS-1.6 D1/D5) — see {@link
+ *     CredentialSummary#status}
+ * @param usesConsumed {@code maxUses - usesRemaining} (spec FS-1.6 D5)
  */
 public record CredentialView(
     String id,
@@ -25,4 +28,6 @@ public record CredentialView(
     int maxUses,
     boolean revoked,
     Instant validTo,
-    String jwt) {}
+    String jwt,
+    String status,
+    int usesConsumed) {}

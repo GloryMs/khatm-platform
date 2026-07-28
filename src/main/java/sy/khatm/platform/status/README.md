@@ -13,7 +13,12 @@ KH-1.3).
 - `StatusListAllocator#allocate` — atomically reserves a `(status_list_id, status_idx)` pair at
   issue time (KH-0.2.1); a `SELECT ... FOR UPDATE` row lock serialises concurrent allocations.
 - `StatusListRevoker#revoke` — flips a bit and bumps the list's version inside the caller's revoke
-  transaction, then publishes `StatusListChanged` (KH-1.3 D3).
+  transaction, then publishes `StatusListChanged` (KH-1.3 D3). Two callers as of KH-1.6:
+  `CredentialService#revoke` (explicit revocation) and `AtomicConsumptionRecorder#tryConsume`
+  (exhaustion — the credential ran out of uses on its own) — same one-directional bit, same
+  publish path; the caller's own row (`revoked` vs. `usesRemaining`) is what lets a holder later
+  tell the two apart via `POST /api/v1/credentials/holder-status`, not the bit itself (spec FS-1.6
+  D2).
 - `StatusListLookup#findRef` — read-only resolution of a list's version + public URL, used by
   `/verify` and the claim-redeem path to fill the additive `statusList*` response fields (KH-1.3
   D6/D7). The URL itself is built by `StatusListUriBuilder` (module-private), which delegates the

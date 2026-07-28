@@ -26,6 +26,15 @@ public enum AuditAction {
   CREDENTIAL_REVOKED,
 
   /**
+   * A credential's last remaining use was consumed, transitioning it to {@code EXHAUSTED} ({@code
+   * credential} module, KH-1.6, spec FS-1.6 D1). {@code entityRef} is the credential id. Recorded
+   * exactly once per credential, in the same transaction as the consuming {@link
+   * #CREDENTIAL_CONSUMED} row and the status-list bit flip that mirrors {@link #CREDENTIAL_REVOKED}
+   * D3's revoke path.
+   */
+  CREDENTIAL_EXHAUSTED,
+
+  /**
    * A new issuer signing key was created ({@code key} module, KH-0.5). {@code entityRef} is the
    * kid.
    */

@@ -549,6 +549,13 @@
           "schemaName" : {
             "$ref" : "#/components/schemas/LocalizedText"
           },
+          "status" : {
+            "type" : "string"
+          },
+          "usesConsumed" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
           "usesRemaining" : {
             "format" : "int32",
             "type" : "integer"
@@ -580,6 +587,13 @@
           },
           "schemaCode" : {
             "type" : "string"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "usesConsumed" : {
+            "format" : "int32",
+            "type" : "integer"
           },
           "usesRemaining" : {
             "format" : "int32",
@@ -659,6 +673,37 @@
           },
           "traceId" : {
             "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "HolderStatusRequest" : {
+        "description" : "Request to check a credential's lifecycle status by proof of possession",
+        "properties" : {
+          "jwt" : {
+            "type" : "string"
+          }
+        },
+        "required" : [ "jwt" ],
+        "type" : "object"
+      },
+      "HolderStatusResponse" : {
+        "description" : "A credential's current lifecycle status",
+        "properties" : {
+          "lastConsumedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "maxUses" : {
+            "format" : "int32",
+            "type" : "integer"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "usesRemaining" : {
+            "format" : "int32",
+            "type" : "integer"
           }
         },
         "type" : "object"
@@ -2334,6 +2379,56 @@
           }
         },
         "summary" : "Consume one use of a credential",
+        "tags" : [ "credential" ]
+      }
+    },
+    "/api/v1/credentials/holder-status" : {
+      "post" : {
+        "description" : "Public endpoint, like /verify — no session or API key (spec FS-1.6 D3, a deliberate, explicit reversal of PR #33's original 'no live uses-remaining channel' stance). The request body's jwt is the bare compact SD-JWT (no disclosures); proving possession of a validly signed token is the only authentication this endpoint needs — it never reads or returns claim content (P1 rule), only status/maxUses/usesRemaining/lastConsumedAt. An invalid signature or an unresolvable credential both collapse to the same 404 (KH-CRD-0404) so an external caller cannot distinguish 'not a real credential' from 'forged' (anti-enumeration).",
+        "operationId" : "holderStatus",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/HolderStatusRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/HolderStatusResponse"
+                }
+              }
+            },
+            "description" : "The credential's current status"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Bean Validation failed (a blank jwt)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "The jwt is malformed, its signature does not verify, or it does not resolve to a known credential (KH-CRD-0404, unified for anti-enumeration)"
+          }
+        },
+        "summary" : "Check a credential's lifecycle status by proof of possession",
         "tags" : [ "credential" ]
       }
     },

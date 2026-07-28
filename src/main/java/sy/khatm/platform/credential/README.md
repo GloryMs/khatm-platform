@@ -127,3 +127,23 @@ New `rbac :: api` surface consumed here: `ApiKeyOwnerLookup#resolveOwners` (batc
 `ApiKeyRepository#findAllById` (already inherited, no new query). See
 `docs/specs/FS-1.5.4-dashboard-stats-v2.md` for the full design (including the module-placement
 rationale and the two items deliberately cut this session).
+
+**Consumption lifecycle visibility (KH-1.6-BE, spec FS-1.6):** an explicit `status` — `ACTIVE`,
+`EXHAUSTED`, `REVOKED`, `SUSPENDED` (not reachable yet — no code path suspends an individual
+credential today), `EXPIRED` — is now derived at read time (`domain.CredentialStatus`, new,
+module-private) from the existing `revoked`/`usesRemaining`/`validTo` columns; no new column, no
+migration. `AtomicConsumptionRecorder#tryConsume` detects the exactly-once transition to
+`EXHAUSTED` (the decrement that brings `usesRemaining` to `0` — `consumeOne`'s own `WHERE
+uses_remaining > 0` guard makes this lock-free-safe with no new guard state) and flips the
+status-list bit via `status.api.StatusListRevoker#revoke`, the identical path `#revoke` already
+uses — never a second bit-flip mechanism. `CredentialService#verify` gained a new `EXHAUSTED`
+`VerifyReason`, checked right after the existing `REVOKED` branch. `CredentialSummary`/
+`CredentialView` gained additive `status`/`usesConsumed` fields.
+
+New public endpoint `POST /api/v1/credentials/holder-status` (`rbac.security.SecurityConfig`'s
+sixth `permitAll` entry) — proof-of-possession status lookup: body is the bare compact SD-JWT (no
+disclosures), response is `{status, maxUses, usesRemaining, lastConsumedAt?}`. A deliberate,
+explicit reversal of PR #33's original "no live uses-remaining channel" stance (spec FS-1.6 §2 V1)
+— reuses `#checkSignature` and `CredentialRepository#findByRef` verbatim; every failure (malformed,
+bad signature, unknown ref) collapses to the existing `KH_CRD_0404`, no new `ErrorCode`. Wrapped in
+`SystemAccessExecutor#runAsSystem` by the controller, identically to `/verify`.

@@ -1,5 +1,6 @@
 package sy.khatm.platform.credential.domain;
 
+import java.time.Instant;
 import org.springframework.stereotype.Component;
 import sy.khatm.platform.credential.api.CredentialView;
 import sy.khatm.platform.schema.api.SchemaCatalog;
@@ -33,6 +34,8 @@ class CredentialMapper {
         c.getMaxUses(),
         c.isRevoked(),
         c.getValidTo(),
-        c.getSignedPayload());
+        c.getSignedPayload(),
+        CredentialStatus.derive(c, Instant.now()).name(),
+        c.getMaxUses() - c.getUsesRemaining());
   }
 }

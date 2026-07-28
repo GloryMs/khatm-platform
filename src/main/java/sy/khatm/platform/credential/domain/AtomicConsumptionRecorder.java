@@ -8,6 +8,7 @@ import sy.khatm.platform.credential.persistence.CredentialRepository;
 import sy.khatm.platform.shared.TenantContext;
 import sy.khatm.platform.shared.audit.AuditAction;
 import sy.khatm.platform.shared.audit.AuditService;
+import sy.khatm.platform.status.api.StatusListRevoker;
 
 /**
  * The atomic unit of a single consume attempt (KH-1.4.1/1.4.2 closure): the eligibility decrement,
@@ -22,6 +23,17 @@ import sy.khatm.platform.shared.audit.AuditService;
  * apply {@code @Transactional} through a real bean proxy, not a self-invoked method on the same
  * instance.
  *
+ * <p><b>D1 exactly-once {@code EXHAUSTED} transition (spec FS-1.6):</b> {@link
+ * CredentialRepository#consumeOne}'s {@code WHERE uses_remaining > 0} guard means at most one
+ * successful call ever observes the row transition from 1 to 0 — every later call against an
+ * already-exhausted row fails the WHERE clause and returns before reaching this method's body at
+ * all. So re-reading {@code usesRemaining} right after our own successful decrement, inside this
+ * same transaction, is a safe, lock-free way to detect "I am the caller who just exhausted this
+ * credential" exactly once, with no separate guard column. On that detection this method reuses
+ * {@link StatusListRevoker#revoke} — the exact same bit-flip/republish path {@code
+ * CredentialService#revoke} uses — so an exhausted credential's status-list bit flips via identical
+ * sweep/publish/per-tenant-signing mechanics, never a second implementation.
+ *
  * <p>This class is module-private.
  */
 @Service
@@ -30,12 +42,17 @@ class AtomicConsumptionRecorder {
   private final CredentialRepository credentials;
   private final ConsumptionEventRepository events;
   private final AuditService audit;
+  private final StatusListRevoker statusRevoker;
 
   AtomicConsumptionRecorder(
-      CredentialRepository credentials, ConsumptionEventRepository events, AuditService audit) {
+      CredentialRepository credentials,
+      ConsumptionEventRepository events,
+      AuditService audit,
+      StatusListRevoker statusRevoker) {
     this.credentials = credentials;
     this.events = events;
     this.audit = audit;
+    this.statusRevoker = statusRevoker;
   }
 
   /**
@@ -62,6 +79,24 @@ class AtomicConsumptionRecorder {
         new ConsumptionEvent(
             TenantContext.current(), credentialId, consumingPartyId, idempotencyKey, "ONLINE"));
     audit.record(AuditAction.CREDENTIAL_CONSUMED, "credential", credentialId.toString(), null);
+
+    // D1: this decrement just succeeded, so this row is the sole source of truth on whether it
+    // was the one that brought usesRemaining to 0 — see class Javadoc for why re-reading it here
+    // is exactly-once-safe with no separate guard state.
+    Credential credential =
+        credentials
+            .findById(credentialId)
+            .orElseThrow(
+                () ->
+                    new IllegalStateException(
+                        "credential "
+                            + credentialId
+                            + " must still exist right after its own"
+                            + " successful consumeOne update"));
+    if (credential.getUsesRemaining() == 0) {
+      statusRevoker.revoke(credential.getStatusListId(), credential.getStatusIdx());
+      audit.record(AuditAction.CREDENTIAL_EXHAUSTED, "credential", credentialId.toString(), null);
+    }
     return true;
   }
 }
