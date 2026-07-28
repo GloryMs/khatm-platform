@@ -1,5 +1,7 @@
 package sy.khatm.platform.credential.persistence;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.domain.Page;
@@ -71,6 +73,18 @@ public interface CredentialRepository extends JpaRepository<Credential, UUID> {
    * and its sort). {@code pseudoRef} is resolved to a {@code holderId} by the caller ({@link
    * sy.khatm.platform.holder.api.HolderDirectory#findByPseudoRef}, a cross-module lookup this
    * repository cannot perform itself) before this query runs.
+   *
+   * <p><b>{@code status} filter (KH-1.6-BE follow-up, chore/credential-search-status-filter):</b>
+   * the inline {@code CASE} expression is the SQL mirror of {@code
+   * sy.khatm.platform.credential.domain.CredentialStatus#derive} — same precedence order ({@code
+   * REVOKED} > {@code EXHAUSTED} > {@code EXPIRED} > {@code ACTIVE}), same {@code now} instant the
+   * caller also uses to derive the row's own displayed {@code status} field (passed in as {@code
+   * :now} rather than using SQL {@code CURRENT_TIMESTAMP}, precisely so a row can never show status
+   * X while being filtered out of X — both are computed against the identical instant). {@code
+   * statuses} is never {@code null}/empty by contract — the caller ({@code
+   * CredentialService#search}) always supplies every {@link
+   * sy.khatm.platform.credential.domain.CredentialStatus} name when the caller requested no
+   * filtering, so this method never needs its own null-collection branch on an {@code IN} clause.
    */
   @Query(
       """
@@ -80,6 +94,12 @@ public interface CredentialRepository extends JpaRepository<Credential, UUID> {
          AND (:holderId IS NULL OR c.holderId = :holderId)
          AND (:schemaId IS NULL OR c.schemaId = :schemaId)
          AND (:revoked IS NULL OR c.revoked = :revoked)
+         AND CASE
+               WHEN c.revoked = true THEN 'REVOKED'
+               WHEN c.usesRemaining <= 0 THEN 'EXHAUSTED'
+               WHEN c.validTo < :now THEN 'EXPIRED'
+               ELSE 'ACTIVE'
+             END IN :statuses
        ORDER BY c.createdAt DESC
       """)
   Page<Credential> search(
@@ -88,5 +108,7 @@ public interface CredentialRepository extends JpaRepository<Credential, UUID> {
       @Param("holderId") UUID holderId,
       @Param("schemaId") UUID schemaId,
       @Param("revoked") Boolean revoked,
+      @Param("statuses") List<String> statuses,
+      @Param("now") Instant now,
       Pageable pageable);
 }

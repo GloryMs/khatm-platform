@@ -29,7 +29,8 @@ class CredentialSearchServiceTest extends IntegrationTestSupport {
   void search_byRef_returnsExactMatch() {
     IssueResponse issued = issue("SearchByRef/v1", "holder-search-ref");
 
-    CredentialPage page = credentialService.search(issued.ref(), null, null, null, null, null);
+    CredentialPage page =
+        credentialService.search(issued.ref(), null, null, null, null, null, null);
 
     assertThat(page.items()).extracting(CredentialSummary::ref).containsExactly(issued.ref());
     assertThat(page.totalElements()).isEqualTo(1);
@@ -39,7 +40,7 @@ class CredentialSearchServiceTest extends IntegrationTestSupport {
   void search_byUnknownPseudoRef_returnsEmptyPage() {
     CredentialPage page =
         credentialService.search(
-            null, "no-such-holder-" + UUID.randomUUID(), null, null, null, null);
+            null, "no-such-holder-" + UUID.randomUUID(), null, null, null, null, null);
 
     assertThat(page.items()).isEmpty();
     assertThat(page.totalElements()).isZero();
@@ -51,7 +52,7 @@ class CredentialSearchServiceTest extends IntegrationTestSupport {
     IssueResponse issued = issue("SearchByPseudoRef/v1", pseudoRef);
     issue("SearchByPseudoRefOther/v1", "holder-search-pseudo-other-" + UUID.randomUUID());
 
-    CredentialPage page = credentialService.search(null, pseudoRef, null, null, null, null);
+    CredentialPage page = credentialService.search(null, pseudoRef, null, null, null, null, null);
 
     assertThat(page.items()).extracting(CredentialSummary::ref).containsExactly(issued.ref());
   }
@@ -62,7 +63,7 @@ class CredentialSearchServiceTest extends IntegrationTestSupport {
     issue("SearchBySchemaIdOther/v1", "holder-search-schema-other");
     UUID schemaId = schemaIdFor("SearchBySchemaId/v1");
 
-    CredentialPage page = credentialService.search(null, null, schemaId, null, null, null);
+    CredentialPage page = credentialService.search(null, null, schemaId, null, null, null, null);
 
     assertThat(page.items()).extracting(CredentialSummary::ref).containsExactly(issued.ref());
     assertThat(page.items().get(0).schemaCode()).isEqualTo("SearchBySchemaId/v1");
@@ -75,7 +76,7 @@ class CredentialSearchServiceTest extends IntegrationTestSupport {
     issue("SearchByRevokedOther/v1", "holder-search-revoked-other");
 
     CredentialPage revokedOnly =
-        credentialService.search(null, null, null, Boolean.TRUE, null, null);
+        credentialService.search(null, null, null, Boolean.TRUE, null, null, null);
 
     assertThat(revokedOnly.items()).extracting(CredentialSummary::ref).contains(issued.ref());
     assertThat(revokedOnly.items()).allMatch(CredentialSummary::revoked);
@@ -83,14 +84,14 @@ class CredentialSearchServiceTest extends IntegrationTestSupport {
 
   @Test
   void search_pageSizeCappedAtOneHundred() {
-    CredentialPage page = credentialService.search(null, null, null, null, 0, 500);
+    CredentialPage page = credentialService.search(null, null, null, null, null, 0, 500);
 
     assertThat(page.size()).isEqualTo(100);
   }
 
   @Test
   void search_negativePageAndZeroSize_clampToSafeDefaults() {
-    CredentialPage page = credentialService.search(null, null, null, null, -5, 0);
+    CredentialPage page = credentialService.search(null, null, null, null, null, -5, 0);
 
     assertThat(page.page()).isZero();
     assertThat(page.size()).isEqualTo(1);
@@ -102,7 +103,7 @@ class CredentialSearchServiceTest extends IntegrationTestSupport {
     IssueResponse first = issue("SearchOrderFirst/v1", pseudoRef);
     IssueResponse second = issue("SearchOrderSecond/v1", pseudoRef);
 
-    CredentialPage page = credentialService.search(null, pseudoRef, null, null, 0, 10);
+    CredentialPage page = credentialService.search(null, pseudoRef, null, null, null, 0, 10);
 
     assertThat(page.items())
         .extracting(CredentialSummary::ref)

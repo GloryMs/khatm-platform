@@ -147,3 +147,18 @@ explicit reversal of PR #33's original "no live uses-remaining channel" stance (
 — reuses `#checkSignature` and `CredentialRepository#findByRef` verbatim; every failure (malformed,
 bad signature, unknown ref) collapses to the existing `KH_CRD_0404`, no new `ErrorCode`. Wrapped in
 `SystemAccessExecutor#runAsSystem` by the controller, identically to `/verify`.
+
+**Search `status` filter (chore/credential-search-status-filter):** closes the recorded console ask
+for server-side lifecycle filtering. `GET /api/v1/credentials?status=` is optional and repeatable
+(multiple values OR together), AND-combined with every other filter as before. Implemented as an
+inline JPQL `CASE` expression inside `CredentialRepository#search` that mirrors `CredentialStatus
+#derive`'s precedence exactly (`REVOKED` > `EXHAUSTED` > `EXPIRED` > `ACTIVE`) — see that class's
+Javadoc for why the *same* `Instant` is passed to both the query's `CASE` and each returned row's
+own `toSummary` derivation (a row can never show a status it was just filtered out of, or vice
+versa, since both computations run against one identical instant, not two independent `now()`
+calls). No filter requested means every `CredentialStatus` name is passed through instead of a
+`null`/empty collection — sidesteps Hibernate's `IN`-clause-with-null/empty-list edge cases
+entirely, and keeps "no filter" and "every status selected" the same code path. An unrecognized
+status name is `ValidationException(KH_SYS_0400, "validation.failed")` — the same generic
+query-param-validation-failure reuse `shared.web.StatsController`'s `from`/`to` parsing already
+established, so no new `ErrorCode`/message key.

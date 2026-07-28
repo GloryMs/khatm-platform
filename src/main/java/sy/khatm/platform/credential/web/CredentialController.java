@@ -6,6 +6,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -173,12 +174,21 @@ class CredentialController {
           "Console-facing search over this tenant's credentials (KH-1.1.4) — proof/status"
               + " metadata rows only, never claim content (P1 rule). Every filter is optional"
               + " and AND-combined: ref (exact), pseudoRef (exact, resolved against the holder"
-              + " who was issued the credential), schemaId (exact), revoked (exact). Sorted by"
-              + " issuedAt descending; page/size are zero-based/1-100, defaulting to 0/20."
-              + " Requires a console session — no API key of any kind works here (see"
-              + " rbac.security.SecurityConfig's Javadoc).",
+              + " who was issued the credential), schemaId (exact), revoked (exact), status"
+              + " (repeatable — ACTIVE/EXHAUSTED/REVOKED/SUSPENDED/EXPIRED; multiple status"
+              + " values OR together, e.g. ?status=EXHAUSTED&status=REVOKED). status is the"
+              + " same explicit lifecycle value each row's own status field carries (spec"
+              + " FS-1.6 D1/D5) — filtered server-side against that identical derivation, so a"
+              + " row can never appear in a status filter's results while displaying a"
+              + " different status itself. Sorted by issuedAt descending; page/size are"
+              + " zero-based/1-100, defaulting to 0/20. Requires a console session — no API key"
+              + " of any kind works here (see rbac.security.SecurityConfig's Javadoc).",
       responses = {
         @ApiResponse(responseCode = "200", description = "Matching page of credential summaries"),
+        @ApiResponse(
+            responseCode = "400",
+            description = "A status value is not one of the recognized statuses (KH-SYS-0400)",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "401",
             description = "No valid session",
@@ -194,10 +204,11 @@ class CredentialController {
       @RequestParam(required = false) String pseudoRef,
       @RequestParam(required = false) String schemaId,
       @RequestParam(required = false) Boolean revoked,
+      @RequestParam(required = false) List<String> status,
       @RequestParam(required = false) Integer page,
       @RequestParam(required = false) Integer size) {
     UUID schemaUuid = schemaId == null ? null : UUID.fromString(schemaId);
-    return service.search(ref, pseudoRef, schemaUuid, revoked, page, size);
+    return service.search(ref, pseudoRef, schemaUuid, revoked, status, page, size);
   }
 
   @Operation(
