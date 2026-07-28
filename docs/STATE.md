@@ -25,8 +25,8 @@ section once CI is confirmed green again post-2026-08-01.
   on tenant create + `POST /admin/tenants/{id}/users`), the forced-password-change gate, and the
   race-proofed last-tenant-admin guard. `mvn verify` green, **375/375 tests (31 new)**. New
   `user.*` message keys in both bundles — **Arabic-speaker review gate applies, PR merge blocker**
-  (not yet confirmed by Majd as of this writing). **PR not yet opened** — branch
-  `feat/KH-2.2b-BE-tenant-users` ready to push.
+  (not yet confirmed by Majd as of this writing). **PR #45 opened, NOT merged** (gitleaks scanned
+  locally, clean).
   - **Verify-against-code findings (recorded before writing, per the brief):** `app_user` (V1
     baseline) had no `must_change_password` column and no `updated_at`/`@Version` — added the flag
     via new migration, confirmed argon2id password hashing end-to-end
@@ -698,9 +698,9 @@ section once CI is confirmed green again post-2026-08-01.
 - 2026-07-28: KH-2.2b-BE — tenant user management + onboarding completion (D5+D6+D8): the
   `/api/v1/users/**` surface, `initialAdmin` on tenant onboarding + `POST
   /admin/tenants/{id}/users`, the race-proofed last-tenant-admin guard, and the forced-password-
-  change gate. `mvn verify` green, 375/375 tests (31 new). **PR not yet opened — branch
-  `feat/KH-2.2b-BE-tenant-users` ready to push; Arabic-review gate for the new `user.*` keys not
-  yet confirmed by Majd (merge blocker).** See "Current phase / task" above for the full
+  change gate. `mvn verify` green, 375/375 tests (31 new). **PR #45 opened, NOT merged** —
+  Arabic-review gate for the new `user.*` keys not yet confirmed by Majd (merge blocker). See
+  "Current phase / task" above for the full
   breakdown: the Modulith-cycle fork (onboarding create relocated to `rbac.web` per the
   `ConsumingPartyKeyController` precedent), the `OnBehalfOfExecutor`/`TenantContext` interaction
   bug found and fixed via the live e2e, the per-tenant role-catalog gap (found + fixed both ways —
@@ -992,13 +992,13 @@ its review follow-ups merged via PR #38, **KH-1.6-BE (consumption lifecycle visi
 **chore/credential-search-status-filter (server-side `status` filter, closing the console's C6b
 ask) built and verified, PR #41 opened, not yet merged**, **KH-2.2a-BE (RBAC scope registry,
 D1–D4) merged via PR #43** (2026-07-28, merge commit `238c54d`), and **KH-2.2b-BE (tenant user
-management + onboarding completion, D5+D6+D8) built and verified, PR not yet opened** — PR #41 and
-KH-2.2b-BE's still-unopened PR are the two outstanding `khatm-platform` items as of this update
-(plus a small docs-only `khatm-console` PR #18 marking the C6b ask addressed-pending-merge).
+management + onboarding completion, D5+D6+D8) built and verified, PR #45 opened, not yet
+merged** — PR #41 and PR #45 are the two outstanding `khatm-platform` PRs as of this update (plus
+a small docs-only `khatm-console` PR #18 marking the C6b ask addressed-pending-merge).
 
-0. **KH-2.2b-BE — DONE (this session), PR not yet opened; Arabic-review gate on `user.*` keys is
-   the merge blocker.** See "Current phase / task" above for the full D5+D6+D8 breakdown. Branch
-   `feat/KH-2.2b-BE-tenant-users` ready to push.
+0. **KH-2.2b-BE — DONE (this session), PR #45 opened, not yet merged; Arabic-review gate on
+   `user.*` keys is the merge blocker.** See "Current phase / task" above for the full D5+D6+D8
+   breakdown.
 1. **C7 (console) — unblocked now that both KH-2.2a-BE and KH-2.2b-BE are built**: spec FS-2.2 D7,
    scoped in full (re-gate every console screen on the granular scopes, new Users screen, tenant
    details' by-proxy Users tab for `platform:admin`, one-time temp-password display). Per the
