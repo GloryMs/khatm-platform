@@ -2,6 +2,7 @@ package sy.khatm.platform.rbac.security;
 
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
+import java.util.Set;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -91,18 +92,22 @@ import sy.khatm.platform.shared.audit.AuditService;
  * — session or TENANT API key, never a {@code CONSUMING_PARTY} key) — a deliberate, explicit
  * decision (CONVENTIONS §7.2), not the silent authenticated-any-scope default.
  *
- * <p><b>Schema read endpoints (KH-1.6-early):</b> {@code GET /api/v1/schemas} and {@code GET
- * /api/v1/schemas/{id}} require only {@code anyRequest().authenticated()} — any valid session or
- * API key, no specific scope. This is a deliberate, explicit decision (not the silent default):
- * they expose read-only tenant metadata (schema display names/versions/status, and the claims
- * definition needed to render an issue form) that every authenticated actor kind is entitled to
- * see, so layering a scope requirement on top would add friction with no security benefit.
+ * <p><b>Schema read endpoints (KH-1.6-early, tightened KH-2.2a spec FS-2.2 D2/V2):</b> {@code GET
+ * /api/v1/schemas} and {@code GET /api/v1/schemas/{id}} require any of {@link
+ * ScopeRegistry#SCHEMA_READ_SCOPES} ({@code issue}/{@code verify}/{@code consume}/{@code
+ * revoke}/{@code schema:manage}) rather than the KH-2.2a-predecessor's bare {@code authenticated()}
+ * — deny-by-default (spec D1) means every gated route names its scope(s) explicitly, even one this
+ * permissive. Every seeded role and every actor kind that plausibly needs to read schema metadata
+ * (an issuer choosing a type, a verifier checking a definition, an authoring session) already holds
+ * at least one of these, so this is not a behavior change for any real caller today.
  *
- * <p><b>Schema authoring endpoints (KH-1.1.1):</b> every {@code POST}/{@code PUT} under {@code
- * /api/v1/schemas/**} (create, update, publish, version, archive) requires the {@code admin} scope
- * — the same {@link ScopeGuard#requireScope} rule {@code /api/v1/admin/**} uses, any actor kind. A
- * real per-permission {@code schema:manage} scope waits for KH-2.2's full RBAC; {@code admin} is
- * the deliberate stand-in named in this task's own brief, not a silent default.
+ * <p><b>Schema authoring endpoints (KH-1.1.1, re-gated KH-2.2a spec FS-2.2 D2):</b> every {@code
+ * POST}/{@code PUT} under {@code /api/v1/schemas/**} (create, update, publish, version, archive)
+ * requires the {@code schema:manage} scope, any actor kind. Schema <em>reads</em> ({@code GET})
+ * deliberately do not require {@code schema:manage} — spec V2: an {@code ISSUER_OPERATOR} needs to
+ * read schemas to choose one at issuance time without holding the authoring scope, so {@code GET}
+ * requires any of {@link ScopeRegistry#SCHEMA_READ_SCOPES} instead (every actor kind that can
+ * plausibly need to read schema metadata already holds one of these).
  *
  * <p><b>Credential search (KH-1.1.4):</b> {@code GET /api/v1/credentials} (list/search, distinct
  * from {@code GET /api/v1/credentials/{id}}'s single-record lookup, which stays under the generic
@@ -132,6 +137,31 @@ import sy.khatm.platform.shared.audit.AuditService;
  * {@code GET /api/v1/attention} get their own explicit entries (they don't share the {@code
  * /api/v1/stats} path prefix) but the exact same rule: session-only, no scope, no API key of any
  * kind — the same operator-dashboard judgment call as every other endpoint in this family.
+ *
+ * <p><b>Admin-plane re-gate (KH-2.2a, spec FS-2.2 D1/D2/V3):</b> the coarse {@code admin} scope
+ * that used to cover the entire {@code /api/v1/admin/**} wildcard as one rule is retired outright
+ * (clean cut, no coexistence) and replaced by four independent, non-overlapping path families, each
+ * gated on the one granular scope its spec-D2 mapping names — verified against this class's own
+ * live rule set, not assumed from the D2 mapping's shape alone:
+ *
+ * <ul>
+ *   <li>{@code ADMIN_TENANTS_PATH} ({@code /api/v1/admin/tenants/**}) — {@code platform:admin}
+ *       exclusively (spec D2's own wording), the one cross-tenant plane on this platform.
+ *   <li>{@code ADMIN_CONSUMING_PARTIES_PATH} ({@code /api/v1/admin/consuming-parties/**}) — {@code
+ *       consumer:manage}. Covers the registry/status/allowlist endpoints in {@code consumer.web}
+ *       <em>and</em> the key-mint endpoint in {@code rbac.web.ConsumingPartyKeyController} (same
+ *       path prefix, one rule, per KH-1.4.4's original module-cycle rationale for where that
+ *       controller lives).
+ *   <li>{@code ADMIN_API_KEYS_PATH} ({@code /api/v1/admin/api-keys/**}) — {@code tenant:admin}
+ *       (spec V4 — {@code key:manage} is reserved for signing keys only). {@code
+ *       rbac.web.AuthController#createApiKey} additionally accepts an explicit {@code tenantId}
+ *       targeting a tenant other than the caller's own (provisioning a newly onboarded tenant's
+ *       first key) — that specific cross-tenant path requires {@code platform:admin} on top,
+ *       enforced by {@code shared.OnBehalfOfExecutor} inside the service layer (a URL-pattern rule
+ *       here cannot see the request body), not by this class. A bare {@code tenant:admin} caller
+ *       may still mint/revoke keys for their own tenant via the same endpoint.
+ *   <li>{@code ADMIN_SIGNING_KEYS_PATH} ({@code /api/v1/admin/signing-keys}) — {@code key:manage}.
+ * </ul>
  *
  * <p><b>Tenant context (KH-2.1, spec FS-2.1 D1):</b> {@link TenantContextFilter} is wired into both
  * chains, positioned right after whichever mechanism resolves the principal ({@link
@@ -171,7 +201,10 @@ class SecurityConfig {
   private static final String CONSUME_PATH = "/api/v1/credentials/consume";
   private static final String REVOKE_PATH = "/api/v1/credentials/*/revoke";
   private static final String CLAIM_CODE_PATH = "/api/v1/credentials/*/claim-code";
-  private static final String ADMIN_PATH = "/api/v1/admin/**";
+  private static final String ADMIN_TENANTS_PATH = "/api/v1/admin/tenants/**";
+  private static final String ADMIN_CONSUMING_PARTIES_PATH = "/api/v1/admin/consuming-parties/**";
+  private static final String ADMIN_API_KEYS_PATH = "/api/v1/admin/api-keys/**";
+  private static final String ADMIN_SIGNING_KEYS_PATH = "/api/v1/admin/signing-keys";
   private static final String SCHEMAS_PATH = "/api/v1/schemas/**";
   private static final String CLAIMS_REDEEM_PATH = "/api/v1/claims/redeem";
   private static final String CREDENTIALS_LIST_PATH = "/api/v1/credentials";
@@ -256,23 +289,31 @@ class SecurityConfig {
         .requestMatchers(HttpMethod.POST, CLAIMS_REDEEM_PATH)
         .permitAll()
         .requestMatchers(HttpMethod.POST, ISSUE_PATH)
-        .access(ScopeGuard.requireScopeNotConsumingPartyKey("issue"))
+        .access(ScopeGuard.requireScopeNotConsumingPartyKey(ScopeRegistry.ISSUE))
         .requestMatchers(HttpMethod.POST, BULK_ISSUE_PATH)
-        .access(ScopeGuard.requireScopeNotConsumingPartyKey("issue"))
+        .access(ScopeGuard.requireScopeNotConsumingPartyKey(ScopeRegistry.ISSUE))
         .requestMatchers(HttpMethod.POST, CLAIM_CODE_PATH)
-        .access(ScopeGuard.requireScopeNotConsumingPartyKey("issue"))
+        .access(ScopeGuard.requireScopeNotConsumingPartyKey(ScopeRegistry.ISSUE))
         .requestMatchers(HttpMethod.POST, CONSUME_PATH)
-        .access(ScopeGuard.requireScopeAndConsumingPartyKey("consume"))
+        .access(ScopeGuard.requireScopeAndConsumingPartyKey(ScopeRegistry.CONSUME))
         .requestMatchers(HttpMethod.POST, REVOKE_PATH)
-        .access(ScopeGuard.requireScopeAndUserSession("revoke"))
-        .requestMatchers(ADMIN_PATH)
-        .access(ScopeGuard.requireScope("admin"))
+        .access(ScopeGuard.requireScopeAndUserSession(ScopeRegistry.REVOKE))
+        .requestMatchers(ADMIN_TENANTS_PATH)
+        .access(ScopeGuard.requireScope(ScopeRegistry.PLATFORM_ADMIN))
+        .requestMatchers(ADMIN_CONSUMING_PARTIES_PATH)
+        .access(ScopeGuard.requireScope(ScopeRegistry.CONSUMER_MANAGE))
+        .requestMatchers(ADMIN_API_KEYS_PATH)
+        .access(
+            ScopeGuard.requireAnyScope(
+                Set.of(ScopeRegistry.TENANT_ADMIN, ScopeRegistry.PLATFORM_ADMIN)))
+        .requestMatchers(HttpMethod.GET, ADMIN_SIGNING_KEYS_PATH)
+        .access(ScopeGuard.requireScope(ScopeRegistry.KEY_MANAGE))
         .requestMatchers(HttpMethod.GET, SCHEMAS_PATH)
-        .authenticated()
+        .access(ScopeGuard.requireAnyScope(ScopeRegistry.SCHEMA_READ_SCOPES))
         .requestMatchers(HttpMethod.POST, SCHEMAS_PATH)
-        .access(ScopeGuard.requireScope("admin"))
+        .access(ScopeGuard.requireScope(ScopeRegistry.SCHEMA_MANAGE))
         .requestMatchers(HttpMethod.PUT, SCHEMAS_PATH)
-        .access(ScopeGuard.requireScope("admin"))
+        .access(ScopeGuard.requireScope(ScopeRegistry.SCHEMA_MANAGE))
         .requestMatchers(HttpMethod.GET, CREDENTIALS_LIST_PATH)
         .access(ScopeGuard.requireUserSession())
         .requestMatchers(HttpMethod.GET, STATS_PATH)

@@ -20,9 +20,9 @@ import sy.khatm.platform.rbac.domain.ApiKeyService;
 import sy.khatm.platform.rbac.domain.CreatedApiKey;
 
 /**
- * KH-1.1.1 — every {@code POST}/{@code PUT} under {@code /api/v1/schemas/**} (create, update,
- * publish, version, archive) requires the {@code admin} scope, any actor kind (session or API key)
- * — the same rule {@code /api/v1/admin/**} already uses.
+ * KH-1.1.1, re-gated KH-2.2a (spec FS-2.2 D2) — every {@code POST}/{@code PUT} under {@code
+ * /api/v1/schemas/**} (create, update, publish, version, archive) requires the {@code
+ * schema:manage} scope, any actor kind (session or API key).
  */
 class SchemaManagementScopeGateTest extends RbacHttpTestSupport {
 
@@ -50,14 +50,85 @@ class SchemaManagementScopeGateTest extends RbacHttpTestSupport {
   }
 
   @Test
-  void create_withApiKeyHoldingAdminScope_createsDraft() throws Exception {
-    CreatedApiKey adminKey = apiKeyService.create(ApiKeyOwnerType.TENANT, null, Set.of("admin"));
+  void create_withApiKeyHoldingSchemaManageScope_createsDraft() throws Exception {
+    CreatedApiKey schemaManageKey =
+        apiKeyService.create(ApiKeyOwnerType.TENANT, null, Set.of("schema:manage"));
 
-    ResponseEntity<String> response = createWithApiKey(adminKey.rawKey(), "GateAdminKey/v1");
+    ResponseEntity<String> response = createWithApiKey(schemaManageKey.rawKey(), "GateAdminKey/v1");
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
     JsonNode body = JSON.readTree(response.getBody());
     assertThat(body.get("status").asText()).isEqualTo("DRAFT");
+  }
+
+  @Test
+  void create_withApiKeyHoldingOnlyOtherManageScopes_returns403() throws Exception {
+    // Deny-by-default (spec D1): schema:manage is the only scope create() accepts — a key holding
+    // every OTHER granular scope still gets 403, proving the gate names schema:manage specifically
+    // rather than falling through to "authenticated, any scope."
+    CreatedApiKey otherScopesKey =
+        apiKeyService.create(
+            ApiKeyOwnerType.TENANT,
+            null,
+            Set.of(
+                "issue",
+                "verify",
+                "consume",
+                "revoke",
+                "consumer:manage",
+                "key:manage",
+                "tenant:admin",
+                "platform:admin"));
+
+    ResponseEntity<String> response = createWithApiKey(otherScopesKey.rawKey(), "GateNoScope2/v1");
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+    JsonNode body = JSON.readTree(response.getBody());
+    assertThat(body.get("code").asText()).isEqualTo("KH-RBC-0403");
+  }
+
+  @Test
+  void list_withApiKeyHoldingOnlySchemaManageScope_works() throws Exception {
+    // V2: schema READ accepts any action scope OR schema:manage — schema:manage alone must also
+    // work (an authoring-only key can still see what it's about to edit).
+    CreatedApiKey schemaManageKey =
+        apiKeyService.create(ApiKeyOwnerType.TENANT, null, Set.of("schema:manage"));
+    HttpHeaders headers = new HttpHeaders();
+    headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + schemaManageKey.rawKey());
+
+    ResponseEntity<String> response =
+        rest.exchange("/api/v1/schemas", HttpMethod.GET, new HttpEntity<>(headers), String.class);
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+  }
+
+  @Test
+  void list_withApiKeyHoldingOnlyIssueScope_works() throws Exception {
+    // V2: an ISSUER_OPERATOR-shaped caller (issue/verify/revoke, no schema:manage) must still be
+    // able to read schemas to choose one at issuance time.
+    CreatedApiKey issueKey = apiKeyService.create(ApiKeyOwnerType.TENANT, null, Set.of("issue"));
+    HttpHeaders headers = new HttpHeaders();
+    headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + issueKey.rawKey());
+
+    ResponseEntity<String> response =
+        rest.exchange("/api/v1/schemas", HttpMethod.GET, new HttpEntity<>(headers), String.class);
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+  }
+
+  @Test
+  void list_withApiKeyHoldingOnlyTenantAdminScope_returns403() throws Exception {
+    // Deny-by-default: tenant:admin/platform:admin/consumer:manage/key:manage alone grant no
+    // schema-read access — only the action scopes + schema:manage do (V2's own boundary).
+    CreatedApiKey tenantAdminKey =
+        apiKeyService.create(ApiKeyOwnerType.TENANT, null, Set.of("tenant:admin"));
+    HttpHeaders headers = new HttpHeaders();
+    headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + tenantAdminKey.rawKey());
+
+    ResponseEntity<String> response =
+        rest.exchange("/api/v1/schemas", HttpMethod.GET, new HttpEntity<>(headers), String.class);
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
   }
 
   @Test

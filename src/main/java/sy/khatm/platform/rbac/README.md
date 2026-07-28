@@ -52,8 +52,13 @@ lands here in KH-0.6b), `api_key` (new, `V2__auth_api_keys.sql`).
   admin itself needs no separate demo seeder — `AdminBootstrap` already provisions one in every
   profile, `local` included.
 
-**Scope catalog (D5, unchanged from V1's seed):** `issue`, `verify`, `consume`, `revoke`, `admin`.
+**Scope catalog (KH-2.2a, spec FS-2.2 D1 — replaces the coarse `admin` scope, clean cut, spec V3):**
+`issue`, `verify`, `consume`, `revoke`, `schema:manage`, `consumer:manage`, `key:manage`,
+`tenant:admin`, `platform:admin` — see `security/ScopeRegistry`. Deny-by-default: an endpoint
+without a declared scope fails `security/AdminPathScopeCoverageTest`.
 
-**Status:** KH-0.6b — completes Phase 0. Full admin console (user/role management UI) is KH-2.2.
+**Status:** KH-0.6b completed Phase 0's session/API-key auth. KH-2.2a (this session) replaced the
+`admin` scope stand-in with the granular registry above and re-gated every `/api/v1/admin/**`
+endpoint accordingly; user/role management UI (console) and TOTP 2FA remain KH-2.2b/KH-2.2c.
 `consuming_party_schema` enforcement building on the `CONSUMING_PARTY` API-key principal is done
 (KH-1.4.3, lives in `credential.domain.CredentialService#consume` + `consumer :: api`).

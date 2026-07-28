@@ -97,6 +97,13 @@ forward.
   sweep workers) that RLS's `system_access` policy lets through regardless of `app.tenant_id`.
   `SystemAccessCallerAllowlistTest` pins the caller list; a new caller is a deliberate addition, not
   silent.
+- `OnBehalfOfExecutor` (KH-2.2a, spec FS-2.2 D4) — the `platform:admin`-only counterpart:
+  re-verifies `platform:admin` from the live `SecurityContextHolder` authorities (this class can't
+  depend on the module-private `rbac.security` package, so it checks the `SCOPE_platform:admin`
+  authority string directly, the same convention `shared.audit.AuditService` already reads), audits
+  `AuditAction.ON_BEHALF_OF` under the caller's own tenant, then switches `TenantContext` to an
+  explicit target tenant (caller-supplied id+slug — this class has no `tenant`-module dependency)
+  for the duration of the action. `OnBehalfOfCallerAllowlistTest` pins its caller list the same way.
 - **Every `JpaRepository` interface across every module now carries a type-level
   `@Transactional(readOnly = true)`**, with an explicit bare `@Transactional` override on every
   `@Modifying` method (`RepositoryDefaultTransactionsTest`, `db` package, enforces both as a

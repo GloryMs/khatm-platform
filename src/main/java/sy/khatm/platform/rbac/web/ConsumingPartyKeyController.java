@@ -26,10 +26,10 @@ import sy.khatm.platform.shared.web.ErrorEnvelope;
  * module may create {@code api_key} rows ({@link ApiKeyService} is module-private to {@code
  * rbac.domain}), and {@code consumer} cannot depend on {@code rbac} without forming a module cycle
  * — {@code rbac} already depends on {@code consumer :: api}. So the key-mint verb sits here (path
- * still under {@code /api/v1/admin/**}, so the {@code admin}-scope gate covers it), while the rest
- * of the consuming-party admin plane lives in {@code consumer.web}. This class validates the party
- * exists via {@link ConsumingPartyAdmin#get} (which 404s as {@code KH-CNS-0404} otherwise) before
- * minting.
+ * still under {@code /api/v1/admin/consuming-parties/**}, so {@code consumer:manage} covers it,
+ * spec FS-2.2 D2), while the rest of the consuming-party admin plane lives in {@code consumer.web}.
+ * This class validates the party exists via {@link ConsumingPartyAdmin#get} (which 404s as {@code
+ * KH-CNS-0404} otherwise) before minting.
  *
  * <p>The minted key carries the single {@code consume} scope. The raw value is shown exactly once
  * (spec FS-0.6b §4) — the platform stores only its SHA-256 hash. Revocation reuses the existing
@@ -59,7 +59,7 @@ class ConsumingPartyKeyController {
           "Creates a CONSUMING_PARTY-owned API key (scope: consume) for the given party. The"
               + " response's rawKey is shown exactly once — the platform stores only its SHA-256"
               + " hash and prefix (spec FS-0.6b §4). Revoke it later via POST"
-              + " /api/v1/admin/api-keys/{id}/revoke. Requires the admin scope.",
+              + " /api/v1/admin/api-keys/{id}/revoke. Requires the consumer:manage scope.",
       responses = {
         @ApiResponse(responseCode = "200", description = "Key minted (rawKey shown once)"),
         @ApiResponse(
@@ -68,7 +68,7 @@ class ConsumingPartyKeyController {
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "403",
-            description = "Missing the admin scope (KH-RBC-0403)",
+            description = "Missing the consumer:manage scope (KH-RBC-0403)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "404",

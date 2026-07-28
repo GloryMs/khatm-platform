@@ -56,6 +56,18 @@
  * key for a tenant other than the caller's own) sets {@link sy.khatm.platform.shared.TenantContext}
  * explicitly to the target tenant around its insert, for the same reason {@code
  * tenant.domain.TenantAdminService#create} does.
+ *
+ * <p><b>KH-2.2a — scope registry (spec FS-2.2 D1/D2/D3):</b> the coarse {@code admin} scope is
+ * retired outright (clean cut, spec V3) and replaced by {@link
+ * sy.khatm.platform.rbac.security.ScopeRegistry}'s nine granular scopes — {@code issue}/{@code
+ * verify}/{@code consume}/{@code revoke} unchanged, plus {@code schema:manage}/{@code
+ * consumer:manage}/{@code key:manage}/{@code tenant:admin}/{@code platform:admin} replacing every
+ * {@code /api/v1/admin/**} use of {@code admin}. {@code V10__scope_registry_rescope.sql} rewrites
+ * the three seeded roles' {@code scopes} accordingly. {@code web.AuthController#createApiKey}'s
+ * explicit-{@code tenantId} branch (minting a key for a tenant other than the caller's own) now
+ * requires {@code platform:admin} specifically, enforced by {@code shared.OnBehalfOfExecutor} — the
+ * gap this closes: before this session, any caller holding the endpoint's baseline scope could name
+ * an arbitrary foreign {@code tenantId} with no cross-tenant check at all.
  */
 @org.springframework.modulith.ApplicationModule(
     allowedDependencies = {

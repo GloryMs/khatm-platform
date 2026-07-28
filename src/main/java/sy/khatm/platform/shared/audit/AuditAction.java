@@ -224,5 +224,14 @@ public enum AuditAction {
   TENANT_SUSPENDED,
 
   /** A suspended tenant was reactivated (KH-2.1). {@code entityRef} is the tenant's slug. */
-  TENANT_ACTIVATED
+  TENANT_ACTIVATED,
+
+  /**
+   * A {@code platform:admin} caller acted on a tenant other than their own ({@code shared
+   * .OnBehalfOfExecutor}, KH-2.2a, spec FS-2.2 D4) — e.g. provisioning a newly onboarded tenant's
+   * first operational key. Recorded under the <em>caller's own</em> ambient tenant (the platform
+   * admin's own audit trail), before {@code TenantContext} is switched to the target — {@code
+   * entityRef} is the target tenant's slug, identifying which tenant was acted upon.
+   */
+  ON_BEHALF_OF
 }

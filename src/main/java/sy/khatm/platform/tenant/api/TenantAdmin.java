@@ -6,8 +6,7 @@ import sy.khatm.platform.shared.LocalizedText;
 
 /**
  * Admin-plane SPI for managing tenants (spec FS-2.1 D6) — the surface behind {@code
- * /api/v1/admin/tenants}, guarded by the existing {@code admin} scope (same MVP stand-in as the
- * consuming-party admin plane; a real {@code tenant:manage} permission waits for KH-2.2).
+ * /api/v1/admin/tenants}, guarded by the {@code platform:admin} scope exclusively (spec FS-2.2 D2).
  */
 public interface TenantAdmin {
 

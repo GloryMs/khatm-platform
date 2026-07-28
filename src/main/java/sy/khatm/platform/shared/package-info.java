@@ -61,6 +61,17 @@
  * genuinely anonymous-principal read paths RLS's {@code system_access} policy exists for; {@code
  * SystemAccessCallerAllowlistTest} pins that enumeration.
  *
+ * <p><b>On-behalf-of cross-tenant access (KH-2.2a, spec FS-2.2 D4):</b> {@link
+ * sy.khatm.platform.shared.OnBehalfOfExecutor} (new, public — part of the unnamed exposed
+ * interface) is the authenticated counterpart to {@code SystemAccessExecutor}: a {@code
+ * platform:admin} caller acting on an explicit target tenant other than their own. It re-verifies
+ * {@code platform:admin} directly against {@code SecurityContextHolder}'s authorities (this module
+ * cannot depend on the module-private {@code rbac.security} package), records {@code
+ * AuditAction.ON_BEHALF_OF}, then switches {@link sy.khatm.platform.shared.TenantContext} to the
+ * caller-supplied target for the duration of the action — no new dependency on the {@code tenant}
+ * module, since the caller (already holding a validated {@code tenant.api.TenantRef}) supplies the
+ * id/slug directly. {@code OnBehalfOfCallerAllowlistTest} pins its caller enumeration.
+ *
  * <p><b>Repository-level transaction safety (KH-2.1 Part B):</b> every {@code JpaRepository}
  * interface platform-wide now carries a type-level {@code @Transactional(readOnly = true)}, with an
  * explicit bare {@code @Transactional} override on every {@code @Modifying} method ({@code

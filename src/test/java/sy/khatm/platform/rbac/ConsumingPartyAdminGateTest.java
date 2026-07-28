@@ -28,12 +28,13 @@ import sy.khatm.platform.schema.api.SchemaRef;
 import sy.khatm.platform.shared.LocalizedText;
 
 /**
- * KH-1.4.4 — the consuming-party admin plane over real HTTP: the {@code admin}-scope gate on every
- * endpoint, a full create → list → suspend → activate → allow → disallow lifecycle walk with
- * audit-row assertions, the D2 duplicate-code 409, the D5 referential 404s, invalid-code 400, and
- * the key-mint endpoint returning a one-time raw key. Domain-level behaviour is covered in more
- * detail by {@code consumer.domain.ConsumingPartyAdminServiceTest}; this class proves the
- * endpoints, status codes, error envelopes, and gate wire up correctly.
+ * KH-1.4.4, re-gated KH-2.2a (spec FS-2.2 D2) — the consuming-party admin plane over real HTTP: the
+ * {@code consumer:manage}-scope gate on every endpoint, a full create → list → suspend → activate →
+ * allow → disallow lifecycle walk with audit-row assertions, the D2 duplicate-code 409, the D5
+ * referential 404s, invalid-code 400, and the key-mint endpoint returning a one-time raw key.
+ * Domain-level behaviour is covered in more detail by {@code
+ * consumer.domain.ConsumingPartyAdminServiceTest}; this class proves the endpoints, status codes,
+ * error envelopes, and gate wire up correctly.
  */
 class ConsumingPartyAdminGateTest extends RbacHttpTestSupport {
 
@@ -89,7 +90,7 @@ class ConsumingPartyAdminGateTest extends RbacHttpTestSupport {
   }
 
   @Test
-  void create_withTenantKeyMissingAdminScope_returns403() throws Exception {
+  void create_withTenantKeyMissingConsumerManageScope_returns403() throws Exception {
     CreatedApiKey issuerKey = apiKeyService.create(ApiKeyOwnerType.TENANT, null, Set.of("issue"));
 
     ResponseEntity<String> response =
@@ -100,11 +101,12 @@ class ConsumingPartyAdminGateTest extends RbacHttpTestSupport {
   }
 
   @Test
-  void create_withAdminApiKey_succeeds() throws Exception {
-    CreatedApiKey adminKey = apiKeyService.create(ApiKeyOwnerType.TENANT, null, Set.of("admin"));
+  void create_withConsumerManageApiKey_succeeds() throws Exception {
+    CreatedApiKey consumerManageKey =
+        apiKeyService.create(ApiKeyOwnerType.TENANT, null, Set.of("consumer:manage"));
 
     ResponseEntity<String> response =
-        createWithApiKey(adminKey.rawKey(), uniqueCode("gate-adminkey"));
+        createWithApiKey(consumerManageKey.rawKey(), uniqueCode("gate-adminkey"));
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
     assertThat(JSON.readTree(response.getBody()).get("status").asText()).isEqualTo("ACTIVE");

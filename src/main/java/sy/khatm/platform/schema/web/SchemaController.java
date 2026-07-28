@@ -31,9 +31,9 @@ import sy.khatm.platform.shared.web.ErrorEnvelope;
  * edit it, publish it, version it, or archive it.
  *
  * <p>Thin: validate → call {@link SchemaCatalog}/{@link SchemaAuthoringService} → return. Every
- * authoring endpoint here (everything but the two {@code GET}s) requires the {@code admin} scope
- * (server-side gate — see {@code rbac.security.SecurityConfig}'s Javadoc); a real per-permission
- * {@code schema:manage} scope waits for KH-2.2's full RBAC.
+ * authoring endpoint here (everything but the two {@code GET}s) requires the {@code schema:manage}
+ * scope; the two {@code GET}s require any of {@code rbac.security.ScopeRegistry#SCHEMA_READ_SCOPES}
+ * (server-side gate — see {@code rbac.security.SecurityConfig}'s Javadoc, spec FS-2.2 D2/V2).
  *
  * <p>Module-private — Spring MVC discovers it via component scan; no other module references this
  * class.
@@ -101,11 +101,11 @@ class SchemaController {
   @Operation(
       summary = "Create a new DRAFT credential schema (version 1)",
       description =
-          "Requires the admin scope. Server-side validation rejects an empty claimsDef, a claim"
-              + " field with an unsupported type (text/number/date), a nameI18n or claim"
-              + " labelI18n missing en or ar, an sdFields entry not among the claim field names,"
-              + " or a code already registered at version 1 — all as KH-SCH-0400. The schema"
-              + " starts DRAFT and unavailable for issuance until POST /{id}/publish.",
+          "Requires the schema:manage scope. Server-side validation rejects an empty claimsDef, a"
+              + " claim field with an unsupported type (text/number/date), a nameI18n or claim"
+              + " labelI18n missing en or ar, an sdFields entry not among the claim field names, or"
+              + " a code already registered at version 1 — all as KH-SCH-0400. The schema starts"
+              + " DRAFT and unavailable for issuance until POST /{id}/publish.",
       responses = {
         @ApiResponse(responseCode = "200", description = "Schema created (DRAFT)"),
         @ApiResponse(
@@ -118,7 +118,7 @@ class SchemaController {
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "403",
-            description = "Missing the admin scope",
+            description = "Missing the schema:manage scope",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
       })
   @PostMapping
@@ -129,7 +129,7 @@ class SchemaController {
   @Operation(
       summary = "Rewrite a DRAFT schema's authoring fields in place",
       description =
-          "Requires the admin scope. DRAFT only — fixes mistakes before publish. Validated"
+          "Requires the schema:manage scope. DRAFT only — fixes mistakes before publish. Validated"
               + " identically to POST /api/v1/schemas.",
       responses = {
         @ApiResponse(responseCode = "200", description = "Schema updated"),
@@ -143,7 +143,7 @@ class SchemaController {
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "403",
-            description = "Missing the admin scope",
+            description = "Missing the schema:manage scope",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "404",
@@ -162,11 +162,11 @@ class SchemaController {
   @Operation(
       summary = "Publish a DRAFT schema",
       description =
-          "Requires the admin scope. DRAFT -> PUBLISHED — the immutability line: a published"
-              + " schema's claim fields can never be mutated again (no general update endpoint"
-              + " exists for a PUBLISHED schema); a mistake found later needs a new version"
-              + " (POST /{id}/versions) instead. A PUBLISHED schema becomes a valid issuance"
-              + " target for POST /api/v1/credentials/issue's schemaCode.",
+          "Requires the schema:manage scope. DRAFT -> PUBLISHED — the immutability line: a"
+              + " published schema's claim fields can never be mutated again (no general update"
+              + " endpoint exists for a PUBLISHED schema); a mistake found later needs a new"
+              + " version (POST /{id}/versions) instead. A PUBLISHED schema becomes a valid"
+              + " issuance target for POST /api/v1/credentials/issue's schemaCode.",
       responses = {
         @ApiResponse(responseCode = "200", description = "Schema published"),
         @ApiResponse(
@@ -175,7 +175,7 @@ class SchemaController {
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "403",
-            description = "Missing the admin scope",
+            description = "Missing the schema:manage scope",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "404",
@@ -194,7 +194,7 @@ class SchemaController {
   @Operation(
       summary = "Create a new DRAFT version of a PUBLISHED schema",
       description =
-          "Requires the admin scope. Same code, version + 1. The console is responsible for"
+          "Requires the schema:manage scope. Same code, version + 1. The console is responsible for"
               + " prefilling the request body from the source schema's current fields — this"
               + " endpoint validates the submitted body exactly like POST /api/v1/schemas, with"
               + " no server-side default-merging.",
@@ -210,7 +210,7 @@ class SchemaController {
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "403",
-            description = "Missing the admin scope",
+            description = "Missing the schema:manage scope",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "404",
@@ -230,10 +230,10 @@ class SchemaController {
   @Operation(
       summary = "Archive a PUBLISHED schema",
       description =
-          "Requires the admin scope. PUBLISHED -> ARCHIVED — stops NEW issuance against this"
-              + " schema (POST /api/v1/credentials/issue and the internal find-or-create path"
-              + " both reject it, KH-SCH-1409); every credential already issued against it, and"
-              + " its verification/consumption, is completely unaffected.",
+          "Requires the schema:manage scope. PUBLISHED -> ARCHIVED — stops NEW issuance against"
+              + " this schema (POST /api/v1/credentials/issue and the internal find-or-create path"
+              + " both reject it, KH-SCH-1409); every credential already issued against it, and its"
+              + " verification/consumption, is completely unaffected.",
       responses = {
         @ApiResponse(responseCode = "200", description = "Schema archived"),
         @ApiResponse(
@@ -242,7 +242,7 @@ class SchemaController {
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "403",
-            description = "Missing the admin scope",
+            description = "Missing the schema:manage scope",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "404",
