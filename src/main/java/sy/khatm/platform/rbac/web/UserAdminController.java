@@ -28,6 +28,13 @@ import sy.khatm.platform.shared.web.ErrorEnvelope;
  * authenticated console user may call (the forced-change gate routes temporary-password users here
  * and here alone).
  *
+ * <p><b>Discoverability of the forced-change state:</b> every other operation here is subject to
+ * {@code rbac.security.PasswordChangeEnforcementFilter} — a caller whose own {@code
+ * mustChangePassword} flag is set gets {@code 403 KH-USR-0403} instead of this controller's normal
+ * behavior, regardless of scope. A client should call {@code GET /api/v1/auth/me} (exempt from that
+ * filter, carries {@code mustChangePassword}) before relying on any endpoint here, rather than only
+ * discovering the state from a 403 on first use.
+ *
  * <p>Thin: validate → call {@link UserAdminService} → map. Module-private — Spring MVC discovers it
  * via component scan; no other module references this class.
  */
@@ -56,7 +63,9 @@ class UserAdminController {
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "403",
-            description = "Missing the tenant:admin scope (KH-RBC-0403)",
+            description =
+                "Missing the tenant:admin scope (KH-RBC-0403), or the caller's own"
+                    + " mustChangePassword flag is set (KH-USR-0403 — see GET /api/v1/auth/me)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
       })
   @GetMapping("/api/v1/users")
@@ -80,7 +89,9 @@ class UserAdminController {
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "403",
-            description = "Missing the tenant:admin scope (KH-RBC-0403)",
+            description =
+                "Missing the tenant:admin scope (KH-RBC-0403), or the caller's own"
+                    + " mustChangePassword flag is set (KH-USR-0403 — see GET /api/v1/auth/me)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "409",
@@ -108,7 +119,9 @@ class UserAdminController {
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "403",
-            description = "Missing the tenant:admin scope (KH-RBC-0403)",
+            description =
+                "Missing the tenant:admin scope (KH-RBC-0403), or the caller's own"
+                    + " mustChangePassword flag is set (KH-USR-0403 — see GET /api/v1/auth/me)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "404",
@@ -133,7 +146,9 @@ class UserAdminController {
         @ApiResponse(responseCode = "200", description = "User locked"),
         @ApiResponse(
             responseCode = "403",
-            description = "Missing the tenant:admin scope (KH-RBC-0403)",
+            description =
+                "Missing the tenant:admin scope (KH-RBC-0403), or the caller's own"
+                    + " mustChangePassword flag is set (KH-USR-0403 — see GET /api/v1/auth/me)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "404",
@@ -156,7 +171,9 @@ class UserAdminController {
         @ApiResponse(responseCode = "200", description = "User unlocked"),
         @ApiResponse(
             responseCode = "403",
-            description = "Missing the tenant:admin scope (KH-RBC-0403)",
+            description =
+                "Missing the tenant:admin scope (KH-RBC-0403), or the caller's own"
+                    + " mustChangePassword flag is set (KH-USR-0403 — see GET /api/v1/auth/me)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "404",
@@ -177,7 +194,9 @@ class UserAdminController {
         @ApiResponse(responseCode = "200", description = "User disabled"),
         @ApiResponse(
             responseCode = "403",
-            description = "Missing the tenant:admin scope (KH-RBC-0403)",
+            description =
+                "Missing the tenant:admin scope (KH-RBC-0403), or the caller's own"
+                    + " mustChangePassword flag is set (KH-USR-0403 — see GET /api/v1/auth/me)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "404",
@@ -204,7 +223,9 @@ class UserAdminController {
             description = "Password reset; temporary password returned once"),
         @ApiResponse(
             responseCode = "403",
-            description = "Missing the tenant:admin scope (KH-RBC-0403)",
+            description =
+                "Missing the tenant:admin scope (KH-RBC-0403), or the caller's own"
+                    + " mustChangePassword flag is set (KH-USR-0403 — see GET /api/v1/auth/me)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "404",

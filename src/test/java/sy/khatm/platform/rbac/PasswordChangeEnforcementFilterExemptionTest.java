@@ -15,10 +15,11 @@ import sy.khatm.platform.rbac.SessionTestSupport.AuthenticatedSession;
 /**
  * Spec FS-2.2 D5 — {@code rbac.security.PasswordChangeEnforcementFilter}'s exemption list, pinned
  * exactly (the rider this session's guidance asked for): a temporary-password user is blocked with
- * {@code 403 KH-USR-0403} on an ordinary authenticated endpoint, but the self-service
- * change-password call and logout both go through untouched, and the platform's genuinely public
- * paths never even reach this filter's principal check (no session cookie yet, or an anonymous
- * request).
+ * {@code 403 KH-USR-0403} on an ordinary authenticated endpoint, but {@code GET /api/v1/auth/me}
+ * (added to the exemption list after a console-side self-stop found the flag was otherwise
+ * undiscoverable — see the class's own Javadoc), the self-service change-password call, and logout
+ * all go through untouched, and the platform's genuinely public paths never even reach this
+ * filter's principal check (no session cookie yet, or an anonymous request).
  */
 class PasswordChangeEnforcementFilterExemptionTest extends RbacHttpTestSupport {
 
@@ -48,8 +49,13 @@ class PasswordChangeEnforcementFilterExemptionTest extends RbacHttpTestSupport {
     // Login itself is exempt (there is no session yet at the point login runs) and succeeds.
     AuthenticatedSession session = SessionTestSupport.login(rest, username, temporaryPassword);
 
+    // GET /me is exempt — the flag is discoverable here, not just from an opaque 403 elsewhere.
+    ResponseEntity<String> me = SessionTestSupport.get(rest, "/api/v1/auth/me", session);
+    assertThat(me.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(JSON.readTree(me.getBody()).get("mustChangePassword").asBoolean()).isTrue();
+
     // An ordinary authenticated endpoint is blocked with the distinct forced-change code.
-    ResponseEntity<String> blocked = SessionTestSupport.get(rest, "/api/v1/auth/me", session);
+    ResponseEntity<String> blocked = SessionTestSupport.get(rest, "/api/v1/users", session);
     assertThat(blocked.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     assertThat(JSON.readTree(blocked.getBody()).get("code").asText()).isEqualTo("KH-USR-0403");
 

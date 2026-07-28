@@ -11,5 +11,14 @@ import sy.khatm.platform.shared.LocalizedText;
  * @param username the user's username
  * @param displayNameI18n the user's bilingual display name
  * @param preferredLang the user's preferred UI language ({@code en} or {@code ar})
+ * @param mustChangePassword whether this user must set a real password before any other
+ *     authenticated call succeeds (spec FS-2.2 D5) — {@code GET /api/v1/auth/me} is the one
+ *     endpoint exempt from {@code rbac.security.PasswordChangeEnforcementFilter} specifically so a
+ *     client can read this flag and route to the change screen, instead of only ever discovering
+ *     the forced-change state via that filter's opaque {@code 403 KH-USR-0403}.
  */
-public record UserView(String username, LocalizedText displayNameI18n, String preferredLang) {}
+public record UserView(
+    String username,
+    LocalizedText displayNameI18n,
+    String preferredLang,
+    boolean mustChangePassword) {}

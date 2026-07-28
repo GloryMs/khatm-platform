@@ -18,6 +18,46 @@ section once CI is confirmed green again post-2026-08-01.
 
 ## Current phase / task
 - Phase 0 — Production Foundation, fully closed (see prior sessions).
+- **chore/forced-change-discoverability — closes a real C7 (console) self-stop** (session
+  `chore/forced-change-discoverability`, 2026-07-28): the console's Claude Code session for C7
+  (spec FS-2.2 D7) self-stopped at its preamble gate — correctly, on inspection — because
+  `KH-USR-0403` (the forced-password-change code KH-2.2b-BE shipped) was genuinely undiscoverable
+  from the published contract: no endpoint documented it, `MeResponse` carried no flag, and
+  `GET /api/v1/auth/me` — the one endpoint whose entire purpose is answering "who is this session
+  and what's their status" — was itself blocked by `PasswordChangeEnforcementFilter` while the flag
+  was set. A console could mint a temporary password but had no way to route a freshly-logged-in
+  holder of one into a change-password screen without first eating an opaque 403. `mvn verify`
+  green, 375/375 tests (0 new files — existing tests extended, no new behavior branch to cover).
+  No new `ErrorCode` (`KH_USR_0403` already existed; it was a discoverability gap, not a missing
+  code), so no Arabic-review gate.
+  - **The actual fix, two parts:** (1) `GET /api/v1/auth/me` added to
+    `PasswordChangeEnforcementFilter`'s exemption list — it is now the one place a client can read
+    the state without being blocked by the very filter enforcing it. (2) `MeResponse` (and the
+    domain-level `UserView` it's built from) gained a `mustChangePassword` boolean, populated from
+    `AppUser#isMustChangePassword` via `AuthService#findUserView`. Together: login → `GET /me` →
+    `mustChangePassword: true` → route to change screen → `POST /api/v1/users/me/password` → `GET
+    /me` again → `false`. Confirmed via extended `rbac.UserAdminGateTest`
+    (`temporaryPasswordLogin_...`) and `rbac.PasswordChangeEnforcementFilterExemptionTest`, both of
+    which previously asserted `/me` as the *blocked* example and now assert it as the *discovery*
+    path.
+  - **`KH-USR-0403` also properly documented** on the 6 already-`tenant:admin`-gated
+    `rbac.web.UserAdminController` operations (list/create/replaceRoles/lock/disable/reset-password)
+    — merged into each operation's existing `403` response (OpenAPI has one entry per status code
+    per operation), following the exact combining pattern `AuthController#createApiKey` already
+    established for a `403` with more than one possible cause. Not spammed across all ~30
+    operations that already selectively document `401`/`403` platform-wide — scoped to the literal
+    surface a Users screen calls, where an admin whose own flag flips mid-session would actually hit
+    it.
+  - **Contract:** `docs/api/openapi.json` regenerated via `OpenApiContractTest`'s own mechanism —
+    additive-only (one new boolean property on `MeResponse`; description-text-only changes on 6
+    existing `403` responses; confirmed via `git diff`, no path/schema removed).
+  - **Tests:** no new test files — `rbac.UserAdminGateTest`'s existing forced-change end-to-end
+    case extended to assert `GET /me`'s `mustChangePassword` flips true→false around the change
+    call (previously it only asserted `/me` was blocked, which is no longer the behavior);
+    `rbac.PasswordChangeEnforcementFilterExemptionTest` extended identically, and its "an ordinary
+    endpoint is blocked" example moved from `/me` (now exempt) to `/api/v1/users`.
+  - **Branch, no PR yet at time of this STATE entry** — see "Last completed" for merge status once
+    it lands.
 - **KH-2.2b-BE — tenant user management + onboarding completion (D5+D6+D8)** (session
   `feat/KH-2.2b-BE-tenant-users`, 2026-07-28, spec `docs/specs/FS-2.2-rbac-granularity.md` §3):
   the tenant-staff user-management surface (`GET/POST /api/v1/users`, roles/lock/unlock/disable/
@@ -714,6 +754,11 @@ section once CI is confirmed green again post-2026-08-01.
 
 
 ## Last completed
+- 2026-07-28: chore/forced-change-discoverability — closed the console's C7 self-stop: `GET
+  /api/v1/auth/me` exempted from `PasswordChangeEnforcementFilter` + a new `mustChangePassword`
+  boolean on `MeResponse`, plus `KH-USR-0403` properly documented on `UserAdminController`'s
+  session-gated operations. `mvn verify` green, 375/375 tests. See "Current phase / task" above for
+  the full breakdown of what the console session found and how it was fixed.
 - 2026-07-28: KH-2.2b-BE — tenant user management + onboarding completion (D5+D6+D8): the
   `/api/v1/users/**` surface, `initialAdmin` on tenant onboarding + `POST
   /admin/tenants/{id}/users`, the race-proofed last-tenant-admin guard, and the forced-password-
@@ -1023,12 +1068,15 @@ also merged without a green CI run for the same reason (Majd's explicit instruct
 0. **KH-2.2b-BE — DONE & MERGED via PR #45** (2026-07-28, Arabic-speaker review of the new
    `user.*` keys confirmed by Majd before merge, no wording changes). See "Current phase / task"
    above for the full D5+D6+D8 breakdown.
-1. **C7 (console) — unblocked now that both KH-2.2a-BE and KH-2.2b-BE are merged**: spec FS-2.2
-   D7, scoped in full (re-gate every console screen on the granular scopes, new Users screen,
-   tenant details' by-proxy Users tab for `platform:admin`, one-time temp-password display). Per
-   the spec's own session table, C7's preamble is `contract:update` + self-stop if D5/D6 surfaces
-   or a lingering `admin` scope are somehow absent from the contract — neither is the case as of
-   this update, and both PRs are now on `main`, so C7 can start immediately.
+1. **C7 (console) — unblocked**: spec FS-2.2 D7, scoped in full (re-gate every console screen on
+   the granular scopes, new Users screen, tenant details' by-proxy Users tab for
+   `platform:admin`, one-time temp-password display). A first C7 attempt correctly self-stopped at
+   its own preamble gate — `KH-USR-0403` (the forced-password-change code) was undiscoverable from
+   the contract, and the one endpoint that should have exposed it (`GET /api/v1/auth/me`) was
+   itself blocked by the same gate. Closed by `chore/forced-change-discoverability` (see "Current
+   phase / task" above): `/me` is now exempt and carries `mustChangePassword`. C7 can retry now
+   that this is on `main` — its own preamble (`contract:update` + self-stop if D5/D6 surfaces or a
+   lingering `admin` scope are somehow absent) should find nothing else missing.
 2. **C6 (console) / W4 (wallet) — unblocked, KH-1.6-BE is merged**: the two follow-on session
    briefs spec `docs/specs/FS-1.6-consumption-lifecycle-visibility.md` §"Brief — C6"/"Brief — W4"
    already scope in full — console credential-lifecycle badges/uses-column/filter and wallet's live
