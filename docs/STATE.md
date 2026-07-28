@@ -2,6 +2,19 @@
 # STATE — khatm-platform
 > Updated at the end of EVERY Claude Code session. This file is the session anchor.
 
+## CI status (temporary) — ignore red CI through 2026-07-31
+GitHub Actions CI is failing instantly on every job (`Build and verify`, `gitleaks`, `Trivy vuln
+scan`, `compose-smoke`) — not a code problem. `gh run view` shows the actual cause: **"The job was
+not started because recent account payments have failed or your spending limit needs to be
+increased"** (GitHub Actions billing issue on the `GloryMs` account/org, first hit on PR #43,
+2026-07-28). Majd's explicit instruction (2026-07-28): **ignore CI red/not-started status through
+the end of July 2026** — GitHub Actions usage resets **2026-08-01**, at which point CI should run
+normally again (assuming the underlying billing/spending-limit issue is also resolved on GitHub's
+side by then — if CI is still failing after 2026-08-01, that's a real signal again, not this same
+billing gap). Until then: **run `mvn verify` locally as the actual gate** (still mandatory, still
+must be green — this bypass is CI-infrastructure-only, not a relaxation of the "tests must pass"
+rule), and PRs may be merged on Majd's instruction without waiting on GitHub's checks. Remove this
+section once CI is confirmed green again post-2026-08-01.
 
 ## Current phase / task
 - Phase 0 — Production Foundation, fully closed (see prior sessions).
@@ -10,9 +23,10 @@
   scope stand-in with a nine-scope deny-by-default registry (`issue, verify, consume, revoke,
   schema:manage, consumer:manage, key:manage, tenant:admin, platform:admin`) and re-gates every
   `/api/v1/admin/**` endpoint per its own family. `mvn verify` green, **344/344 tests (17 new)**.
-  **PR #43 opened, NOT merged** — pending Majd's review (breaking scope-semantics change by
-  design, spec V3 — flagged prominently in the PR body). No new `ErrorCode`/message key (every
-  403 reuses `KH-RBC-0403`/`error.rbc.forbidden`), so no Arabic-review gate.
+  No new `ErrorCode`/message key (every 403 reuses `KH-RBC-0403`/`error.rbc.forbidden`), so no
+  Arabic-review gate. **DONE & MERGED via PR #43** (2026-07-28, merge commit `238c54d`, merged on
+  Majd's explicit instruction **without waiting on CI** — see "CI status (temporary)" below for
+  why; branch `feat/KH-2.2a-BE-scope-registry` not deleted).
   - **Verify-against-code findings (recorded before writing, per the brief):** built the full live
     endpoint→gate inventory directly from `SecurityConfig`/`ScopeGuard`/every `@RestController`
     (not assumed from the spec's D2 mapping shape) — the entire `/api/v1/admin/**` surface was one
@@ -524,8 +538,10 @@
 - 2026-07-28: KH-2.2a-BE — RBAC scope registry (D1–D4): nine-scope deny-by-default registry
   replaces the coarse `admin` scope; every `/api/v1/admin/**` endpoint re-gated per family; found
   and closed a real cross-tenant gap in cross-tenant API-key minting via new
-  `shared.OnBehalfOfExecutor`. `mvn verify` green, 344/344 tests (17 new). **PR #43 opened, NOT
-  merged.** See "Current phase / task" above for the full D1–D4 breakdown.
+  `shared.OnBehalfOfExecutor`. `mvn verify` green, 344/344 tests (17 new). **DONE & MERGED via PR
+  #43** (2026-07-28, merge commit `238c54d`, merged without waiting on CI — see "CI status
+  (temporary)" at the top of this file). See "Current phase / task" above for the full D1–D4
+  breakdown.
 - 2026-07-28: chore/credential-search-status-filter — server-side `status` query param on `GET
   /api/v1/credentials`, closing the console's recorded C6b platform ask. `mvn verify` green,
   329/329 tests (9 new). **PR #41 opened, NOT merged.** Also opened `khatm-console` PR #18
@@ -804,17 +820,17 @@ its review follow-ups merged via PR #38, **KH-1.6-BE (consumption lifecycle visi
 `EXHAUSTED` status, holder-status endpoint) merged via PR #39**,
 **chore/credential-search-status-filter (server-side `status` filter, closing the console's C6b
 ask) built and verified, PR #41 opened, not yet merged**, and **KH-2.2a-BE (RBAC scope registry,
-D1–D4) built and verified, PR #43 opened, not yet merged** — the two outstanding `khatm-platform`
-PRs as of this update (plus a small docs-only `khatm-console` PR #18 marking the C6b ask
-addressed-pending-merge).
+D1–D4) merged via PR #43** (2026-07-28, merge commit `238c54d`) — PR #41 is the one outstanding
+`khatm-platform` PR as of this update (plus a small docs-only `khatm-console` PR #18 marking the
+C6b ask addressed-pending-merge).
 
-0. **KH-2.2b-BE — next planned session** (spec `docs/specs/FS-2.2-rbac-granularity.md` §3, D5+D6
-   +D8): the tenant user-management surface (`GET/POST /api/v1/users`, roles/lock/unlock/disable
-   /reset-password, `tenant:admin`-gated), onboarding completion (`initialAdmin` on tenant create +
-   `POST /admin/tenants/{id}/users`, spec D4's on-behalf-of pattern for real this time — these
-   {id}-suffixed endpoints genuinely will touch tenant-scoped RLS data, unlike anything
-   `shared.OnBehalfOfExecutor` covers today), and the last-tenant-admin guard (`KH-USR-0423`,
-   `ConcurrentLastAdminTest`). Depends on KH-2.2a-BE (PR #43) merging first — its scope registry is
+0. **KH-2.2b-BE — next planned session, unblocked (KH-2.2a-BE/PR #43 merged)** (spec
+   `docs/specs/FS-2.2-rbac-granularity.md` §3, D5+D6+D8): the tenant user-management surface
+   (`GET/POST /api/v1/users`, roles/lock/unlock/disable/reset-password, `tenant:admin`-gated),
+   onboarding completion (`initialAdmin` on tenant create + `POST /admin/tenants/{id}/users`, spec
+   D4's on-behalf-of pattern for real this time — these {id}-suffixed endpoints genuinely will
+   touch tenant-scoped RLS data, unlike anything `shared.OnBehalfOfExecutor` covers today), and
+   the last-tenant-admin guard (`KH-USR-0423`, `ConcurrentLastAdminTest`). Its scope registry is
    what D5's `tenant:admin` gate and D8's new `KH-USR-*` error codes/Arabic keys build on.
 1. **C6 (console) / W4 (wallet) — unblocked, KH-1.6-BE is merged**: the two follow-on session
    briefs spec `docs/specs/FS-1.6-consumption-lifecycle-visibility.md` §"Brief — C6"/"Brief — W4"
