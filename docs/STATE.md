@@ -24,9 +24,11 @@ section once CI is confirmed green again post-2026-08-01.
   reset-password, `tenant:admin`-gated, console-session-only), onboarding completion (`initialAdmin`
   on tenant create + `POST /admin/tenants/{id}/users`), the forced-password-change gate, and the
   race-proofed last-tenant-admin guard. `mvn verify` green, **375/375 tests (31 new)**. New
-  `user.*` message keys in both bundles — **Arabic-speaker review gate applies, PR merge blocker**
-  (not yet confirmed by Majd as of this writing). **PR #45 opened, NOT merged** (gitleaks scanned
-  locally, clean).
+  `user.*` message keys in both bundles, **Arabic-speaker review confirmed by Majd before merge,
+  no wording changes needed** — same pattern as every prior session's new-key set. **DONE &
+  MERGED via PR #45** (2026-07-28, gitleaks scanned locally, clean, merged without waiting on CI
+  per the same GitHub Actions billing block as PR #41 — see "CI status (temporary)" at the top of
+  this file).
   - **Verify-against-code findings (recorded before writing, per the brief):** `app_user` (V1
     baseline) had no `must_change_password` column and no `updated_at`/`@Version` — added the flag
     via new migration, confirmed argon2id password hashing end-to-end
@@ -265,10 +267,27 @@ section once CI is confirmed green again post-2026-08-01.
 - **chore/credential-search-status-filter — server-side status filter on credential search**
   (session `chore/credential-search-status-filter`, 2026-07-28): closes the console's recorded
   platform ask (`khatm-console` `docs/STATE.md`, 2026-07-28, C6b chore — logged there, now marked
-  addressed-pending-merge via a small cross-repo doc PR, see below). `mvn verify` green,
-  **329/329 tests (9 new)**. **PR #41 opened, NOT merged** — pending Majd's review. No new
-  `ErrorCode`/message key (invalid `status` values reuse the existing `KH-SYS-0400
-  /validation.failed`), so no Arabic-review gate.
+  addressed via a small cross-repo doc PR, see below). `mvn verify` green, **329/329 tests (9
+  new)**. No new `ErrorCode`/message key (invalid `status` values reuse the existing
+  `KH-SYS-0400/validation.failed`), so no Arabic-review gate. **DONE & MERGED via PR #41**
+  (2026-07-28, merge commit `1c5a8ff`, fast-forward); branch
+  `chore/credential-search-status-filter` deleted.
+  - **Merged without a green CI run — GitHub Actions billing block, not a code issue, Majd's
+    explicit instruction:** every check on PR #41 (`Build and verify`, `Trivy vuln scan`,
+    `gitleaks`, `compose-smoke`) failed within ~10s with "The job was not started because recent
+    account payments have failed or your spending limit needs to be increased" — an account-level
+    GitHub Actions billing problem, confirmed by re-running the workflow (same result) and by the
+    identical failure recurring on the post-merge push-triggered run against `main` itself
+    (`gh run list --branch main`, run `30344326075`, still 13s/billing-blocked after the merge).
+    Substitute verification actually performed before merging: local `mvn verify` green (329/329,
+    logged pre-merge in this same entry), `docs/api/openapi.json`/`docs/error-codes.md`/message
+    bundles confirmed additive-only/unchanged via their own tests, and **two** local unredacted
+    `docker run zricethezav/gitleaks:latest detect --redact=0` scans (once before opening the PR,
+    once again on the final pushed commit) both came back clean — the same standard PR #41's own
+    CI job would have applied, just run manually. **Billing is still unresolved as of this
+    merge** — the next session (or Majd) should check GitHub's Billing & plans settings before
+    trusting any CI status badge on this repo at face value; a real code-breaking regression could
+    currently merge with the exact same "checks failed" signature as this billing block.
   - **Verify-first finding (per the brief):** confirmed lifecycle status is fully *derived*, never
     stored — `credential.domain.CredentialStatus#derive(Credential, Instant)` (added KH-1.6-BE),
     reading `revoked`/`usesRemaining`/`validTo` with precedence `REVOKED` > `EXHAUSTED` >
@@ -305,9 +324,9 @@ section once CI is confirmed green again post-2026-08-01.
   - **Cross-repo STATE update:** `khatm-console` (checked out locally at
     `C:\Projects\KHATM-Project\khatm-console`) is a separate repository this session also touched,
     on its own small chore branch (`chore/state-platform-ask-pr41`), to mark the ask this session
-    closes as addressed-pending-merge (not fully closed yet, since PR #41 itself isn't merged) —
-    **`khatm-console` PR #18 opened, not merged**. Explicitly told not to run that repo's `npm run
-    contract:update` until #41 lands on this repo's `main`.
+    closes — **`khatm-console` PR #18 opened; updated post-merge to say #41 is now merged** and
+    their `npm run contract:update` can proceed. `khatm-console` PR #18 itself is a docs-only
+    change on that repo and is theirs to merge, not this session's to force.
   - **Proactive gitleaks check:** ran a local unredacted gitleaks scan
     (`docker run zricethezav/gitleaks:latest detect --redact=0`) against this branch's commit
     before opening the PR — clean — a habit picked up from the KH-1.6-BE session's false-positive
@@ -698,9 +717,9 @@ section once CI is confirmed green again post-2026-08-01.
 - 2026-07-28: KH-2.2b-BE — tenant user management + onboarding completion (D5+D6+D8): the
   `/api/v1/users/**` surface, `initialAdmin` on tenant onboarding + `POST
   /admin/tenants/{id}/users`, the race-proofed last-tenant-admin guard, and the forced-password-
-  change gate. `mvn verify` green, 375/375 tests (31 new). **PR #45 opened, NOT merged** —
-  Arabic-review gate for the new `user.*` keys not yet confirmed by Majd (merge blocker). See
-  "Current phase / task" above for the full
+  change gate. `mvn verify` green, 375/375 tests (31 new). **DONE & MERGED via PR #45**
+  (2026-07-28, Arabic-review gate for the new `user.*` keys confirmed by Majd before merge, no
+  wording changes). See "Current phase / task" above for the full
   breakdown: the Modulith-cycle fork (onboarding create relocated to `rbac.web` per the
   `ConsumingPartyKeyController` precedent), the `OnBehalfOfExecutor`/`TenantContext` interaction
   bug found and fixed via the live e2e, the per-tenant role-catalog gap (found + fixed both ways —
@@ -715,10 +734,13 @@ section once CI is confirmed green again post-2026-08-01.
   breakdown.
 - 2026-07-28: chore/credential-search-status-filter — server-side `status` query param on `GET
   /api/v1/credentials`, closing the console's recorded C6b platform ask. `mvn verify` green,
-  329/329 tests (9 new). **PR #41 opened, NOT merged.** Also opened `khatm-console` PR #18
-  (docs-only, not merged) marking that ask addressed-pending-merge. See "Current phase / task"
-  above for the full breakdown (single-shared-instant filter design, the `credential_check` CHECK
-  constraint finding, and the proactive gitleaks scan).
+  329/329 tests (9 new). **DONE & MERGED via PR #41** (2026-07-28, merge commit `1c5a8ff`,
+  fast-forward, merged without a green CI run due to a GitHub Actions billing block — Majd's
+  explicit instruction, see "Current phase / task" above for the full substitute-verification
+  record); branch `chore/credential-search-status-filter` deleted. Also opened `khatm-console` PR
+  #18 (docs-only, not merged, theirs to merge) marking that ask addressed. See "Current phase /
+  task" above for the full breakdown (single-shared-instant filter design, the `credential_check`
+  CHECK constraint finding, and the proactive gitleaks scans).
 - 2026-07-28: KH-1.6-BE — Consumption Lifecycle Visibility (D1–D6). `mvn verify` green, 320/320
   tests (8 new); live compose e2e run for real end-to-end. **DONE & MERGED via PR #39**
   (2026-07-28, merge commit `9223a63`, fast-forward); branch
@@ -990,30 +1012,31 @@ merged via PR #35), **KH-2.1-BE (multi-tenancy core + real Postgres RLS) merged 
 its review follow-ups merged via PR #38, **KH-1.6-BE (consumption lifecycle visibility —
 `EXHAUSTED` status, holder-status endpoint) merged via PR #39**,
 **chore/credential-search-status-filter (server-side `status` filter, closing the console's C6b
-ask) built and verified, PR #41 opened, not yet merged**, **KH-2.2a-BE (RBAC scope registry,
-D1–D4) merged via PR #43** (2026-07-28, merge commit `238c54d`), and **KH-2.2b-BE (tenant user
-management + onboarding completion, D5+D6+D8) built and verified, PR #45 opened, not yet
-merged** — PR #41 and PR #45 are the two outstanding `khatm-platform` PRs as of this update (plus
-a small docs-only `khatm-console` PR #18 marking the C6b ask addressed-pending-merge).
+ask) merged via PR #41**, **KH-2.2a-BE (RBAC scope registry, D1–D4) merged via PR #43**
+(2026-07-28, merge commit `238c54d`), and **KH-2.2b-BE (tenant user management + onboarding
+completion, D5+D6+D8) merged via PR #45** (2026-07-28) — no outstanding `khatm-platform` PR as of
+this update (`khatm-console` PR #18, docs-only, marking the C6b ask addressed, is open on that
+repo, theirs to merge). **See the GitHub Actions billing block recorded in the PR #41 entry
+above; verify it's resolved before trusting the next PR's CI status at face value** — PR #45 was
+also merged without a green CI run for the same reason (Majd's explicit instruction).
 
-0. **KH-2.2b-BE — DONE (this session), PR #45 opened, not yet merged; Arabic-review gate on
-   `user.*` keys is the merge blocker.** See "Current phase / task" above for the full D5+D6+D8
-   breakdown.
-1. **C7 (console) — unblocked now that both KH-2.2a-BE and KH-2.2b-BE are built**: spec FS-2.2 D7,
-   scoped in full (re-gate every console screen on the granular scopes, new Users screen, tenant
-   details' by-proxy Users tab for `platform:admin`, one-time temp-password display). Per the
-   spec's own session table, C7's preamble is `contract:update` + self-stop if D5/D6 surfaces or a
-   lingering `admin` scope are somehow absent from the contract — neither is the case as of this
-   update, but C7 should still wait for KH-2.2b-BE's own PR to merge first (its contract diff isn't
-   on `main` yet).
+0. **KH-2.2b-BE — DONE & MERGED via PR #45** (2026-07-28, Arabic-speaker review of the new
+   `user.*` keys confirmed by Majd before merge, no wording changes). See "Current phase / task"
+   above for the full D5+D6+D8 breakdown.
+1. **C7 (console) — unblocked now that both KH-2.2a-BE and KH-2.2b-BE are merged**: spec FS-2.2
+   D7, scoped in full (re-gate every console screen on the granular scopes, new Users screen,
+   tenant details' by-proxy Users tab for `platform:admin`, one-time temp-password display). Per
+   the spec's own session table, C7's preamble is `contract:update` + self-stop if D5/D6 surfaces
+   or a lingering `admin` scope are somehow absent from the contract — neither is the case as of
+   this update, and both PRs are now on `main`, so C7 can start immediately.
 2. **C6 (console) / W4 (wallet) — unblocked, KH-1.6-BE is merged**: the two follow-on session
    briefs spec `docs/specs/FS-1.6-consumption-lifecycle-visibility.md` §"Brief — C6"/"Brief — W4"
    already scope in full — console credential-lifecycle badges/uses-column/filter and wallet's live
    holder-status refresh + exhausted-vs-revoked verifier distinction. Both self-stop if a contract
    field they need is somehow absent, but the contract now carries everything both briefs ask for.
    **C6b's own status-filter-dropdown follow-up** (khatm-console, self-stopped 2026-07-28 on the
-   missing `status` param) is what PR #41 above unblocks — still needs PR #41 merged, then
-   khatm-console's own `npm run contract:update` re-run, before the dropdown itself can be built.
+   missing `status` param) is now unblocked — PR #41 above is merged; khatm-console just needs its
+   own `npm run contract:update` re-run before the dropdown itself can be built.
 3. **Console's four Dashboard v2 panels (other repo)** — now that KH-1.1.5-BE is merged, wiring the
    console side to real data is the already-scoped follow-up this session's brief named
    (khatm-console's `docs/STATE.md`, "Next up" #5).
