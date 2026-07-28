@@ -8,10 +8,27 @@
 - **chore/credential-search-status-filter — server-side status filter on credential search**
   (session `chore/credential-search-status-filter`, 2026-07-28): closes the console's recorded
   platform ask (`khatm-console` `docs/STATE.md`, 2026-07-28, C6b chore — logged there, now marked
-  addressed-pending-merge via a small cross-repo doc PR, see below). `mvn verify` green,
-  **329/329 tests (9 new)**. **PR #41 opened, NOT merged** — pending Majd's review. No new
-  `ErrorCode`/message key (invalid `status` values reuse the existing `KH-SYS-0400
-  /validation.failed`), so no Arabic-review gate.
+  addressed via a small cross-repo doc PR, see below). `mvn verify` green, **329/329 tests (9
+  new)**. No new `ErrorCode`/message key (invalid `status` values reuse the existing
+  `KH-SYS-0400/validation.failed`), so no Arabic-review gate. **DONE & MERGED via PR #41**
+  (2026-07-28, merge commit `1c5a8ff`, fast-forward); branch
+  `chore/credential-search-status-filter` deleted.
+  - **Merged without a green CI run — GitHub Actions billing block, not a code issue, Majd's
+    explicit instruction:** every check on PR #41 (`Build and verify`, `Trivy vuln scan`,
+    `gitleaks`, `compose-smoke`) failed within ~10s with "The job was not started because recent
+    account payments have failed or your spending limit needs to be increased" — an account-level
+    GitHub Actions billing problem, confirmed by re-running the workflow (same result) and by the
+    identical failure recurring on the post-merge push-triggered run against `main` itself
+    (`gh run list --branch main`, run `30344326075`, still 13s/billing-blocked after the merge).
+    Substitute verification actually performed before merging: local `mvn verify` green (329/329,
+    logged pre-merge in this same entry), `docs/api/openapi.json`/`docs/error-codes.md`/message
+    bundles confirmed additive-only/unchanged via their own tests, and **two** local unredacted
+    `docker run zricethezav/gitleaks:latest detect --redact=0` scans (once before opening the PR,
+    once again on the final pushed commit) both came back clean — the same standard PR #41's own
+    CI job would have applied, just run manually. **Billing is still unresolved as of this
+    merge** — the next session (or Majd) should check GitHub's Billing & plans settings before
+    trusting any CI status badge on this repo at face value; a real code-breaking regression could
+    currently merge with the exact same "checks failed" signature as this billing block.
   - **Verify-first finding (per the brief):** confirmed lifecycle status is fully *derived*, never
     stored — `credential.domain.CredentialStatus#derive(Credential, Instant)` (added KH-1.6-BE),
     reading `revoked`/`usesRemaining`/`validTo` with precedence `REVOKED` > `EXHAUSTED` >
@@ -48,9 +65,9 @@
   - **Cross-repo STATE update:** `khatm-console` (checked out locally at
     `C:\Projects\KHATM-Project\khatm-console`) is a separate repository this session also touched,
     on its own small chore branch (`chore/state-platform-ask-pr41`), to mark the ask this session
-    closes as addressed-pending-merge (not fully closed yet, since PR #41 itself isn't merged) —
-    **`khatm-console` PR #18 opened, not merged**. Explicitly told not to run that repo's `npm run
-    contract:update` until #41 lands on this repo's `main`.
+    closes — **`khatm-console` PR #18 opened; updated post-merge to say #41 is now merged** and
+    their `npm run contract:update` can proceed. `khatm-console` PR #18 itself is a docs-only
+    change on that repo and is theirs to merge, not this session's to force.
   - **Proactive gitleaks check:** ran a local unredacted gitleaks scan
     (`docker run zricethezav/gitleaks:latest detect --redact=0`) against this branch's commit
     before opening the PR — clean — a habit picked up from the KH-1.6-BE session's false-positive
@@ -440,10 +457,13 @@
 ## Last completed
 - 2026-07-28: chore/credential-search-status-filter — server-side `status` query param on `GET
   /api/v1/credentials`, closing the console's recorded C6b platform ask. `mvn verify` green,
-  329/329 tests (9 new). **PR #41 opened, NOT merged.** Also opened `khatm-console` PR #18
-  (docs-only, not merged) marking that ask addressed-pending-merge. See "Current phase / task"
-  above for the full breakdown (single-shared-instant filter design, the `credential_check` CHECK
-  constraint finding, and the proactive gitleaks scan).
+  329/329 tests (9 new). **DONE & MERGED via PR #41** (2026-07-28, merge commit `1c5a8ff`,
+  fast-forward, merged without a green CI run due to a GitHub Actions billing block — Majd's
+  explicit instruction, see "Current phase / task" above for the full substitute-verification
+  record); branch `chore/credential-search-status-filter` deleted. Also opened `khatm-console` PR
+  #18 (docs-only, not merged, theirs to merge) marking that ask addressed. See "Current phase /
+  task" above for the full breakdown (single-shared-instant filter design, the `credential_check`
+  CHECK constraint finding, and the proactive gitleaks scans).
 - 2026-07-28: KH-1.6-BE — Consumption Lifecycle Visibility (D1–D6). `mvn verify` green, 320/320
   tests (8 new); live compose e2e run for real end-to-end. **DONE & MERGED via PR #39**
   (2026-07-28, merge commit `9223a63`, fast-forward); branch
@@ -715,9 +735,10 @@ merged via PR #35), **KH-2.1-BE (multi-tenancy core + real Postgres RLS) merged 
 its review follow-ups merged via PR #38, **KH-1.6-BE (consumption lifecycle visibility —
 `EXHAUSTED` status, holder-status endpoint) merged via PR #39**, and
 **chore/credential-search-status-filter (server-side `status` filter, closing the console's C6b
-ask) built and verified, PR #41 opened, not yet merged** — the one outstanding
-`khatm-platform` PR as of this update (plus a small docs-only `khatm-console` PR #18 marking that
-ask addressed-pending-merge).
+ask) merged via PR #41**. No outstanding `khatm-platform` PR as of this update — **but see the
+GitHub Actions billing block recorded in the PR #41 entry above; verify it's resolved before
+trusting the next PR's CI status at face value.** `khatm-console` PR #18 (docs-only, marking the
+ask addressed) is open on that repo, theirs to merge.
 
 1. **C6 (console) / W4 (wallet) — unblocked, KH-1.6-BE is merged**: the two follow-on session
    briefs spec `docs/specs/FS-1.6-consumption-lifecycle-visibility.md` §"Brief — C6"/"Brief — W4"
@@ -725,8 +746,8 @@ ask addressed-pending-merge).
    holder-status refresh + exhausted-vs-revoked verifier distinction. Both self-stop if a contract
    field they need is somehow absent, but the contract now carries everything both briefs ask for.
    **C6b's own status-filter-dropdown follow-up** (khatm-console, self-stopped 2026-07-28 on the
-   missing `status` param) is what PR #41 above unblocks — still needs PR #41 merged, then
-   khatm-console's own `npm run contract:update` re-run, before the dropdown itself can be built.
+   missing `status` param) is now unblocked — PR #41 above is merged; khatm-console just needs its
+   own `npm run contract:update` re-run before the dropdown itself can be built.
 2. **Console's four Dashboard v2 panels (other repo)** — now that KH-1.1.5-BE is merged, wiring the
    console side to real data is the already-scoped follow-up this session's brief named
    (khatm-console's `docs/STATE.md`, "Next up" #5).
