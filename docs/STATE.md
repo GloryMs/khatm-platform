@@ -5,6 +5,56 @@
 
 ## Current phase / task
 - Phase 0 — Production Foundation, fully closed (see prior sessions).
+- **chore/credential-search-status-filter — server-side status filter on credential search**
+  (session `chore/credential-search-status-filter`, 2026-07-28): closes the console's recorded
+  platform ask (`khatm-console` `docs/STATE.md`, 2026-07-28, C6b chore — logged there, now marked
+  addressed-pending-merge via a small cross-repo doc PR, see below). `mvn verify` green,
+  **329/329 tests (9 new)**. **PR #41 opened, NOT merged** — pending Majd's review. No new
+  `ErrorCode`/message key (invalid `status` values reuse the existing `KH-SYS-0400
+  /validation.failed`), so no Arabic-review gate.
+  - **Verify-first finding (per the brief):** confirmed lifecycle status is fully *derived*, never
+    stored — `credential.domain.CredentialStatus#derive(Credential, Instant)` (added KH-1.6-BE),
+    reading `revoked`/`usesRemaining`/`validTo` with precedence `REVOKED` > `EXHAUSTED` >
+    `EXPIRED` > `ACTIVE`. `EXPIRED` is indeed time-derived (`validTo` vs. a caller-supplied
+    `Instant`), confirming the brief's hint — this is exactly what makes the single-shared-instant
+    design below necessary.
+  - **Server-side filter, single source of derivation:** `CredentialRepository#search` gained an
+    inline JPQL `CASE WHEN c.revoked ... WHEN c.usesRemaining <= 0 ... WHEN c.validTo < :now ...
+    ELSE 'ACTIVE' END IN :statuses` clause — the SQL mirror of `CredentialStatus#derive`'s exact
+    precedence, cross-referenced in both classes' Javadoc so a future precedence change can't
+    update one without the other. `CredentialService#search` now captures one `Instant now` and
+    passes it to **both** the repository call and each row's own `toSummary(c, now)` status
+    derivation — the same instant, not two independent `Instant.now()` calls — which is what
+    actually *guarantees* (not just usually-true) that a row can never show a status it was just
+    filtered out of. "No filter requested" resolves to *every* `CredentialStatus` name rather than
+    a `null`/empty collection, sidestepping Hibernate's `IN`-clause-with-null/empty-list edge cases
+    entirely and keeping "no filter" and "every status selected" the same code path.
+  - **A real, unanticipated constraint:** an `EXPIRED` test fixture cannot be issued directly with
+    a negative `validMinutes` — `credential`'s own `CHECK (valid_to > valid_from)` (V1 baseline)
+    rejects an already-inverted window at INSERT time (this constraint also binds UPDATEs, so it
+    can't be worked around by moving only `valid_to` backward afterward either). Fixed by issuing
+    normally then backdating *both* `valid_from` and `valid_to` together via a direct SQL `UPDATE`
+    in the test fixture helper, preserving the CHECK while landing `valid_to` safely behind `now()`.
+  - **Tests (9 new):** `credential.domain.CredentialSearchStatusFilterTest` (7 — each reachable
+    status filters in isolation, multi-value OR, no-filter-returns-everything, the EXPIRED boundary
+    just-past/just-future, status filter composed with pagination, invalid value throws
+    `ValidationException`, and a single-source-of-derivation regression asserting a status filter's
+    result set always exactly equals the rows the same unfiltered call's own `status` field reports
+    for that status), `rbac.CredentialListScopeGateTest` (+2 — real HTTP repeated-`status=`-param
+    binding end-to-end, and the `KH-SYS-0400` 400 envelope shape for an invalid value).
+  - **Docs:** `docs/api/openapi.json` regenerated (additive-only — one new query param + one new
+    400 response on `GET /api/v1/credentials`, confirmed via `git diff`); `docs/error-codes.md` and
+    both message bundles **unchanged** (confirmed via their own tests passing with zero diff).
+  - **Cross-repo STATE update:** `khatm-console` (checked out locally at
+    `C:\Projects\KHATM-Project\khatm-console`) is a separate repository this session also touched,
+    on its own small chore branch (`chore/state-platform-ask-pr41`), to mark the ask this session
+    closes as addressed-pending-merge (not fully closed yet, since PR #41 itself isn't merged) —
+    **`khatm-console` PR #18 opened, not merged**. Explicitly told not to run that repo's `npm run
+    contract:update` until #41 lands on this repo's `main`.
+  - **Proactive gitleaks check:** ran a local unredacted gitleaks scan
+    (`docker run zricethezav/gitleaks:latest detect --redact=0`) against this branch's commit
+    before opening the PR — clean — a habit picked up from the KH-1.6-BE session's false-positive
+    incident (see that entry below), rather than discovering a CI failure after the fact.
 - **KH-1.6-BE — Consumption Lifecycle Visibility** (session `feat/KH-1.6-BE-consumption-lifecycle`,
   2026-07-27, spec `docs/specs/FS-1.6-consumption-lifecycle-visibility.md`, veto resolutions V1–V3
   already resolved in the spec itself): `mvn verify` green, **320/320 tests (8 new)**. Live compose
@@ -388,6 +438,12 @@
 
 
 ## Last completed
+- 2026-07-28: chore/credential-search-status-filter — server-side `status` query param on `GET
+  /api/v1/credentials`, closing the console's recorded C6b platform ask. `mvn verify` green,
+  329/329 tests (9 new). **PR #41 opened, NOT merged.** Also opened `khatm-console` PR #18
+  (docs-only, not merged) marking that ask addressed-pending-merge. See "Current phase / task"
+  above for the full breakdown (single-shared-instant filter design, the `credential_check` CHECK
+  constraint finding, and the proactive gitleaks scan).
 - 2026-07-28: KH-1.6-BE — Consumption Lifecycle Visibility (D1–D6). `mvn verify` green, 320/320
   tests (8 new); live compose e2e run for real end-to-end. **DONE & MERGED via PR #39**
   (2026-07-28, merge commit `9223a63`, fast-forward); branch
@@ -656,15 +712,21 @@ out a first wave (KH-1.1-BE schema management + credential search + the consume 
 KH-1.4.4-BE the consuming-party admin plane + closed the `ensure()` race; KH-1.1.3-BE bulk issuance
 + the stats endpoint + OpenAPI security schemes; KH-1.1.5-BE Dashboard v2's five read endpoints,
 merged via PR #35), **KH-2.1-BE (multi-tenancy core + real Postgres RLS) merged via PR #36** with
-its review follow-ups merged via PR #38, and **KH-1.6-BE (consumption lifecycle visibility —
-`EXHAUSTED` status, holder-status endpoint) merged via PR #39**. No outstanding PR as of this
-update.
+its review follow-ups merged via PR #38, **KH-1.6-BE (consumption lifecycle visibility —
+`EXHAUSTED` status, holder-status endpoint) merged via PR #39**, and
+**chore/credential-search-status-filter (server-side `status` filter, closing the console's C6b
+ask) built and verified, PR #41 opened, not yet merged** — the one outstanding
+`khatm-platform` PR as of this update (plus a small docs-only `khatm-console` PR #18 marking that
+ask addressed-pending-merge).
 
-1. **C6 (console) / W4 (wallet) — now unblocked, KH-1.6-BE is merged**: the two follow-on session
+1. **C6 (console) / W4 (wallet) — unblocked, KH-1.6-BE is merged**: the two follow-on session
    briefs spec `docs/specs/FS-1.6-consumption-lifecycle-visibility.md` §"Brief — C6"/"Brief — W4"
    already scope in full — console credential-lifecycle badges/uses-column/filter and wallet's live
    holder-status refresh + exhausted-vs-revoked verifier distinction. Both self-stop if a contract
    field they need is somehow absent, but the contract now carries everything both briefs ask for.
+   **C6b's own status-filter-dropdown follow-up** (khatm-console, self-stopped 2026-07-28 on the
+   missing `status` param) is what PR #41 above unblocks — still needs PR #41 merged, then
+   khatm-console's own `npm run contract:update` re-run, before the dropdown itself can be built.
 2. **Console's four Dashboard v2 panels (other repo)** — now that KH-1.1.5-BE is merged, wiring the
    console side to real data is the already-scoped follow-up this session's brief named
    (khatm-console's `docs/STATE.md`, "Next up" #5).
