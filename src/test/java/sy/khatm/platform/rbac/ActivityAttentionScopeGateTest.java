@@ -40,7 +40,18 @@ class ActivityAttentionScopeGateTest extends RbacHttpTestSupport {
   void activity_withApiKeyHoldingEveryScope_returns403() throws Exception {
     CreatedApiKey fullKey =
         apiKeyService.create(
-            ApiKeyOwnerType.TENANT, null, Set.of("issue", "verify", "consume", "revoke", "admin"));
+            ApiKeyOwnerType.TENANT,
+            null,
+            Set.of(
+                "issue",
+                "verify",
+                "consume",
+                "revoke",
+                "schema:manage",
+                "consumer:manage",
+                "key:manage",
+                "tenant:admin",
+                "platform:admin"));
     HttpHeaders headers = new HttpHeaders();
     headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + fullKey.rawKey());
 
@@ -77,7 +88,18 @@ class ActivityAttentionScopeGateTest extends RbacHttpTestSupport {
   void attention_withApiKeyHoldingEveryScope_returns403() throws Exception {
     CreatedApiKey fullKey =
         apiKeyService.create(
-            ApiKeyOwnerType.TENANT, null, Set.of("issue", "verify", "consume", "revoke", "admin"));
+            ApiKeyOwnerType.TENANT,
+            null,
+            Set.of(
+                "issue",
+                "verify",
+                "consume",
+                "revoke",
+                "schema:manage",
+                "consumer:manage",
+                "key:manage",
+                "tenant:admin",
+                "platform:admin"));
     HttpHeaders headers = new HttpHeaders();
     headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + fullKey.rawKey());
 
@@ -133,10 +155,11 @@ class ActivityAttentionScopeGateTest extends RbacHttpTestSupport {
   }
 
   @Test
-  void signingKeys_withAdminScopedApiKey_returnsKeysEnvelope() throws Exception {
-    CreatedApiKey adminKey = apiKeyService.create(ApiKeyOwnerType.TENANT, null, Set.of("admin"));
+  void signingKeys_withKeyManageScopedApiKey_returnsKeysEnvelope() throws Exception {
+    CreatedApiKey keyManageKey =
+        apiKeyService.create(ApiKeyOwnerType.TENANT, null, Set.of("key:manage"));
     HttpHeaders headers = new HttpHeaders();
-    headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + adminKey.rawKey());
+    headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + keyManageKey.rawKey());
 
     ResponseEntity<String> response =
         rest.exchange(
@@ -173,7 +196,7 @@ class ActivityAttentionScopeGateTest extends RbacHttpTestSupport {
   }
 
   @Test
-  void signingKeys_withApiKeyMissingAdminScope_returns403() throws Exception {
+  void signingKeys_withApiKeyMissingKeyManageScope_returns403() throws Exception {
     CreatedApiKey key = apiKeyService.create(ApiKeyOwnerType.TENANT, null, Set.of("issue"));
     HttpHeaders headers = new HttpHeaders();
     headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + key.rawKey());

@@ -48,7 +48,19 @@ class AuthLoginCycleTest extends RbacHttpTestSupport {
         JSON.convertValue(
             me.get("scopes"),
             JSON.getTypeFactory().constructCollectionType(List.class, String.class));
-    assertThat(scopes).contains("admin", "issue", "verify", "consume", "revoke");
+    // KH-2.2a (spec FS-2.2 D3): the bootstrap admin holds PLATFORM_ADMIN, now all nine granular
+    // scopes — the retired 'admin' scope no longer appears anywhere.
+    assertThat(scopes)
+        .containsExactlyInAnyOrder(
+            "issue",
+            "verify",
+            "consume",
+            "revoke",
+            "schema:manage",
+            "consumer:manage",
+            "key:manage",
+            "tenant:admin",
+            "platform:admin");
 
     HttpHeaders logoutHeaders = new HttpHeaders();
     logoutHeaders.set(HttpHeaders.COOKIE, sessionCookie + "; " + csrfCookie);

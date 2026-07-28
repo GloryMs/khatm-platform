@@ -22,8 +22,9 @@ deny-by-default, so a party with an empty (or entirely absent) allowlist can con
 `rbac.seed.DemoApiKeySeeder` calls `#allowSchema` to scope the demo consuming party to the demo
 schema, otherwise every local demo consume would 403 under this default.
 
-**Admin plane (KH-1.4.4):** `ConsumingPartyAdmin` (behind `/api/v1/admin/consuming-parties`, `admin`
-scope) registers parties, flips `ACTIVE`↔`SUSPENDED`, and manages the schema allowlist. `V5` adds a
+**Admin plane (KH-1.4.4):** `ConsumingPartyAdmin` (behind `/api/v1/admin/consuming-parties`,
+`consumer:manage` scope, spec FS-2.2 D2) registers parties, flips `ACTIVE`↔`SUSPENDED`, and manages
+the schema allowlist. `V5` adds a
 `code` column (deterministic id derivation was always `UUID.nameUUIDFromBytes("tenant:code")`, but
 the code itself was never persisted); `create` produces the same row `#ensure` would, so explicit
 creation and implicit ensure never diverge — a duplicate code is `KH-CNS-0409`, not a second row.

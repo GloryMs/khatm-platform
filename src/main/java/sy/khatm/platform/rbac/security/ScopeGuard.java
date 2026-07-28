@@ -1,5 +1,6 @@
 package sy.khatm.platform.rbac.security;
 
+import java.util.Set;
 import java.util.function.Supplier;
 import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.authorization.AuthorizationManager;
@@ -18,7 +19,8 @@ import org.springframework.security.web.access.intercept.RequestAuthorizationCon
  *   <li>{@code /revoke} — {@code revoke} scope, {@code ACTOR_USER} only (spec §3: "جلسة").
  *   <li>{@code /consume} — {@code consume} scope, {@code ACTOR_API_KEY_CONSUMING_PARTY} only (SEC
  *       §7 — a console session is explicitly {@code 403} here, DoD #4).
- *   <li>{@code /api/v1/admin/**} — {@code admin} scope, any actor.
+ *   <li>{@code /api/v1/admin/**} — one of the granular scopes in {@link ScopeRegistry} per family
+ *       (spec FS-2.2 D2), any actor; the coarse {@code admin} scope is retired (spec V3).
  * </ul>
  *
  * <p>Every decision is a plain boolean over the current {@link Authentication}'s authorities — an
@@ -34,6 +36,17 @@ final class ScopeGuard {
 
   static AuthorizationManager<RequestAuthorizationContext> requireScope(String scope) {
     return (authentication, context) -> decide(hasAuthority(authentication, scopeAuthority(scope)));
+  }
+
+  /**
+   * Grants access to any actor holding <em>at least one</em> of {@code scopes} — used where several
+   * distinct capabilities all legitimately need the same read (spec FS-2.2 D2/V2: schema read
+   * endpoints accept any action scope or {@code schema:manage}, not just one specific scope).
+   */
+  static AuthorizationManager<RequestAuthorizationContext> requireAnyScope(Set<String> scopes) {
+    return (authentication, context) ->
+        decide(
+            scopes.stream().anyMatch(scope -> hasAuthority(authentication, scopeAuthority(scope))));
   }
 
   static AuthorizationManager<RequestAuthorizationContext> requireScopeNotConsumingPartyKey(

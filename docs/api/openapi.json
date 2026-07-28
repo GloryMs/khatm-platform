@@ -1206,7 +1206,7 @@
     },
     "/api/v1/admin/api-keys" : {
       "post" : {
-        "description" : "The response's rawKey is shown exactly once — the platform stores only its SHA-256 hash and prefix (spec FS-0.6b §4). tenantId (spec FS-2.1) defaults to the caller's own tenant — a platform admin provisioning a newly onboarded tenant's first key names it explicitly. Requires the admin scope.",
+        "description" : "The response's rawKey is shown exactly once — the platform stores only its SHA-256 hash and prefix (spec FS-0.6b §4). tenantId (spec FS-2.1) defaults to the caller's own tenant, requiring only the tenant:admin scope (spec FS-2.2 V4). Naming a tenantId other than the caller's own — a platform admin provisioning a newly onboarded tenant's first key — additionally requires the platform:admin scope (spec FS-2.2 D4), enforced by shared.OnBehalfOfExecutor and recorded as AuditAction.ON_BEHALF_OF.",
         "operationId" : "createApiKey",
         "requestBody" : {
           "content" : {
@@ -1237,7 +1237,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the tenant:admin scope, or (when tenantId names another tenant) missing the platform:admin scope (KH-RBC-0403)"
           },
           "404" : {
             "content" : {
@@ -1256,7 +1256,7 @@
     },
     "/api/v1/admin/api-keys/{id}/revoke" : {
       "post" : {
-        "description" : "The key stops authenticating on the very next request (spec FS-0.6b DoD #5). Idempotent — revoking an already-revoked or unknown key still returns 200.",
+        "description" : "The key stops authenticating on the very next request (spec FS-0.6b DoD #5). Idempotent — revoking an already-revoked or unknown key still returns 200. Requires the tenant:admin scope (spec FS-2.2 V4); RLS scopes visibility to the caller's own tenant's keys regardless.",
         "operationId" : "revokeApiKey",
         "parameters" : [ {
           "in" : "path",
@@ -1278,7 +1278,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the tenant:admin scope (KH-RBC-0403)"
           }
         },
         "summary" : "Revoke an API key",
@@ -1287,7 +1287,7 @@
     },
     "/api/v1/admin/consuming-parties" : {
       "get" : {
-        "description" : "Every consuming party registered for the tenant (newest first), each with its status and resolved schema allowlist. Requires the admin scope.",
+        "description" : "Every consuming party registered for the tenant (newest first), each with its status and resolved schema allowlist. Requires the consumer:manage scope.",
         "operationId" : "list_3",
         "responses" : {
           "200" : {
@@ -1321,14 +1321,14 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the consumer:manage scope (KH-RBC-0403)"
           }
         },
         "summary" : "List consuming parties",
         "tags" : [ "consuming-parties-admin" ]
       },
       "post" : {
-        "description" : "Creates a party with the given code and bilingual name. The code is a lowercase slug (^[a-z0-9][a-z0-9-_]{1,62}$); the row's id is derived deterministically from (tenant, code), so this is idempotent by identity — but registering an already-registered code is a conflict (KH-CNS-0409), not a silent overwrite. Requires the admin scope.",
+        "description" : "Creates a party with the given code and bilingual name. The code is a lowercase slug (^[a-z0-9][a-z0-9-_]{1,62}$); the row's id is derived deterministically from (tenant, code), so this is idempotent by identity — but registering an already-registered code is a conflict (KH-CNS-0409), not a silent overwrite. Requires the consumer:manage scope.",
         "operationId" : "create_2",
         "requestBody" : {
           "content" : {
@@ -1379,7 +1379,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the consumer:manage scope (KH-RBC-0403)"
           },
           "409" : {
             "content" : {
@@ -1398,7 +1398,7 @@
     },
     "/api/v1/admin/consuming-parties/{id}/activate" : {
       "post" : {
-        "description" : "Flips a SUSPENDED party back to ACTIVE — its API keys authenticate again. Idempotent. Requires the admin scope.",
+        "description" : "Flips a SUSPENDED party back to ACTIVE — its API keys authenticate again. Idempotent. Requires the consumer:manage scope.",
         "operationId" : "activate_1",
         "parameters" : [ {
           "in" : "path",
@@ -1437,7 +1437,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the consumer:manage scope (KH-RBC-0403)"
           },
           "404" : {
             "content" : {
@@ -1505,7 +1505,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the consumer:manage scope (KH-RBC-0403)"
           },
           "404" : {
             "content" : {
@@ -1524,7 +1524,7 @@
     },
     "/api/v1/admin/consuming-parties/{id}/allowed-schemas/{schemaId}" : {
       "delete" : {
-        "description" : "Idempotent — removing a pair that is not allowed (including for an unknown party) is a successful 204 no-op. Requires the admin scope.",
+        "description" : "Idempotent — removing a pair that is not allowed (including for an unknown party) is a successful 204 no-op. Requires the consumer:manage scope.",
         "operationId" : "disallowSchema",
         "parameters" : [ {
           "in" : "path",
@@ -1563,7 +1563,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the consumer:manage scope (KH-RBC-0403)"
           }
         },
         "summary" : "Remove a schema from a party's allowlist",
@@ -1572,7 +1572,7 @@
     },
     "/api/v1/admin/consuming-parties/{id}/api-keys" : {
       "post" : {
-        "description" : "Creates a CONSUMING_PARTY-owned API key (scope: consume) for the given party. The response's rawKey is shown exactly once — the platform stores only its SHA-256 hash and prefix (spec FS-0.6b §4). Revoke it later via POST /api/v1/admin/api-keys/{id}/revoke. Requires the admin scope.",
+        "description" : "Creates a CONSUMING_PARTY-owned API key (scope: consume) for the given party. The response's rawKey is shown exactly once — the platform stores only its SHA-256 hash and prefix (spec FS-0.6b §4). Revoke it later via POST /api/v1/admin/api-keys/{id}/revoke. Requires the consumer:manage scope.",
         "operationId" : "mintKey",
         "parameters" : [ {
           "in" : "path",
@@ -1611,7 +1611,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the consumer:manage scope (KH-RBC-0403)"
           },
           "404" : {
             "content" : {
@@ -1630,7 +1630,7 @@
     },
     "/api/v1/admin/consuming-parties/{id}/suspend" : {
       "post" : {
-        "description" : "Flips the party to SUSPENDED — its API keys immediately stop authenticating (KH-1.4.4 D4), the same outcome as a revoked key. Idempotent. Requires the admin scope.",
+        "description" : "Flips the party to SUSPENDED — its API keys immediately stop authenticating (KH-1.4.4 D4), the same outcome as a revoked key. Idempotent. Requires the consumer:manage scope.",
         "operationId" : "suspend_1",
         "parameters" : [ {
           "in" : "path",
@@ -1669,7 +1669,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the consumer:manage scope (KH-RBC-0403)"
           },
           "404" : {
             "content" : {
@@ -1688,7 +1688,7 @@
     },
     "/api/v1/admin/signing-keys" : {
       "get" : {
-        "description" : "Every signing key for the tenant, newest first, every state including RETIRED — lifecycle fields only (kid/state/validFrom/validTo), never the public JWK or any private material. Requires the admin scope (any actor kind).",
+        "description" : "Every signing key for the tenant, newest first, every state including RETIRED — lifecycle fields only (kid/state/validFrom/validTo), never the public JWK or any private material. Requires the key:manage scope (any actor kind).",
         "operationId" : "signingKeys",
         "responses" : {
           "200" : {
@@ -1719,7 +1719,7 @@
                 }
               }
             },
-            "description" : "Authenticated without the admin scope"
+            "description" : "Authenticated without the key:manage scope"
           }
         },
         "summary" : "List every signing key's lifecycle status",
@@ -1762,14 +1762,14 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the platform:admin scope (KH-RBC-0403)"
           }
         },
         "summary" : "List tenants",
         "tags" : [ "tenants-admin" ]
       },
       "post" : {
-        "description" : "Full onboarding: creates the tenant row, provisions its first ACTIVE signing key, and creates its default status list (<slug>-<year>, capacity 131072) before this call returns. Calling this again with a slug that already has a fully-onboarded tenant is a conflict (KH-TNT-0409); calling it again with a slug whose onboarding previously died partway through resumes it instead of conflicting. Requires the admin scope.",
+        "description" : "Full onboarding: creates the tenant row, provisions its first ACTIVE signing key, and creates its default status list (<slug>-<year>, capacity 131072) before this call returns. Calling this again with a slug that already has a fully-onboarded tenant is a conflict (KH-TNT-0409); calling it again with a slug whose onboarding previously died partway through resumes it instead of conflicting. Requires the platform:admin scope.",
         "operationId" : "create_1",
         "requestBody" : {
           "content" : {
@@ -1820,7 +1820,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the platform:admin scope (KH-RBC-0403)"
           },
           "409" : {
             "content" : {
@@ -1839,7 +1839,7 @@
     },
     "/api/v1/admin/tenants/{id}" : {
       "get" : {
-        "description" : "One tenant by id. Requires the admin scope.",
+        "description" : "One tenant by id. Requires the platform:admin scope.",
         "operationId" : "get_2",
         "parameters" : [ {
           "in" : "path",
@@ -1878,7 +1878,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the platform:admin scope (KH-RBC-0403)"
           },
           "404" : {
             "content" : {
@@ -1897,7 +1897,7 @@
     },
     "/api/v1/admin/tenants/{id}/activate" : {
       "post" : {
-        "description" : "Flips a SUSPENDED tenant back to ACTIVE — its users'/API keys' authentication resumes. Idempotent. Requires the admin scope.",
+        "description" : "Flips a SUSPENDED tenant back to ACTIVE — its users'/API keys' authentication resumes. Idempotent. Requires the platform:admin scope.",
         "operationId" : "activate",
         "parameters" : [ {
           "in" : "path",
@@ -1936,7 +1936,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the platform:admin scope (KH-RBC-0403)"
           },
           "404" : {
             "content" : {
@@ -1955,7 +1955,7 @@
     },
     "/api/v1/admin/tenants/{id}/suspend" : {
       "post" : {
-        "description" : "Flips the tenant to SUSPENDED — its own users' sessions and API keys immediately stop authenticating (spec D7), the same outcome as a revoked key. Already-issued credentials keep verifying/consuming, and the tenant's JWKS + status lists stay public (spec V4) — suspension blocks new issuance only. Idempotent. Requires the admin scope.",
+        "description" : "Flips the tenant to SUSPENDED — its own users' sessions and API keys immediately stop authenticating (spec D7), the same outcome as a revoked key. Already-issued credentials keep verifying/consuming, and the tenant's JWKS + status lists stay public (spec V4) — suspension blocks new issuance only. Idempotent. Requires the platform:admin scope.",
         "operationId" : "suspend",
         "parameters" : [ {
           "in" : "path",
@@ -1994,7 +1994,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope (KH-RBC-0403)"
+            "description" : "Missing the platform:admin scope (KH-RBC-0403)"
           },
           "404" : {
             "content" : {
@@ -2770,7 +2770,7 @@
         "tags" : [ "schema" ]
       },
       "post" : {
-        "description" : "Requires the admin scope. Server-side validation rejects an empty claimsDef, a claim field with an unsupported type (text/number/date), a nameI18n or claim labelI18n missing en or ar, an sdFields entry not among the claim field names, or a code already registered at version 1 — all as KH-SCH-0400. The schema starts DRAFT and unavailable for issuance until POST /{id}/publish.",
+        "description" : "Requires the schema:manage scope. Server-side validation rejects an empty claimsDef, a claim field with an unsupported type (text/number/date), a nameI18n or claim labelI18n missing en or ar, an sdFields entry not among the claim field names, or a code already registered at version 1 — all as KH-SCH-0400. The schema starts DRAFT and unavailable for issuance until POST /{id}/publish.",
         "operationId" : "create",
         "requestBody" : {
           "content" : {
@@ -2821,7 +2821,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope"
+            "description" : "Missing the schema:manage scope"
           }
         },
         "summary" : "Create a new DRAFT credential schema (version 1)",
@@ -2876,7 +2876,7 @@
         "tags" : [ "schema" ]
       },
       "put" : {
-        "description" : "Requires the admin scope. DRAFT only — fixes mistakes before publish. Validated identically to POST /api/v1/schemas.",
+        "description" : "Requires the schema:manage scope. DRAFT only — fixes mistakes before publish. Validated identically to POST /api/v1/schemas.",
         "operationId" : "update",
         "parameters" : [ {
           "in" : "path",
@@ -2935,7 +2935,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope"
+            "description" : "Missing the schema:manage scope"
           },
           "404" : {
             "content" : {
@@ -2964,7 +2964,7 @@
     },
     "/api/v1/schemas/{id}/archive" : {
       "post" : {
-        "description" : "Requires the admin scope. PUBLISHED -> ARCHIVED — stops NEW issuance against this schema (POST /api/v1/credentials/issue and the internal find-or-create path both reject it, KH-SCH-1409); every credential already issued against it, and its verification/consumption, is completely unaffected.",
+        "description" : "Requires the schema:manage scope. PUBLISHED -> ARCHIVED — stops NEW issuance against this schema (POST /api/v1/credentials/issue and the internal find-or-create path both reject it, KH-SCH-1409); every credential already issued against it, and its verification/consumption, is completely unaffected.",
         "operationId" : "archive",
         "parameters" : [ {
           "in" : "path",
@@ -3003,7 +3003,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope"
+            "description" : "Missing the schema:manage scope"
           },
           "404" : {
             "content" : {
@@ -3032,7 +3032,7 @@
     },
     "/api/v1/schemas/{id}/publish" : {
       "post" : {
-        "description" : "Requires the admin scope. DRAFT -> PUBLISHED — the immutability line: a published schema's claim fields can never be mutated again (no general update endpoint exists for a PUBLISHED schema); a mistake found later needs a new version (POST /{id}/versions) instead. A PUBLISHED schema becomes a valid issuance target for POST /api/v1/credentials/issue's schemaCode.",
+        "description" : "Requires the schema:manage scope. DRAFT -> PUBLISHED — the immutability line: a published schema's claim fields can never be mutated again (no general update endpoint exists for a PUBLISHED schema); a mistake found later needs a new version (POST /{id}/versions) instead. A PUBLISHED schema becomes a valid issuance target for POST /api/v1/credentials/issue's schemaCode.",
         "operationId" : "publish",
         "parameters" : [ {
           "in" : "path",
@@ -3071,7 +3071,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope"
+            "description" : "Missing the schema:manage scope"
           },
           "404" : {
             "content" : {
@@ -3100,7 +3100,7 @@
     },
     "/api/v1/schemas/{id}/versions" : {
       "post" : {
-        "description" : "Requires the admin scope. Same code, version + 1. The console is responsible for prefilling the request body from the source schema's current fields — this endpoint validates the submitted body exactly like POST /api/v1/schemas, with no server-side default-merging.",
+        "description" : "Requires the schema:manage scope. Same code, version + 1. The console is responsible for prefilling the request body from the source schema's current fields — this endpoint validates the submitted body exactly like POST /api/v1/schemas, with no server-side default-merging.",
         "operationId" : "createVersion",
         "parameters" : [ {
           "in" : "path",
@@ -3159,7 +3159,7 @@
                 }
               }
             },
-            "description" : "Missing the admin scope"
+            "description" : "Missing the schema:manage scope"
           },
           "404" : {
             "content" : {

@@ -11,7 +11,11 @@ resolution by id/slug (`TenantDirectoryService`).
 - `TenantDirectory` — read-only lookup by id/slug. `rbac` depends on this (`rbac.security
   .TenantContextFilter`, `ApiKeyService#verify`, `AuthService#login`) to resolve a principal's
   tenant and enforce suspension.
-- `TenantAdmin` — the admin plane behind `/api/v1/admin/tenants` (`admin` scope).
+- `TenantAdmin` — the admin plane behind `/api/v1/admin/tenants` (`platform:admin` scope
+  exclusively, spec FS-2.2 D2 — the entire path has no other caller, so `TenantAdminService#create`
+  keeps its own manual `TenantContext` switch rather than going through `shared.OnBehalfOfExecutor`,
+  which exists for endpoints shared with a lesser-privileged self-service caller; see that class's
+  Javadoc).
 
 **Cross-module dependencies (one-way, deliberately):** `key :: api` (`TenantKeyProvisioner`) and
 `status :: api` (`StatusListAllocator#ensureList`) for onboarding. Neither `key` nor `status`

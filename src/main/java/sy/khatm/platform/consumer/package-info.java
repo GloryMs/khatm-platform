@@ -22,8 +22,8 @@
  * KH-CNS-0409), {@code POST /{id}/suspend} and {@code /activate}, {@code POST
  * /{id}/allowed-schemas} / {@code DELETE /{id}/allowed-schemas/{schemaId}}. Key minting lives in
  * {@code rbac.web} (only {@code rbac} may create {@code api_key} rows, and {@code consumer}
- * depending on {@code rbac} would cycle). All guarded by the {@code admin} scope; a real {@code
- * consumer:manage} scope waits for KH-2.2.
+ * depending on {@code rbac} would cycle). All guarded by the {@code consumer:manage} scope (spec
+ * FS-2.2 D2).
  *
  * <p><b>Published events:</b> (none yet)
  *

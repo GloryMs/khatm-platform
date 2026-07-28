@@ -23,11 +23,13 @@ import sy.khatm.platform.rbac.domain.ApiKeyService;
 import sy.khatm.platform.rbac.domain.CreatedApiKey;
 
 /**
- * KH-2.1-BE Part A — the tenant admin/onboarding plane over real HTTP: the {@code admin}-scope gate
- * on every endpoint, a full onboard → list → get → suspend → activate lifecycle walk with audit-row
- * assertions, the D9 duplicate-slug 409, and invalid-slug 400. Domain-level behaviour is covered in
- * more detail by {@code tenant.domain.TenantAdminServiceTest}; this class proves the endpoints,
- * status codes, error envelopes, and gate wire up correctly.
+ * KH-2.1-BE Part A, re-gated KH-2.2a (spec FS-2.2 D2) — the tenant admin/onboarding plane over real
+ * HTTP: the {@code platform:admin}-exclusive gate on every endpoint (not even {@code tenant:admin}
+ * suffices, per D2's own wording), a full onboard → list → get → suspend → activate lifecycle walk
+ * with audit-row assertions (including the on-behalf-of audit row {@code create} now writes via
+ * {@code shared.OnBehalfOfExecutor}), the D9 duplicate-slug 409, and invalid-slug 400. Domain-level
+ * behaviour is covered in more detail by {@code tenant.domain.TenantAdminServiceTest}; this class
+ * proves the endpoints, status codes, error envelopes, and gate wire up correctly.
  */
 class TenantAdminGateTest extends RbacHttpTestSupport {
 
@@ -76,7 +78,7 @@ class TenantAdminGateTest extends RbacHttpTestSupport {
   }
 
   @Test
-  void create_withTenantKeyMissingAdminScope_returns403() throws Exception {
+  void create_withTenantKeyMissingPlatformAdminScope_returns403() throws Exception {
     CreatedApiKey issuerKey = apiKeyService.create(ApiKeyOwnerType.TENANT, null, Set.of("issue"));
 
     ResponseEntity<String> response =
@@ -87,11 +89,27 @@ class TenantAdminGateTest extends RbacHttpTestSupport {
   }
 
   @Test
-  void create_withAdminApiKey_succeeds() throws Exception {
-    CreatedApiKey adminKey = apiKeyService.create(ApiKeyOwnerType.TENANT, null, Set.of("admin"));
+  void create_withTenantAdminScopeButNotPlatformAdmin_returns403() throws Exception {
+    // D2's own wording: platform:admin exclusively — tenant:admin (the scope that gates every
+    // OTHER tenant-facing admin surface) must NOT be enough here, since /admin/tenants is the one
+    // cross-tenant plane on the platform.
+    CreatedApiKey tenantAdminKey =
+        apiKeyService.create(ApiKeyOwnerType.TENANT, null, Set.of("tenant:admin"));
 
     ResponseEntity<String> response =
-        createWithApiKey(adminKey.rawKey(), uniqueSlug("gate-adminkey"));
+        createWithApiKey(tenantAdminKey.rawKey(), uniqueSlug("gate-tenantadmin-notenough"));
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+    assertThat(JSON.readTree(response.getBody()).get("code").asText()).isEqualTo("KH-RBC-0403");
+  }
+
+  @Test
+  void create_withPlatformAdminApiKey_succeeds() throws Exception {
+    CreatedApiKey platformAdminKey =
+        apiKeyService.create(ApiKeyOwnerType.TENANT, null, Set.of("platform:admin"));
+
+    ResponseEntity<String> response =
+        createWithApiKey(platformAdminKey.rawKey(), uniqueSlug("gate-platformadminkey"));
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
     assertThat(JSON.readTree(response.getBody()).get("status").asText()).isEqualTo("ACTIVE");
