@@ -19,6 +19,7 @@ import java.text.ParseException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
@@ -74,6 +75,7 @@ import sy.khatm.platform.shared.error.ConflictException;
 import sy.khatm.platform.shared.error.ErrorCode;
 import sy.khatm.platform.shared.error.IntegrityException;
 import sy.khatm.platform.shared.error.NotFoundException;
+import sy.khatm.platform.shared.error.ValidationException;
 import sy.khatm.platform.shared.error.VerifyReason;
 import sy.khatm.platform.status.api.StatusAllocation;
 import sy.khatm.platform.status.api.StatusListAllocator;
@@ -823,21 +825,42 @@ public class CredentialService {
    * Search/list credentials for the current tenant (KH-1.1.4, {@code GET /api/v1/credentials}) —
    * every filter is optional and AND-combined, sorted by {@code issuedAt} descending.
    *
+   * <p><b>{@code status} filter (chore/credential-search-status-filter):</b> zero or more of {@link
+   * CredentialStatus}'s names; multiple values OR together (a row matches if its derived status is
+   * any one of them). {@code null}/empty means no filtering — implemented by passing every status
+   * name through to {@link CredentialRepository#search}, never a separate code path, so "no filter"
+   * and "every status selected" are the same request under the hood. A single {@link Instant} is
+   * captured once and reused for both the repository's filter decision and each returned row's own
+   * displayed {@code status} — see {@link CredentialStatus}'s Javadoc for why this single-instant
+   * discipline is what guarantees a row can never show a status it was just filtered out of (or
+   * vice versa).
+   *
    * @param ref exact credential ref match, or {@code null} for no filter
    * @param pseudoRef exact holder pseudoRef match, or {@code null} for no filter; an unknown
    *     pseudoRef short-circuits to an empty page rather than querying with a sentinel holder id
    * @param schemaId exact schema id match, or {@code null} for no filter
    * @param revoked exact revoked-flag match, or {@code null} for no filter
+   * @param statuses zero or more {@link CredentialStatus} names to OR-filter on, or {@code null}/
+   *     empty for no filter
    * @param page zero-based page number; negative values are clamped to {@code 0}
    * @param size requested page size; clamped to {@code [1, 100]}
    * @return the matching page
+   * @throws ValidationException {@link ErrorCode#KH_SYS_0400} if {@code statuses} contains a value
+   *     that is not a {@link CredentialStatus} name
    */
   @Transactional(readOnly = true)
   public CredentialPage search(
-      String ref, String pseudoRef, UUID schemaId, Boolean revoked, Integer page, Integer size) {
+      String ref,
+      String pseudoRef,
+      UUID schemaId,
+      Boolean revoked,
+      List<String> statuses,
+      Integer page,
+      Integer size) {
     int safePage = page == null ? 0 : Math.max(0, page);
     int safeSize =
         Math.max(1, Math.min(size == null ? DEFAULT_SEARCH_PAGE_SIZE : size, MAX_SEARCH_PAGE_SIZE));
+    List<String> effectiveStatuses = resolveStatusFilter(statuses);
 
     UUID holderId = null;
     if (pseudoRef != null && !pseudoRef.isBlank()) {
@@ -849,6 +872,7 @@ public class CredentialService {
     }
 
     String exactRef = ref == null || ref.isBlank() ? null : ref;
+    Instant now = Instant.now();
     Page<Credential> result =
         credentials.search(
             TenantContext.current(),
@@ -856,13 +880,39 @@ public class CredentialService {
             holderId,
             schemaId,
             revoked,
+            effectiveStatuses,
+            now,
             PageRequest.of(safePage, safeSize));
-    List<CredentialSummary> items = result.getContent().stream().map(this::toSummary).toList();
+    List<CredentialSummary> items =
+        result.getContent().stream().map(c -> toSummary(c, now)).toList();
     return new CredentialPage(
         items, safePage, safeSize, result.getTotalElements(), result.getTotalPages());
   }
 
-  private CredentialSummary toSummary(Credential c) {
+  /**
+   * Validate and dedupe the caller's requested status names, or — when none were requested — every
+   * {@link CredentialStatus} name, so {@link CredentialRepository#search}'s {@code IN} clause is
+   * always bound to a non-empty list and never needs its own null/empty-collection branch.
+   *
+   * @throws ValidationException {@link ErrorCode#KH_SYS_0400} on any name that is not a {@link
+   *     CredentialStatus}
+   */
+  private static List<String> resolveStatusFilter(List<String> requested) {
+    if (requested == null || requested.isEmpty()) {
+      return Arrays.stream(CredentialStatus.values()).map(Enum::name).toList();
+    }
+    Set<String> validated = new LinkedHashSet<>();
+    for (String raw : requested) {
+      try {
+        validated.add(CredentialStatus.valueOf(raw).name());
+      } catch (IllegalArgumentException e) {
+        throw new ValidationException(ErrorCode.KH_SYS_0400, "validation.failed");
+      }
+    }
+    return List.copyOf(validated);
+  }
+
+  private CredentialSummary toSummary(Credential c, Instant now) {
     Optional<SchemaRef> schema = schemas.findById(c.getSchemaId());
     return new CredentialSummary(
         c.getId().toString(),
@@ -874,7 +924,7 @@ public class CredentialService {
         c.getMaxUses(),
         c.getUsesRemaining(),
         c.isRevoked(),
-        CredentialStatus.derive(c, Instant.now()).name(),
+        CredentialStatus.derive(c, now).name(),
         c.getMaxUses() - c.getUsesRemaining());
   }
 

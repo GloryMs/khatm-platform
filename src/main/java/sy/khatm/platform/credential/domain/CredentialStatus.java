@@ -15,6 +15,15 @@ import java.time.Instant;
  * terminal state), then {@link #EXHAUSTED} (a credential that ran out of uses before or after its
  * validity window still reads as exhausted, not expired), then {@link #EXPIRED}.
  *
+ * <p><b>Single source of derivation (chore/credential-search-status-filter):</b> {@code
+ * credential.persistence.CredentialRepository#search}'s {@code status} filter mirrors {@link
+ * #derive}'s precedence exactly, as an inline SQL {@code CASE} expression — if this precedence ever
+ * changes, that query's {@code CASE} must change with it in the same commit, or a row could show
+ * one status while being excluded from filtering by that same status. {@code
+ * credential.domain.CredentialSearchStatusFilterTest} pins this: for every reachable status, the
+ * set of ids the filter returns must exactly equal the set of ids this method assigns that status
+ * to.
+ *
  * <p>{@link #SUSPENDED} is part of spec D1's published vocabulary for forward contract stability
  * (console/wallet can code against all five values from day one) but is <b>not reachable by {@link
  * #derive}</b> in this session — nothing today puts an individual credential into a suspended
