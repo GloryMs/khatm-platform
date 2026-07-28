@@ -40,6 +40,14 @@ public enum VerifyReason {
   /** The credential has been explicitly revoked. */
   REVOKED("revoked"),
 
+  /**
+   * The credential's last remaining use has already been consumed (spec FS-1.6 D4) — distinct from
+   * {@link #REVOKED}: this is a credential that ran itself out through normal use, not an
+   * administrative action. Checked in the same post-credential-row branch order as {@code REVOKED},
+   * right after it.
+   */
+  EXHAUSTED("exhausted"),
+
   /** The payload's {@code _sd_alg} is not {@code sha-256} (spec FS-0.4 D8). */
   BAD_SD_ALG("bad_sd_alg"),
 

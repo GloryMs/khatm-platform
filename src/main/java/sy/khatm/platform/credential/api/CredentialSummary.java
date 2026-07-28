@@ -20,6 +20,12 @@ import sy.khatm.platform.shared.LocalizedText;
  * @param maxUses maximum allowed consumptions
  * @param usesRemaining remaining consumption count
  * @param revoked whether this credential has been revoked
+ * @param status explicit lifecycle status (spec FS-1.6 D1/D5): one of {@code ACTIVE}, {@code
+ *     EXHAUSTED}, {@code REVOKED}, {@code SUSPENDED}, {@code EXPIRED} — derived, not stored; see
+ *     {@code credential.domain.CredentialStatus}'s Javadoc for precedence and for why {@code
+ *     SUSPENDED} is not reachable yet
+ * @param usesConsumed {@code maxUses - usesRemaining} (spec FS-1.6 D5), so a caller can render "X
+ *     of Y" without doing the subtraction itself
  */
 public record CredentialSummary(
     String id,
@@ -30,4 +36,6 @@ public record CredentialSummary(
     Instant validTo,
     int maxUses,
     int usesRemaining,
-    boolean revoked) {}
+    boolean revoked,
+    String status,
+    int usesConsumed) {}

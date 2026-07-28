@@ -8,11 +8,11 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 /**
- * Spec FS-0.6b DoD #9 (first half), extended by spec FS-1.2.1 DoD #7 and spec FS-1.3 D9 — {@code
- * POST /api/v1/credentials/verify}, {@code GET /.well-known/jwks.json}, {@code POST
- * /api/v1/claims/redeem}, and {@code GET /sl/{tenantSlug}/{listCode}} work with <b>zero</b>
- * credentials: no session cookie, no {@code Authorization} header at all (the only four endpoints
- * that stay open).
+ * Spec FS-0.6b DoD #9 (first half), extended by spec FS-1.2.1 DoD #7, spec FS-1.3 D9, and spec
+ * FS-1.6 D3 — {@code POST /api/v1/credentials/verify}, {@code GET /.well-known/jwks.json}, {@code
+ * POST /api/v1/claims/redeem}, {@code GET /sl/{tenantSlug}/{listCode}}, and {@code POST
+ * /api/v1/credentials/holder-status} work with <b>zero</b> credentials: no session cookie, no
+ * {@code Authorization} header at all.
  */
 class PublicEndpointsNoCredentialsTest extends RbacHttpTestSupport {
 
@@ -51,6 +51,18 @@ class PublicEndpointsNoCredentialsTest extends RbacHttpTestSupport {
 
     // An unknown list is a domain-shaped KH-STS-0404 (spec FS-1.3 D2), never 401/403 — the point
     // here is specifically that authentication is never even attempted for this path.
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+  }
+
+  @Test
+  void holderStatus_withNoCredentialsAtAll_returns404_notAnAuthError() {
+    ResponseEntity<String> response =
+        rest.postForEntity(
+            "/api/v1/credentials/holder-status", Map.of("jwt", "not-a-real-jwt"), String.class);
+
+    // A malformed/unresolvable jwt is a domain-shaped KH-CRD-0404 (spec FS-1.6 D3), never
+    // 401/403 — the point here is specifically that authentication is never even attempted for
+    // this path.
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
   }
 }

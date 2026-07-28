@@ -107,6 +107,17 @@
  * of the claim code alone (spec §9) — {@code rbac.security.SecurityConfig}'s third public endpoint,
  * guarded instead by {@code ClaimRedeemThrottleService}'s per-IP fixed window (D6).
  *
+ * <p><b>Consumption lifecycle visibility (KH-1.6-BE, spec FS-1.6):</b> {@code
+ * domain.CredentialStatus} (new, module-private) derives an explicit {@code ACTIVE}/{@code
+ * EXHAUSTED}/{@code REVOKED}/{@code SUSPENDED}/{@code EXPIRED} status at read time from existing
+ * columns — no migration. {@code AtomicConsumptionRecorder#tryConsume} reuses {@code status ::
+ * api}'s {@link sy.khatm.platform.status.api.StatusListRevoker#revoke} — the exact bit-flip path
+ * {@code CredentialService#revoke} already uses — to flip an exhausted credential's status-list bit
+ * exactly once, the moment {@code consumeOne} brings {@code usesRemaining} to {@code 0}. New public
+ * endpoint {@code POST /api/v1/credentials/holder-status} (proof-of-possession: bare compact SD-JWT
+ * in, {status, maxUses, usesRemaining, lastConsumedAt} out) is a deliberate, explicit reversal of
+ * PR #33's "no live uses-remaining channel" stance (spec FS-1.6 §2 V1) — see {@code docs/STATE.md}.
+ *
  * <p><b>Cross-module dependencies:</b> {@code key :: api} ({@link
  * sy.khatm.platform.key.api.KeySigner} for signing, {@link sy.khatm.platform.key.api.KeyVerifier}
  * for strict-by-{@code kid} verification, no fallback); {@code schema :: api}, {@code holder ::

@@ -45,6 +45,7 @@ import sy.khatm.platform.credential.api.ConsumeResponse;
 import sy.khatm.platform.credential.api.CredentialPage;
 import sy.khatm.platform.credential.api.CredentialSummary;
 import sy.khatm.platform.credential.api.CredentialView;
+import sy.khatm.platform.credential.api.HolderStatusResponse;
 import sy.khatm.platform.credential.api.IssueRequest;
 import sy.khatm.platform.credential.api.IssueResponse;
 import sy.khatm.platform.credential.api.VerifyResponse;
@@ -456,6 +457,21 @@ public class CredentialService {
           statusListUri);
     }
 
+    // FS-1.6 D4: an exhausted (but not explicitly revoked) credential is a distinct, non-error
+    // domain result — checked right after REVOKED, before the disclosure-shape checks below, since
+    // those are about the presentation's own integrity, not the credential's lifecycle state.
+    if (c.getUsesRemaining() <= 0) {
+      return result(
+          false,
+          VerifyReason.EXHAUSTED,
+          structural,
+          c.getUsesRemaining(),
+          false,
+          statusListChecked,
+          statusListVersion,
+          statusListUri);
+    }
+
     // D8: _sd_alg must be sha-256.
     if (!SD_ALG.equals(rawClaims.get("_sd_alg"))) {
       return result(
@@ -567,6 +583,74 @@ public class CredentialService {
         statusListChecked,
         statusListVersion,
         statusListUri);
+  }
+
+  // ── Holder status (proof-of-possession lookup) ────────────────────────────
+
+  /**
+   * Look up a credential's current lifecycle status by proof of possession of its bare compact JWT
+   * (spec FS-1.6 D3) — a deliberate, explicit reversal of PR #33's "no live uses-remaining channel"
+   * stance, now that the holder proves possession of the signed token itself rather than merely
+   * naming a credential reference.
+   *
+   * <p>Reuses {@link #checkSignature}, the exact same signature-verification helper {@link #verify}
+   * uses, and {@link CredentialRepository#findByRef}, the same ref-lookup {@link #verify} uses — no
+   * second implementation of either. Every failure mode (a malformed JWT, an unresolvable or
+   * retired {@code kid}, bad signature bytes, an unknown {@code ref}) collapses to the same {@link
+   * ErrorCode#KH_CRD_0404} 404 (anti-enumeration: an external caller cannot distinguish "not a real
+   * credential" from "a forged one," the same collapsing judgment call {@code KH_CLM_0404} already
+   * made for claim codes) — deliberately reusing the existing generic "credential not found" code
+   * rather than minting a new one, since the HTTP status and client-facing message are identical to
+   * every other not-found lookup in this module.
+   *
+   * <p><b>Multi-tenant aware, like {@link #verify}:</b> the caller ({@code
+   * credential.web.CredentialController#holderStatus}) wraps this whole call in {@code
+   * SystemAccessExecutor#runAsSystem} — a presented JWT may belong to any tenant, unknowable before
+   * it is looked up, so this runs with no ambient {@link TenantContext} of its own, exactly {@link
+   * #verify}'s existing shape. Key resolution ({@link #checkSignature}) is itself tenant-agnostic
+   * (kids are globally unique), so no further per-tenant wrapping is needed here.
+   *
+   * @param jwt the bare compact SD-JWT
+   * @return the resolved status/uses/last-consumption snapshot
+   * @throws NotFoundException {@link ErrorCode#KH_CRD_0404} if the token is malformed, its
+   *     signature does not verify, or its {@code ref} claim does not resolve to a known credential
+   */
+  @Transactional(readOnly = true)
+  public HolderStatusResponse holderStatus(String jwt) {
+    SignedJWT parsed;
+    try {
+      parsed = SignedJWT.parse(jwt);
+    } catch (ParseException e) {
+      throw notFound();
+    }
+    if (checkSignature(parsed) != VerifyReason.VALID) {
+      throw notFound();
+    }
+
+    String ref;
+    try {
+      ref = (String) parsed.getJWTClaimsSet().getClaim("ref");
+    } catch (ParseException e) {
+      throw notFound();
+    }
+    Credential c =
+        (ref == null ? Optional.<Credential>empty() : credentials.findByRef(ref))
+            .orElseThrow(CredentialService::notFound);
+
+    Instant lastConsumedAt =
+        events
+            .findTopByCredentialIdOrderByConsumedAtDesc(c.getId())
+            .map(ConsumptionEvent::getConsumedAt)
+            .orElse(null);
+    return new HolderStatusResponse(
+        CredentialStatus.derive(c, Instant.now()).name(),
+        c.getMaxUses(),
+        c.getUsesRemaining(),
+        lastConsumedAt);
+  }
+
+  private static NotFoundException notFound() {
+    return new NotFoundException(ErrorCode.KH_CRD_0404, "credential.not-found");
   }
 
   // ── Consume (atomic — the double-spend guard) ─────────────────────────────
@@ -789,7 +873,9 @@ public class CredentialService {
         c.getValidTo(),
         c.getMaxUses(),
         c.getUsesRemaining(),
-        c.isRevoked());
+        c.isRevoked(),
+        CredentialStatus.derive(c, Instant.now()).name(),
+        c.getMaxUses() - c.getUsesRemaining());
   }
 
   // ── Helpers ───────────────────────────────────────────────────────────────

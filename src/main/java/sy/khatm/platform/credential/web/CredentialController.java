@@ -29,6 +29,8 @@ import sy.khatm.platform.credential.api.ConsumeRequest;
 import sy.khatm.platform.credential.api.ConsumeResponse;
 import sy.khatm.platform.credential.api.CredentialPage;
 import sy.khatm.platform.credential.api.CredentialView;
+import sy.khatm.platform.credential.api.HolderStatusRequest;
+import sy.khatm.platform.credential.api.HolderStatusResponse;
 import sy.khatm.platform.credential.api.IssueRequest;
 import sy.khatm.platform.credential.api.IssueResponse;
 import sy.khatm.platform.credential.api.VerifyRequest;
@@ -249,6 +251,38 @@ class CredentialController {
         result.statusListChecked(),
         result.statusListVersion(),
         result.statusListUri());
+  }
+
+  @Operation(
+      summary = "Check a credential's lifecycle status by proof of possession",
+      description =
+          "Public endpoint, like /verify — no session or API key (spec FS-1.6 D3, a deliberate,"
+              + " explicit reversal of PR #33's original 'no live uses-remaining channel'"
+              + " stance). The request body's jwt is the bare compact SD-JWT (no disclosures);"
+              + " proving possession of a validly signed token is the only authentication this"
+              + " endpoint needs — it never reads or returns claim content (P1 rule), only"
+              + " status/maxUses/usesRemaining/lastConsumedAt. An invalid signature or an"
+              + " unresolvable credential both collapse to the same 404 (KH-CRD-0404) so an"
+              + " external caller cannot distinguish 'not a real credential' from 'forged'"
+              + " (anti-enumeration).",
+      responses = {
+        @ApiResponse(responseCode = "200", description = "The credential's current status"),
+        @ApiResponse(
+            responseCode = "400",
+            description = "Bean Validation failed (a blank jwt)",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "404",
+            description =
+                "The jwt is malformed, its signature does not verify, or it does not resolve to a"
+                    + " known credential (KH-CRD-0404, unified for anti-enumeration)",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
+      })
+  @PostMapping("/holder-status")
+  HolderStatusResponse holderStatus(@Valid @RequestBody HolderStatusRequest req) {
+    // KH-1.6 (spec FS-1.6 D3): genuinely anonymous, like /verify — a presented JWT may belong to
+    // any tenant, so this runs under system access rather than any one tenant's RLS scope.
+    return systemAccess.runAsSystem(() -> service.holderStatus(req.jwt()));
   }
 
   @Operation(

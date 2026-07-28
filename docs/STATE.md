@@ -5,6 +5,83 @@
 
 ## Current phase / task
 - Phase 0 — Production Foundation, fully closed (see prior sessions).
+- **KH-1.6-BE — Consumption Lifecycle Visibility** (session `feat/KH-1.6-BE-consumption-lifecycle`,
+  2026-07-27, spec `docs/specs/FS-1.6-consumption-lifecycle-visibility.md`, veto resolutions V1–V3
+  already resolved in the spec itself): `mvn verify` green, **320/320 tests (8 new)**. Live compose
+  e2e run for real (DoD): issue `maxUses=2` → consume ×2 (2nd returns `remaining=0`) → 3rd rejected
+  (`already_consumed`) → `holder-status` shows `EXHAUSTED 0/2` → `/verify` returns `valid:false`
+  `reason:exhausted` → status-list bit (idx 7, MSB-first decode against the live artifact) reads
+  set → search row shows `status:EXHAUSTED, usesConsumed:2`. **PR #39 opened, NOT
+  merged** — pending Majd's review (spec's own Arabic-review gate applies: new `verify.reason
+  .exhausted` key).
+  - **Verify-against-code findings (recorded before writing, per the brief):** `Credential` had no
+    status-like column at all — D1 needed no migration, since the exactly-once `EXHAUSTED`
+    transition falls out for free from `CredentialRepository#consumeOne`'s existing atomic `WHERE
+    uses_remaining > 0` UPDATE (only the one call that decrements 1→0 ever observes 0 afterward, in
+    its own transaction — no new guard column). `ConsumeResponse` already carried `usesRemaining`
+    from an earlier session — nothing to add there. Revocation's exact bit-flip/republish path
+    (`status.api.StatusListRevoker#revoke`, called from `CredentialService#revoke`) is what D1/D2
+    reuse verbatim from `AtomicConsumptionRecorder#tryConsume`, in the same transaction as the
+    decrement.
+  - **D1 — exactly-once `EXHAUSTED` transition:** new module-private `credential.domain
+    .CredentialStatus` enum (`ACTIVE/EXHAUSTED/REVOKED/SUSPENDED/EXPIRED`), derived at read time
+    from `revoked`/`usesRemaining`/`validTo` — precedence `REVOKED` > `EXHAUSTED` > `EXPIRED` >
+    `ACTIVE`. `SUSPENDED` is part of the published vocabulary for forward contract stability but is
+    **not reachable by any code path today** — KH-2.1's tenant suspension deliberately does not
+    affect already-issued credentials' verify/consume/status-list serving, and nothing else
+    suspends an individual credential; documented on the enum's own Javadoc, revisit only if a
+    future session adds a credential/schema-level suspension mechanism.
+    `AtomicConsumptionRecorder#tryConsume` re-reads the credential row right after its own
+    successful decrement (same transaction); if `usesRemaining == 0`, calls
+    `StatusListRevoker#revoke` and records new `AuditAction.CREDENTIAL_EXHAUSTED` — both exactly
+    once, by construction (every later `consumeOne` against an already-0 row fails the WHERE clause
+    and never reaches this code at all). New `db.ConcurrentConsumeTest` case: `maxUses=5`, 6
+    concurrent callers → exactly 5 succeed, `uses_remaining=0`, exactly one
+    `CREDENTIAL_EXHAUSTED` audit row, `status_list.version` bumped by exactly 1 from its
+    pre-consume baseline.
+  - **D2 — status-list bit flip, reused path:** no new bit-flip mechanism — D1's
+    `StatusListRevoker#revoke` call above *is* D2. New `status.domain
+    .CredentialExhaustionStatusListTest` (lives in `status.domain`, not `credential.domain`,
+    specifically to reach package-private `BitstringCodec` — "live-code authority": decodes the
+    published artifact's bit with the exact same MSB-first logic production uses, not a
+    second/possibly-divergent reimplementation): issue `maxUses=1` → consume once → publish →
+    assert the bit reads set, mirroring `StatusListPublishTest`'s existing revoke regression.
+  - **D3 — `POST /api/v1/credentials/holder-status`, public, proof-of-possession** (a deliberate,
+    explicit reversal of PR #33's original "no live uses-remaining channel" stance — recorded here
+    per spec V1's own instruction so this isn't misread later as an unintended contradiction; PR
+    #33 was right for its own moment, this session's spec explicitly revisits and reverses it with
+    Majd's sign-off, see FS-1.6 §2 V1): body `{"jwt": "<bare compact SD-JWT>"}` (no disclosures —
+    only proof of signature possession, never claim content, P1 rule); response `{status, maxUses,
+    usesRemaining, lastConsumedAt?}`. `CredentialService#holderStatus` reuses `#checkSignature` and
+    `CredentialRepository#findByRef` verbatim (no second implementation) — malformed JWT, bad
+    signature, and unknown `ref` all collapse to the same reused `KH_CRD_0404` (anti-enumeration,
+    same collapsing judgment call `KH_CLM_0404` already made; no new `ErrorCode` needed). Wrapped in
+    `SystemAccessExecutor#runAsSystem` by the controller, the identical shape `/verify` already
+    uses — no new entry needed in `SystemAccessCallerAllowlistTest`'s enumeration since
+    `CredentialController.java` was already in it (as "verify lookup"). New `SecurityConfig`
+    `permitAll` entry (now six public endpoints, Javadoc updated) + new `rbac
+    .PublicEndpointsNoCredentialsTest` case (the "public path list test" the brief pointed at). New
+    `ConsumptionEventRepository#findTopByCredentialIdOrderByConsumedAtDesc` for `lastConsumedAt`.
+    New `credential.domain.HolderStatusTest` (5 cases: active/exhausted-with-timestamp/revoked/
+    malformed-404/tampered-signature-404).
+  - **D4 — new `VerifyReason.EXHAUSTED`:** checked in `CredentialService#verify` right after the
+    existing `REVOKED` branch, before the disclosure-shape checks — `200 valid:false
+    reason:exhausted`. New `verify.reason.exhausted` key, both bundles, same commit (Arabic-review
+    gate applies to this session's PR).
+  - **D5 — additive `status`/`usesConsumed` on search + detail:** `CredentialSummary` (search rows)
+    and `CredentialView` (`GET /{id}`) both gained `status` (the same `CredentialStatus` string) and
+    `usesConsumed` (`maxUses - usesRemaining`) fields — populated in `CredentialMapper#toView` and
+    `CredentialService#toSummary`. Purely additive; both existing construction call sites updated,
+    no other caller in the codebase constructs these records directly.
+  - **D6 — docs:** `docs/api/openapi.json` regenerated via `OpenApiContractTest`'s own debug-dump
+    mechanism (95 insertions, 0 deletions — additive-only, confirmed via `git diff --stat`).
+    `docs/error-codes.md` **unchanged** — no new `ErrorCode` this session (holder-status reuses
+    `KH_CRD_0404`). `MessageBundleParityTest` green throughout.
+  - **STATE sweep (this update):** the previous entry below claimed `chore/KH-2.1-review-followups`
+    "PR opened, not yet merged" — `git log` at this session's start already showed it merged (PR
+    #38, merge commit `8d6a927`, which is `origin/main`'s tip this branch was cut from); corrected
+    below, same "confirm main's actual state via git log, don't trust a stale STATE note" pattern
+    KH-1.4.4-BE/KH-1.1.3-BE/KH-2.1-BE sessions already established.
 - **chore/KH-2.1-review-followups — post-merge review actions for KH-2.1-BE** (session
   `chore/KH-2.1-review-followups`, 2026-07-27): four follow-ups from KH-2.1-BE's review (PR #36,
   merged), `mvn verify` green, **316/316 tests (8 new)**. No contract change (additive-only
@@ -63,8 +140,9 @@
      through an explicit join, confirming the review's concern did not materialize.
   - V1–V8 untouched, `MigrationImmutabilityTest` green; `V9`'s checksum appended to
     `db/migration-checksums.lock`.
-  - **Branch `chore/KH-2.1-review-followups` — PR opened, not yet merged** (pending Majd's
-    review).
+  - **Branch `chore/KH-2.1-review-followups` — DONE & MERGED via PR #38** (merge commit
+    `8d6a927`), confirmed via `git log` at this session's start (see the STATE-sweep note in the
+    KH-1.6-BE entry above).
 - **KH-2.1-BE — Multi-Tenancy Core** (session `feat/KH-2.1-BE-multi-tenancy-core`, 2026-07-27,
   spec `docs/specs/FS-2.1-multi-tenancy-core.md`): full multi-tenancy — tenant context resolution,
   a tenant admin/onboarding plane, per-tenant trust endpoints, and real Postgres Row Level
@@ -290,6 +368,10 @@
 
 
 ## Last completed
+- 2026-07-27: KH-1.6-BE — Consumption Lifecycle Visibility (D1–D6). `mvn verify` green, 320/320
+  tests (8 new); live compose e2e run for real end-to-end. **PR #39 opened, NOT
+  merged** — pending Majd's review (Arabic-review gate on the new `verify.reason.exhausted` key).
+  See "Current phase / task" above for the full D1–D6 breakdown and verify-against-code findings.
 - 2026-07-22: KH-1.1.3-BE — bulk issuance + stats endpoint (+ OpenAPI security schemes).
   Support-mode session, brief itself was the spec. `mvn verify` green, 230/230 tests (22 new, up
   from 208). **DONE & MERGED via PR #29** (2026-07-22, merge commit `c138da7`); branch
@@ -547,39 +629,45 @@ hardening, versioned published contract — see "Current phase / task" above), s
 out a first wave (KH-1.1-BE schema management + credential search + the consume idempotency race;
 KH-1.4.4-BE the consuming-party admin plane + closed the `ensure()` race; KH-1.1.3-BE bulk issuance
 + the stats endpoint + OpenAPI security schemes; KH-1.1.5-BE Dashboard v2's five read endpoints,
-merged via PR #35), and **KH-2.1-BE (multi-tenancy core + real Postgres RLS) is now merged via PR
-#36**. Its own review follow-ups (`chore/KH-2.1-review-followups` — see "Current phase / task"
-above) are complete on that branch with a PR open, **not yet merged** — pending Majd's review; this
-is the one outstanding PR as of this update.
+merged via PR #35), **KH-2.1-BE (multi-tenancy core + real Postgres RLS) merged via PR #36** with
+its review follow-ups merged via PR #38, and **KH-1.6-BE (consumption lifecycle visibility —
+`EXHAUSTED` status, holder-status endpoint) is now built and verified** (see "Current phase /
+task" above) — **PR #39 opened, not yet merged**; this is the one outstanding PR as of
+this update.
 
-1. **Console's four Dashboard v2 panels (other repo)** — now that KH-1.1.5-BE is merged, wiring the
+1. **C6 (console) / W4 (wallet) — consume `feat/KH-1.6-BE-consumption-lifecycle` once merged**: the
+   two follow-on session briefs spec `docs/specs/FS-1.6-consumption-lifecycle-visibility.md` §"Brief
+   — C6"/"Brief — W4" already scope in full — console credential-lifecycle badges/uses-column/filter
+   and wallet's live holder-status refresh + exhausted-vs-revoked verifier distinction. Both are
+   blocked on this PR merging first (they self-stop if the contract fields they need are absent).
+2. **Console's four Dashboard v2 panels (other repo)** — now that KH-1.1.5-BE is merged, wiring the
    console side to real data is the already-scoped follow-up this session's brief named
    (khatm-console's `docs/STATE.md`, "Next up" #5).
-2. **"Signing key approaching rotation" attention item — deliberately not built this session**
+3. **"Signing key approaching rotation" attention item — deliberately not built this session**
    (KH-1.1.5-BE spec D5): needs a new, narrow, state-only `key :: api` surface Majd declined to add
    for now, to keep `key`'s "other modules must never see rotation" stance untouched. Revisit only
    if that boundary decision changes — see `docs/specs/FS-1.5.4-dashboard-stats-v2.md` D5.
-3. **C2 / C2b / C3 / C4 (console, other repo)** — the console team's active milestone; the bulk-issue
+4. **C2 / C2b / C3 / C4 (console, other repo)** — the console team's active milestone; the bulk-issue
    + stats endpoints (plus KH-1.4.4-BE's consuming-parties admin plane and KH-1.1-BE's schema
    management/credential search) exist specifically to unblock the console's remaining screens
    (issue wizard, pilot-metrics dashboard, consuming-parties screen, consume simulator). No further
    platform-side work is scheduled ahead of a concrete console ask.
-4. ~~KH-1.1.3-BE — bulk issuance endpoint + a stats/counters endpoint~~ — **CLOSED:**
+5. ~~KH-1.1.3-BE — bulk issuance endpoint + a stats/counters endpoint~~ — **CLOSED:**
    `POST /api/v1/credentials/bulk` + `GET /api/v1/stats`, both scope-gated, both
    backed by the reused single-issue path / `audit_log` aggregation respectively — no new
    bookkeeping. See "Last completed" → Session KH-1.1.3-BE for the full breakdown.
-5. KH-0.3.3 activation — **config, not code**: set the staging secrets in `docs/deploy-staging.md`
+6. KH-0.3.3 activation — **config, not code**: set the staging secrets in `docs/deploy-staging.md`
    and the `release.yml` deploy job runs on the next push to `main`. (The publish half is already
    live; only the gated deploy half waits on a host — Majd.)
-6. ~~`ConsumingPartyRegistryService#ensure` find-or-create race~~ — **CLOSED (KH-1.4.4-BE):**
+7. ~~`ConsumingPartyRegistryService#ensure` find-or-create race~~ — **CLOSED (KH-1.4.4-BE):**
    `ensure` is no longer `@Transactional` and the entity forces a true `INSERT`
    (`Persistable`), so a lost race's `DataIntegrityViolationException` rolls back cleanly and the
    catch re-reads the winner's row directly — exactly the shape flagged here. Regression test
    `db.ConsumingPartyEnsureRaceTest`.
-7. KH-2.2 — full RBAC (replaces D5's lean `role.scopes text[]` with real Permission tables, admin
+8. KH-2.2 — full RBAC (replaces D5's lean `role.scopes text[]` with real Permission tables, admin
    console for user/role management, granular `schema:manage`/`consumer:manage` scopes replacing the
    MVP `admin`-scope stand-in) + RBAC-gated REST endpoint for `KeyLifecycleService.rotate()`.
-8. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM.
+9. KH-2.3 — KMS-backed `KeyProvider` (D3 swap), KH-3.1 — HSM.
 
 ## Standing conventions (promoted to docs/CONVENTIONS.md §7)
 - **Work rules 2 & 3 (error handling & i18n)** → `docs/CONVENTIONS.md §7.1`.

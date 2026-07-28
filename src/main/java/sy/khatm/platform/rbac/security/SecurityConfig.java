@@ -38,19 +38,23 @@ import sy.khatm.platform.shared.audit.AuditService;
  * within one chain — hence two chains, matched by request shape rather than URL pattern (the same
  * endpoint, e.g. {@code /issue}, can legitimately be called either way).
  *
- * <p><b>Public endpoints (D9, extended KH-1.2.1, KH-1.3, KH-2.1):</b> {@code POST
+ * <p><b>Public endpoints (D9, extended KH-1.2.1, KH-1.3, KH-2.1, KH-1.6):</b> {@code POST
  * /api/v1/credentials/verify}, {@code GET /.well-known/jwks.json}, {@code POST
- * /api/v1/claims/redeem}, {@code GET /sl/{tenantSlug}/{listCode}}, and (spec FS-2.1 D8) {@code GET
- * /t/{tenantSlug}/.well-known/jwks.json} — five, enforced identically on both chains via {@link
+ * /api/v1/claims/redeem}, {@code GET /sl/{tenantSlug}/{listCode}}, (spec FS-2.1 D8) {@code GET
+ * /t/{tenantSlug}/.well-known/jwks.json}, and (spec FS-1.6 D3) {@code POST
+ * /api/v1/credentials/holder-status} — six, enforced identically on both chains via {@link
  * #configureAuthorization}. The third authenticates by possession of a one-time claim code rather
  * than a session or API key (spec FS-1.2.1 §9) — its own per-IP throttle ({@code
  * credential.domain.ClaimRedeemThrottleService}) is what keeps it from being an open door, not this
  * class. The fourth is the public signed status-list artifact (spec FS-1.3 D2) — a read-only public
  * resource exactly like JWKS, never behind auth. The fifth is the per-tenant JWKS alias (spec
  * FS-2.1 D8) — same public-by-nature reasoning as the legacy JWKS path, just slug-resolved instead
- * of hardcoded to the default tenant. Every other endpoint requires at least a valid session or API
- * key; {@link ScopeGuard}'s per-route rules layer the specific scope/actor-kind requirement spec §3
- * names explicitly on top.
+ * of hardcoded to the default tenant. The sixth authenticates by possession of the credential's own
+ * bare JWT (spec FS-1.6 D3) — a deliberate, explicit reversal of PR #33's original "no live
+ * uses-remaining channel" stance; every failure mode collapses to the same anti-enumeration 404,
+ * the same shape {@code /verify} and claim-redeem already establish. Every other endpoint requires
+ * at least a valid session or API key; {@link ScopeGuard}'s per-route rules layer the specific
+ * scope/actor-kind requirement spec §3 names explicitly on top.
  *
  * <p><b>API versioning (KH-1.6-early):</b> every business and auth endpoint lives under {@code
  * /api/v1/**} — the one breaking path change this platform ever makes with a straight face, done
@@ -157,6 +161,7 @@ import sy.khatm.platform.shared.audit.AuditService;
 class SecurityConfig {
 
   private static final String VERIFY_PATH = "/api/v1/credentials/verify";
+  private static final String HOLDER_STATUS_PATH = "/api/v1/credentials/holder-status";
   private static final String JWKS_PATH = "/.well-known/jwks.json";
   private static final String TENANT_JWKS_PATH = "/t/*/.well-known/jwks.json";
   private static final String STATUS_LIST_PATH = "/sl/**";
@@ -237,6 +242,8 @@ class SecurityConfig {
       auth.requestMatchers(SWAGGER_PATHS).permitAll();
     }
     auth.requestMatchers(HttpMethod.POST, VERIFY_PATH)
+        .permitAll()
+        .requestMatchers(HttpMethod.POST, HOLDER_STATUS_PATH)
         .permitAll()
         .requestMatchers(HttpMethod.GET, JWKS_PATH)
         .permitAll()
