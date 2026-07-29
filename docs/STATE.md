@@ -56,8 +56,10 @@ section once CI is confirmed green again post-2026-08-01.
     call (previously it only asserted `/me` was blocked, which is no longer the behavior);
     `rbac.PasswordChangeEnforcementFilterExemptionTest` extended identically, and its "an ordinary
     endpoint is blocked" example moved from `/me` (now exempt) to `/api/v1/users`.
-  - **Branch, no PR yet at time of this STATE entry** — see "Last completed" for merge status once
-    it lands.
+  - **DONE & MERGED via PR #46** (2026-07-29, merge commit `9c5c34f`, merged on Majd's explicit
+    instruction via admin override — no green CI run, same GitHub Actions billing block as PR #41/
+    #43/#45; `mvn verify` 375/375 run in the prior session was the substitute gate). The fix is now
+    on `main`; see "Last completed" below.
 - **KH-2.2b-BE — tenant user management + onboarding completion (D5+D6+D8)** (session
   `feat/KH-2.2b-BE-tenant-users`, 2026-07-28, spec `docs/specs/FS-2.2-rbac-granularity.md` §3):
   the tenant-staff user-management surface (`GET/POST /api/v1/users`, roles/lock/unlock/disable/
@@ -754,11 +756,14 @@ section once CI is confirmed green again post-2026-08-01.
 
 
 ## Last completed
-- 2026-07-28: chore/forced-change-discoverability — closed the console's C7 self-stop: `GET
+- 2026-07-29: chore/forced-change-discoverability — closed the console's C7 self-stop: `GET
   /api/v1/auth/me` exempted from `PasswordChangeEnforcementFilter` + a new `mustChangePassword`
   boolean on `MeResponse`, plus `KH-USR-0403` properly documented on `UserAdminController`'s
-  session-gated operations. `mvn verify` green, 375/375 tests. See "Current phase / task" above for
-  the full breakdown of what the console session found and how it was fixed.
+  session-gated operations. `mvn verify` green, 375/375 tests. **DONE & MERGED via PR #46**
+  (2026-07-29, merge commit `9c5c34f`, merged via admin override without a green CI run — same
+  GitHub Actions billing block as PR #41/#43/#45; `mvn verify` 375/375 was the substitute gate, run
+  before the fix in the prior session). See "Current phase / task" above for the full breakdown of
+  what the console session found and how it was fixed.
 - 2026-07-28: KH-2.2b-BE — tenant user management + onboarding completion (D5+D6+D8): the
   `/api/v1/users/**` surface, `initialAdmin` on tenant onboarding + `POST
   /admin/tenants/{id}/users`, the race-proofed last-tenant-admin guard, and the forced-password-
@@ -1059,11 +1064,13 @@ its review follow-ups merged via PR #38, **KH-1.6-BE (consumption lifecycle visi
 **chore/credential-search-status-filter (server-side `status` filter, closing the console's C6b
 ask) merged via PR #41**, **KH-2.2a-BE (RBAC scope registry, D1–D4) merged via PR #43**
 (2026-07-28, merge commit `238c54d`), and **KH-2.2b-BE (tenant user management + onboarding
-completion, D5+D6+D8) merged via PR #45** (2026-07-28) — no outstanding `khatm-platform` PR as of
-this update (`khatm-console` PR #18, docs-only, marking the C6b ask addressed, is open on that
-repo, theirs to merge). **See the GitHub Actions billing block recorded in the PR #41 entry
-above; verify it's resolved before trusting the next PR's CI status at face value** — PR #45 was
-also merged without a green CI run for the same reason (Majd's explicit instruction).
+completion, D5+D6+D8) merged via PR #45** (2026-07-28), and **chore/forced-change-discoverability
+(closes the console's C7 self-stop by making the forced-password-change state discoverable) merged
+via PR #46** (2026-07-29, merge commit `9c5c34f`) — no outstanding `khatm-platform` PR as of this
+update (`khatm-console` PR #18, docs-only, marking the C6b ask addressed, is open on that repo,
+theirs to merge). **See the GitHub Actions billing block recorded in the PR #41 entry above; verify
+it's resolved before trusting the next PR's CI status at face value** — PR #45 and PR #46 were both
+merged without a green CI run for the same reason (Majd's explicit instruction).
 
 0. **KH-2.2b-BE — DONE & MERGED via PR #45** (2026-07-28, Arabic-speaker review of the new
    `user.*` keys confirmed by Majd before merge, no wording changes). See "Current phase / task"
