@@ -167,7 +167,13 @@ public class AuthService {
   public Optional<UserView> findUserView(UUID userId) {
     return users
         .findById(userId)
-        .map(u -> new UserView(u.getUsername(), u.getDisplayNameI18n(), u.getPreferredLang()));
+        .map(
+            u ->
+                new UserView(
+                    u.getUsername(),
+                    u.getDisplayNameI18n(),
+                    u.getPreferredLang(),
+                    u.isMustChangePassword()));
   }
 
   private boolean isLockedOut(String lockKey) {

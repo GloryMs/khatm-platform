@@ -276,8 +276,13 @@ class UserAdminGateTest extends RbacHttpTestSupport {
 
     AuthenticatedSession newSession = SessionTestSupport.login(rest, username, temporaryPassword);
 
-    // Every other authenticated call is blocked with the distinct forced-change code.
-    ResponseEntity<String> blocked = SessionTestSupport.get(rest, "/api/v1/auth/me", newSession);
+    // GET /me is exempt from the gate specifically so the flag is discoverable — and it is true.
+    ResponseEntity<String> me = SessionTestSupport.get(rest, "/api/v1/auth/me", newSession);
+    assertThat(me.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(JSON.readTree(me.getBody()).get("mustChangePassword").asBoolean()).isTrue();
+
+    // Every OTHER authenticated call is blocked with the distinct forced-change code.
+    ResponseEntity<String> blocked = SessionTestSupport.get(rest, BASE, newSession);
     assertThat(blocked.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     assertThat(JSON.readTree(blocked.getBody()).get("code").asText()).isEqualTo("KH-USR-0403");
 
@@ -291,10 +296,12 @@ class UserAdminGateTest extends RbacHttpTestSupport {
     assertThat(changed.getStatusCode()).isEqualTo(HttpStatus.OK);
     assertThat(auditCount("USER_PASSWORD_CHANGED", username)).isEqualTo(1);
 
-    // The flag is cleared — normal access is restored on the same session.
+    // The flag is cleared — /me now reports false, and normal access is restored on the session.
     ResponseEntity<String> afterChange =
         SessionTestSupport.get(rest, "/api/v1/auth/me", newSession);
     assertThat(afterChange.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(JSON.readTree(afterChange.getBody()).get("mustChangePassword").asBoolean())
+        .isFalse();
   }
 
   private ResponseEntity<String> createWithApiKey(String rawKey, String username) {

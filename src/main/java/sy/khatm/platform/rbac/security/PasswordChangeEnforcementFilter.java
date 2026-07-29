@@ -33,11 +33,16 @@ import sy.khatm.platform.shared.error.ErrorCode;
  * low-volume console (the same trade-off {@code ApiKeyService#verify} makes on every API-key
  * request, for the identical "must hold even if state changed since login" reason).
  *
- * <p><b>Exemption list:</b> the self-service change endpoint, logout, and the platform's public
- * paths (the {@code permitAll} set declared in {@link SecurityConfig} — a logged-in user reaching
- * one of those, rare, is not blocked; everything a temporary-password user could legitimately need
- * to reach is either here or has no authenticated principal at this layer at all). Enumerated and
- * pinned by {@code rbac.security.PasswordChangeEnforcementFilterExemptionTest}.
+ * <p><b>Exemption list:</b> the self-service change endpoint, logout, {@code GET /api/v1/auth/me},
+ * and the platform's public paths (the {@code permitAll} set declared in {@link SecurityConfig} — a
+ * logged-in user reaching one of those, rare, is not blocked; everything a temporary-password user
+ * could legitimately need to reach is either here or has no authenticated principal at this layer
+ * at all). {@code /me} is exempt so a console can discover the flag at all — it is the one endpoint
+ * whose whole purpose is answering "who is this session and what's their status," and {@code
+ * rbac.web.MeResponse#mustChangePassword} is exactly how a client learns it needs to route to the
+ * change screen, rather than only ever seeing this filter's opaque 403 as its first authenticated
+ * call after login. Enumerated and pinned by {@code
+ * rbac.security.PasswordChangeEnforcementFilterExemptionTest}.
  *
  * <p>Wired into the session chain only ({@link SecurityConfig#sessionSecurityFilterChain}), after
  * {@link TenantContextFilter} — the live {@code app_user} read needs the tenant context already
@@ -88,12 +93,12 @@ class PasswordChangeEnforcementFilter extends OncePerRequestFilter {
   }
 
   // Mirrors SecurityConfig's permitAll public-path set (spec FS-0.6b D9 + the
-  // KH-1.2.1/KH-1.3/KH-2.1
-  // /KH-1.6 extensions) plus the two paths a temporary-password user needs to escape or satisfy the
-  // gate. Keep in lockstep with SecurityConfig's public endpoints.
+  // KH-1.2.1/KH-1.3/KH-2.1/KH-1.6 extensions) plus the paths a temporary-password user needs to
+  // escape, satisfy, or discover the gate. Keep in lockstep with SecurityConfig's public endpoints.
   private static final List<RequestMatcher> EXEMPT =
       List.of(
           new AntPathRequestMatcher("/api/v1/users/me/password", "POST"),
+          new AntPathRequestMatcher("/api/v1/auth/me", "GET"),
           new AntPathRequestMatcher("/api/v1/auth/logout", "POST"),
           new AntPathRequestMatcher("/api/v1/auth/login", "POST"),
           new AntPathRequestMatcher("/api/v1/credentials/verify", "POST"),

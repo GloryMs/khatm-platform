@@ -10,6 +10,16 @@ import sy.khatm.platform.shared.LocalizedText;
  * @param displayNameI18n the user's bilingual display name
  * @param preferredLang the user's preferred UI language ({@code en} or {@code ar})
  * @param scopes the user's effective scopes (their roles' union)
+ * @param mustChangePassword whether this user must set a real password (via {@code POST
+ *     /api/v1/users/me/password}) before any other authenticated call will succeed (spec FS-2.2 D5)
+ *     — set on temporary-password provisioning (create/reset-password/onboarding's first admin),
+ *     cleared on the first successful change. This endpoint is the one call exempt from {@code
+ *     rbac.security.PasswordChangeEnforcementFilter}'s {@code 403 KH-USR-0403}, precisely so a
+ *     client can read this flag here and route to the change screen proactively.
  */
 record MeResponse(
-    String username, LocalizedText displayNameI18n, String preferredLang, Set<String> scopes) {}
+    String username,
+    LocalizedText displayNameI18n,
+    String preferredLang,
+    Set<String> scopes,
+    boolean mustChangePassword) {}
