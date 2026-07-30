@@ -18,6 +18,103 @@ section once CI is confirmed green again post-2026-08-01.
 
 ## Current phase / task
 - Phase 0 — Production Foundation, fully closed (see prior sessions).
+- **feat/KH-2.2d-BE-multitenant-login — closes the two platform gaps khatm-console recorded
+  against FS-2.2's exit walkthrough** (session `feat/KH-2.2d-BE-multitenant-login`, 2026-07-30,
+  spec `docs/specs/FS-2.2-rbac-granularity.md`, Majd's explicit decision this session: login
+  tenant discrimination via an optional tenant slug, backward compatible). `mvn verify` green,
+  **381/381 tests (7 new)**. No new `ErrorCode`/message key (an unknown/`SUSPENDED` `tenantSlug`
+  reuses `KH-RBC-0401`/`error.rbc.unauthenticated`; the new `GET` endpoint reuses
+  `KH-RBC-0403`/`KH-TNT-0404`), so no Arabic-review gate.
+  - **The two gaps, both closed:**
+    1. `POST /api/v1/auth/login` could only ever authenticate against the ambient default tenant
+       (`AuthService#login` read `TenantContext.current()`, which for an anonymous request always
+       falls back to default) — documented as an explicit out-of-scope caveat on
+       `SuspendedTenantAuthTest`'s own Javadoc since KH-2.2b. Now takes an optional `tenantSlug`;
+       blank/absent still resolves to the default tenant, byte-for-byte the same as before.
+    2. No way for a platform admin to list an *existing* tenant's users (only create was wired,
+       KH-2.2b D6) — new `GET /api/v1/admin/tenants/{id}/users`.
+  - **Verify-against-code finding that shaped the whole design (recorded before writing, per the
+    brief):** `AuthService#login` was one `@Transactional(noRollbackFor = ...)` method spanning
+    the entire check-then-audit sequence. `shared.TenantContextTransactionExecutionListener
+    #afterBegin` fires exactly once per *physical* transaction and reads whatever
+    `shared.TenantContext` holds **at that moment** — a single outer `@Transactional` boundary
+    begins (and fires the listener) before any method body code runs, i.e. before the tenant could
+    even be resolved from the submitted slug, permanently pinning `app.tenant_id` to the caller's
+    ambient default for the rest of that transaction regardless of any later `TenantContext.set`
+    call. Restructured to the exact shape `rbac.domain.ApiKeyService#create(.., UUID)` /
+    `tenant.domain.TenantAdminService#create` already established for this same class of problem:
+    `login` itself is no longer `@Transactional`; it resolves the tenant, calls
+    `TenantContext.set`, then delegates to a private `authenticate` method whose calls
+    (`AppUserRepository`'s type-level `@Transactional(readOnly = true)`,
+    `AuditService#record`'s own `@Transactional`) each open their *own* fresh physical transaction
+    that correctly picks up the just-switched tenant. This also **removed the need for
+    `noRollbackFor` entirely** — each audit write now commits on its own before the method can
+    throw, rather than relying on one shared transaction's rollback exemption.
+  - **D1 — login, `rbac.domain.AuthService#login(username, rawPassword, tenantSlug)`:** blank/
+    `null` `tenantSlug` resolves via `TenantContext.current()` (unchanged behavior); a non-blank
+    one resolves via `TenantDirectory#findBySlug` — needs no ambient tenant context at all,
+    `tenant` being the one business table excluded from RLS (spec FS-2.1 D2), so this works from a
+    genuinely anonymous request with no chicken-and-egg problem. An unknown or `SUSPENDED` tenant
+    gets the identical generic `KH-RBC-0401` every other failure reason gets (D7's anti-enumeration
+    stance, extended: no tenant-existence oracle either). `rbac.domain.LoginResult` gained
+    `tenantId`; `rbac.security.SessionAuthenticator#establish` now builds the session principal
+    from it instead of `TenantContext.current()` (which, by the time the controller reads the
+    login result, has already been cleared back to the anonymous request's default-tenant
+    fallback — the literal bug `SessionAuthenticator` would have had if login had "worked" without
+    this fix). Downstream — `rbac.security.TenantContextFilter`, RLS, the forced-password-change
+    gate — needed **zero special-casing**, confirmed by the live walkthrough and by
+    `SuspendedTenantAuthTest`'s new HTTP-level tests reaching `GET /api/v1/auth/me` successfully
+    over a non-default tenant's session.
+  - **D2 — `SuspendedTenantAuthTest`, extended to real HTTP, out-of-scope Javadoc removed:** the
+    old `login_forSuspendedTenant_isRejected` (service-level, pointed `TenantContext` at a tenant
+    directly since HTTP login couldn't reach a non-default tenant at all) replaced by three real
+    HTTP tests: a freshly onboarded tenant's own admin, suspended, gets the generic 401 with
+    correct credentials (`login_forSuspendedTenant_viaHttp_isRejected`); an unknown `tenantSlug`
+    gets the identical failure (`login_forUnknownTenantSlug_isRejected_theSameGenericFailure`);
+    and a full login → `GET /me` round trip against a non-default tenant succeeds and reflects
+    that tenant's own user (`login_forNonDefaultTenant_viaHttp_establishesSessionScopedToThatTenant`).
+  - **D3 — `GET /api/v1/admin/tenants/{id}/users`:** new
+    `rbac.domain.TenantProvisioningService#listUsersInTenant`, the same `OnBehalfOfExecutor
+    .runAsTenant` shape `createUserInTenant` already uses (no allowlist-test change needed —
+    `shared.OnBehalfOfCallerAllowlistTest` enumerates by *file*, and
+    `TenantProvisioningService.java` was already in it). New controller method on the existing
+    `rbac.web.TenantProvisioningController`; inherits `platform:admin` for free from
+    `SecurityConfig`'s existing `/api/v1/admin/tenants/**` wildcard rule — no `SecurityConfig`
+    change needed. Returns the identical `UserSummary` row shape `GET /api/v1/users` returns.
+  - **Contract:** `docs/api/openapi.json` regenerated via `OpenApiContractTest`'s own mechanism —
+    additive-only (one new optional `tenantSlug` string on the login request body, one new `GET`
+    operation, description-text-only change on the login summary; confirmed via `git diff`, no
+    path/schema removed).
+  - **Tests (7 new):** `rbac.SuspendedTenantAuthTest` (+2 net — replaced 1 service-level test with
+    3 HTTP-level ones), `rbac.domain.TenantProvisioningServiceTest` (+1 —
+    `listUsersInTenant_returnsTheNamedTenantsUsers_notTheCallersOwn`), `rbac.TenantAdminGateTest`
+    (+3 — success, `tenant:admin`-but-not-`platform:admin` 403, unknown-tenant 404).
+  - **DoD — live compose e2e, run for real, superseding KH-2.2b's default-tenant workaround note:**
+    rebuilt `khatm-api`/`khatm-worker` images against the existing dev volume (V1–V12 already
+    applied, confirmed via `docker logs`) — `POST /api/v1/admin/tenants` with `initialAdmin` →
+    `POST /api/v1/auth/login` **with `tenantSlug`** + the one-time temporary password → 200,
+    session established → `GET /me` shows `mustChangePassword:true` → `POST
+    /api/v1/users/me/password` → `GET /me` shows `false` → `POST /api/v1/schemas` (own tenant) →
+    `POST /{id}/publish` → `POST /api/v1/credentials/issue` (own tenant's published schema) → 200
+    → `POST /api/v1/admin/consuming-parties` + `POST .../allowed-schemas` + `POST .../api-keys` →
+    `POST /api/v1/credentials/consume` with the consuming-party key → `200 consumed:true` → a
+    **second** tenant onboarded the same way, its own admin logged in (own forced-change cleared
+    too) → `GET /api/v1/schemas` / `GET /api/v1/credentials` / `GET
+    /api/v1/admin/consuming-parties` all return **zero** rows (`totalElements:0` on the paginated
+    credential search) — real authenticated cross-tenant isolation evidence, not just an
+    unauthenticated 403 — → tenant A's sole `TENANT_ADMIN` disabling itself → `409 KH-USR-0423` →
+    `GET /api/v1/admin/tenants/{id}/users` (this session's new endpoint) confirms the one admin →
+    tenant A suspended (`POST .../suspend`) → the same admin's login **with its correct password
+    and `tenantSlug`** → generic `401 KH-RBC-0401`. One self-inflicted false start along the way,
+    not a platform bug: `POST /issue`'s `schemaCode` is the literal find-or-create
+    `credential_schema.code` (always version 1, spec FS-0.2's original quick-issue convenience),
+    **not** `code/version` — using `"<code>/v1"` there silently auto-created a second,
+    differently-`code`d schema row instead of hitting the one just authored+published, which is
+    exactly why the first walkthrough attempt's `consume` call 403'd with `KH-CNS-0403
+    consumer.schema-not-allowed` (the credential's real `schema_id` didn't match the one just
+    allow-listed) — confirmed by reading `consuming_party_schema`/`credential`/`credential_schema`
+    rows directly, not guessed; fixed by issuing with the bare `code`, no version suffix.
+  - **PR opened, not yet merged** — branch `feat/KH-2.2d-BE-multitenant-login`.
 - **chore/forced-change-discoverability — closes a real C7 (console) self-stop** (session
   `chore/forced-change-discoverability`, 2026-07-28): the console's Claude Code session for C7
   (spec FS-2.2 D7) self-stopped at its preamble gate — correctly, on inspection — because

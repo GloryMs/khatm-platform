@@ -284,4 +284,28 @@ class TenantProvisioningServiceTest extends IntegrationTestSupport {
                     slug));
     assertThat(onBehalfOfAuditRows).as("cross-tenant action must be audited").isGreaterThan(0);
   }
+
+  @Test
+  void listUsersInTenant_returnsTheNamedTenantsUsers_notTheCallersOwn() {
+    String slug = uniqueSlug("cross-tenant-list");
+    var tenant =
+        asPlatformAdmin(
+            () ->
+                provisioning
+                    .onboard(
+                        slug, new LocalizedText("Acme", "أكمي"), "GOVERNMENT", null, null, null)
+                    .tenant());
+    String username = "list-" + UUID.randomUUID().toString().substring(0, 8);
+    asPlatformAdmin(
+        () ->
+            provisioning.createUserInTenant(
+                tenant.id(),
+                username,
+                new LocalizedText("Cross", "عابر"),
+                Set.of("ISSUER_OPERATOR")));
+
+    List<UserSummary> users = asPlatformAdmin(() -> provisioning.listUsersInTenant(tenant.id()));
+
+    assertThat(users).extracting(UserSummary::username).containsExactly(username);
+  }
 }

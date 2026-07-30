@@ -1,5 +1,6 @@
 package sy.khatm.platform.rbac;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import org.springframework.boot.test.web.client.TestRestTemplate;
@@ -19,14 +20,33 @@ final class SessionTestSupport {
   private SessionTestSupport() {}
 
   /**
-   * Log in and return the established session, ready to attach to further requests.
+   * Log in against the caller's ambient default tenant and return the established session, ready to
+   * attach to further requests.
    *
    * @throws AssertionError if login did not succeed with 200
    */
   static AuthenticatedSession login(TestRestTemplate rest, String username, String password) {
-    ResponseEntity<Void> response =
-        rest.postForEntity(
-            "/api/v1/auth/login", Map.of("username", username, "password", password), Void.class);
+    return login(rest, username, password, null);
+  }
+
+  /**
+   * Log in, optionally against an explicitly named tenant (spec FS-2.2 — multi-tenant console
+   * login), and return the established session, ready to attach to further requests.
+   *
+   * @param tenantSlug the tenant to authenticate against, or {@code null} for the caller's ambient
+   *     default tenant (identical wire shape to the two-arg overload — {@code tenantSlug} is
+   *     omitted from the body entirely, not sent as an explicit {@code null})
+   * @throws AssertionError if login did not succeed with 200
+   */
+  static AuthenticatedSession login(
+      TestRestTemplate rest, String username, String password, String tenantSlug) {
+    Map<String, Object> body = new HashMap<>();
+    body.put("username", username);
+    body.put("password", password);
+    if (tenantSlug != null) {
+      body.put("tenantSlug", tenantSlug);
+    }
+    ResponseEntity<Void> response = rest.postForEntity("/api/v1/auth/login", body, Void.class);
     if (response.getStatusCode() != HttpStatus.OK) {
       throw new AssertionError("Login failed with status " + response.getStatusCode());
     }

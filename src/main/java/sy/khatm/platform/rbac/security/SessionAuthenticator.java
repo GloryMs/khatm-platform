@@ -11,7 +11,6 @@ import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.stereotype.Component;
 import sy.khatm.platform.rbac.api.CurrentActor;
 import sy.khatm.platform.rbac.domain.LoginResult;
-import sy.khatm.platform.shared.TenantContext;
 
 /**
  * Establishes and tears down the {@code KHATM_SESSION} cookie session around a successful/ended
@@ -49,7 +48,7 @@ public class SessionAuthenticator {
         new KhatmAuthenticationToken(
             CurrentActor.ActorKind.USER,
             result.userId(),
-            TenantContext.current(),
+            result.tenantId(),
             result.username(),
             result.scopes(),
             null);

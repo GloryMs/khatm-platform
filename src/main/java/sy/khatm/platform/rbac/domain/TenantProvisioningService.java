@@ -1,5 +1,6 @@
 package sy.khatm.platform.rbac.domain;
 
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
@@ -149,6 +150,23 @@ public class TenantProvisioningService {
             .orElseThrow(() -> new NotFoundException(ErrorCode.KH_TNT_0404, "tenant.not-found"));
     return onBehalfOf.runAsTenant(
         target.id(), target.slug(), () -> userAdmin.create(username, nameI18n, roleCodes));
+  }
+
+  /**
+   * List the users of a tenant other than the caller's own (spec FS-2.2, {@code GET
+   * /api/v1/admin/tenants/{id}/users}) — the identical row shape {@code GET /api/v1/users} returns
+   * for a tenant admin's own tenant, run on behalf of the named tenant.
+   *
+   * @param tenantId the target tenant
+   * @return every user of that tenant, newest first
+   * @throws NotFoundException {@code KH-TNT-0404} if the target tenant does not exist
+   */
+  public List<UserSummary> listUsersInTenant(UUID tenantId) {
+    TenantRef target =
+        tenants
+            .findById(tenantId)
+            .orElseThrow(() -> new NotFoundException(ErrorCode.KH_TNT_0404, "tenant.not-found"));
+    return onBehalfOf.runAsTenant(target.id(), target.slug(), userAdmin::list);
   }
 
   private OnboardTenantResult provisionInitialStaff(

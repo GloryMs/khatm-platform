@@ -19,7 +19,12 @@ lands here in KH-0.6b), `api_key` (new, `V2__auth_api_keys.sql`).
   - `AppUser` / `Role` / `ApiKey` — JPA entities matching V1 + V2.
   - `AuthService` — login/logout support: argon2id password check, the Redis-TTL lockout counter
     (D6, independent of the administrative `LOCKED` status), and D7's single generic failure
-    message for every reason.
+    message for every reason. `login` takes an optional `tenantSlug` (spec FS-2.2 — multi-tenant
+    console login): blank/absent resolves to the caller's ambient default tenant unchanged; an
+    unknown or `SUSPENDED` slug gets the identical generic D7 failure as bad credentials.
+  - `TenantProvisioningService` — the `platform:admin` cross-tenant provisioning orchestration:
+    tenant onboarding's rbac-side half (role catalog + optional first `TENANT_ADMIN`), and adding/
+    listing users of a tenant other than the caller's own, both via `shared.OnBehalfOfExecutor`.
   - `ApiKeyService` — create/revoke/verify. Key shape `khk_<env>_<prefix>.<secret>` (D2); SHA-256
     of the secret (D4 — a fast hash is safe here because the secret's own entropy is the real
     defense, unlike a human password).

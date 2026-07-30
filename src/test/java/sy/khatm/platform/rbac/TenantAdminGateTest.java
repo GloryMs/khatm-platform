@@ -202,6 +202,76 @@ class TenantAdminGateTest extends RbacHttpTestSupport {
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
   }
 
+  // ── GET /{id}/users (spec FS-2.2 — mirrors GET /api/v1/users' row shape) ───────────────────
+
+  @Test
+  void listUsersInTenant_returnsTheNamedTenantsUsers() throws Exception {
+    AuthenticatedSession session =
+        SessionTestSupport.login(rest, BOOTSTRAP_ADMIN_USERNAME, BOOTSTRAP_ADMIN_PASSWORD);
+    String slug = uniqueSlug("gate-list-users");
+    String adminUsername = "list-admin-" + UUID.randomUUID();
+
+    ResponseEntity<String> onboarded =
+        SessionTestSupport.post(
+            rest,
+            BASE,
+            session,
+            Map.of(
+                "slug",
+                slug,
+                "nameI18n",
+                Map.of("en", "Acme", "ar", "أكمي"),
+                "type",
+                "GOVERNMENT",
+                "initialAdmin",
+                Map.of(
+                    "username", adminUsername, "displayNameI18n", Map.of("en", "x", "ar", "x"))));
+    assertThat(onboarded.getStatusCode()).isEqualTo(HttpStatus.OK);
+    String tenantId = JSON.readTree(onboarded.getBody()).get("id").asText();
+
+    ResponseEntity<String> listed =
+        SessionTestSupport.get(rest, BASE + "/" + tenantId + "/users", session);
+
+    assertThat(listed.getStatusCode()).isEqualTo(HttpStatus.OK);
+    JsonNode users = JSON.readTree(listed.getBody());
+    assertThat(users).hasSize(1);
+    assertThat(users.get(0).get("username").asText()).isEqualTo(adminUsername);
+  }
+
+  @Test
+  void listUsersInTenant_withTenantAdminScopeButNotPlatformAdmin_returns403() throws Exception {
+    AuthenticatedSession session =
+        SessionTestSupport.login(rest, BOOTSTRAP_ADMIN_USERNAME, BOOTSTRAP_ADMIN_PASSWORD);
+    String slug = uniqueSlug("gate-list-users-403");
+    ResponseEntity<String> created = SessionTestSupport.post(rest, BASE, session, createBody(slug));
+    String tenantId = JSON.readTree(created.getBody()).get("id").asText();
+    CreatedApiKey tenantAdminKey =
+        apiKeyService.create(ApiKeyOwnerType.TENANT, null, Set.of("tenant:admin"));
+
+    HttpHeaders headers = new HttpHeaders();
+    headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + tenantAdminKey.rawKey());
+    ResponseEntity<String> response =
+        rest.exchange(
+            BASE + "/" + tenantId + "/users",
+            HttpMethod.GET,
+            new HttpEntity<>(headers),
+            String.class);
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+    assertThat(JSON.readTree(response.getBody()).get("code").asText()).isEqualTo("KH-RBC-0403");
+  }
+
+  @Test
+  void listUsersInTenant_unknownTenant_returns404() {
+    AuthenticatedSession session =
+        SessionTestSupport.login(rest, BOOTSTRAP_ADMIN_USERNAME, BOOTSTRAP_ADMIN_PASSWORD);
+
+    ResponseEntity<String> response =
+        SessionTestSupport.get(rest, BASE + "/" + UUID.randomUUID() + "/users", session);
+
+    assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+  }
+
   private ResponseEntity<String> createWithApiKey(String rawKey, String slug) {
     HttpHeaders headers = new HttpHeaders();
     headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + rawKey);

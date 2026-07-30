@@ -17,10 +17,16 @@ import sy.khatm.platform.shared.LocalizedText;
  * @param displayNameI18n the user's bilingual display name
  * @param preferredLang the user's preferred UI language ({@code en} or {@code ar})
  * @param scopes the union of every scope granted by the user's assigned roles
+ * @param tenantId the tenant this login was authenticated against (spec FS-2.2, optional {@code
+ *     tenantSlug} login) — {@code rbac.security.SessionAuthenticator} builds the session's
+ *     principal from this, never from {@code shared.TenantContext.current()} (which, by the time
+ *     the controller reads the result, has already been cleared back to the anonymous request's
+ *     default-tenant fallback)
  */
 public record LoginResult(
     UUID userId,
     String username,
     LocalizedText displayNameI18n,
     String preferredLang,
-    Set<String> scopes) {}
+    Set<String> scopes,
+    UUID tenantId) {}
