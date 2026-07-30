@@ -67,8 +67,9 @@ class TenantJwksController {
   @Operation(
       summary = "Fetch a tenant's JWKS",
       description =
-          "Public ACTIVE + RETIRING signing keys for the named tenant, no authentication required."
-              + " Stays available regardless of the tenant's suspension status (spec V4).",
+          "Public signing keys of every lifecycle state (ACTIVE/RETIRING/RETIRED) for the named"
+              + " tenant, no authentication required. Stays available regardless of the tenant's"
+              + " suspension status (spec V4).",
       responses = {
         @ApiResponse(responseCode = "200", description = "The tenant's JWKS"),
         @ApiResponse(

@@ -183,3 +183,47 @@ Adding a new endpoint means, in the **same commit**:
 - CI must be green before merge. `.github/workflows/ci.yml` (KH-0.3.1) runs the migration
   checksum guard, then `mvn verify` (Spotless, Checkstyle, Modulith boundaries, all tests) on
   every PR into `main` and every push to `main` — a red run blocks merging, no exceptions.
+
+## 12. The context-switch-before-transaction pattern
+
+A method that must act under a **different** tenant than the one already ambient for the
+request (or that resolves the tenant only partway through its own body, before any tenant
+context exists at all) must NOT be `@Transactional` itself. Three occurrences so far, same shape
+each time: `rbac.domain.ApiKeyService#create(.., UUID)` (a platform admin minting a key for a
+tenant other than their own), `tenant.domain.TenantAdminService#create` (onboarding a brand new
+tenant — no ambient context for it exists yet), `rbac.domain.AuthService#login` (an anonymous
+request resolving an explicit `tenantSlug` before any session/context exists).
+
+**Why a single outer `@Transactional` breaks this:** Spring's transactional proxy begins the
+physical transaction — and fires `shared.TenantContextTransactionExecutionListener#afterBegin`,
+which stamps `app.tenant_id` for RLS — before a single line of the method body runs. If the
+method itself resolves the target tenant and calls `TenantContext#set` partway through, the
+transaction has already started under whatever tenant was ambient *before* that call (the
+caller's own, or nothing at all for an anonymous request) — every RLS-scoped read/write inside
+that one transaction stays pinned to the wrong tenant regardless of the later `set` call.
+
+**The fix, exactly this shape:**
+1. The outer method is plain (no `@Transactional`).
+2. It resolves/validates the target tenant first (any lookup this needs must itself be
+   independently transactional, or need no tenant context at all — e.g. `tenant` is excluded
+   from RLS).
+3. It calls `TenantContext#set(targetId, targetSlug)`.
+4. It delegates the actual work to calls that are each independently `@Transactional` (a private
+   helper method, a repository method, `AuditService#record`, etc.) — each opens its own fresh
+   physical transaction, which fires the listener again and correctly picks up the just-switched
+   context.
+5. A `finally` block calls `TenantContext#clear()` (or restores whatever was ambient before, if
+   the caller's own context must survive — see `shared.OnBehalfOfExecutor#runAsTenant`, which
+   wraps this exact pattern for the cross-tenant admin case and additionally re-verifies
+   `platform:admin` before switching).
+
+This also removes any need for `noRollbackFor` tricks: each inner transactional call commits (or
+rolls back) on its own before the outer method can throw, rather than one shared transaction's
+rollback exemption trying to paper over a check-then-act split.
+
+**Does NOT apply** to a method that only ever acts on the caller's own already-ambient tenant
+(e.g. `key.domain.KeyLifecycleService#rotate`/`#retire`, `GET /api/v1/admin/signing-keys`) —
+those stay plain `@Transactional` as normal. Confirmed during KH-2.3a (spec FS-2.3): signing-key
+rotation/retirement have no cross-tenant caller (the per-tenant KMS-provider column, spec V3, is
+explicitly out of scope until KH-2.3b), so this pattern was checked against that work and found
+not to apply there — recorded here rather than silently assumed.

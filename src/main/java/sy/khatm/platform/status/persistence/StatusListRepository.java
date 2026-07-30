@@ -6,6 +6,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.transaction.annotation.Transactional;
@@ -73,4 +74,22 @@ public interface StatusListRepository extends JpaRepository<StatusList, UUID> {
       "SELECT new sy.khatm.platform.status.persistence.StaleStatusListRef(s.id, s.tenantId) FROM"
           + " StatusList s WHERE s.signedArtifact IS NULL OR s.artifactVersion < s.version")
   List<StaleStatusListRef> findStaleRefs();
+
+  /**
+   * Bump every one of a tenant's status lists' {@code version} by one, forcing each stale (spec
+   * FS-2.3 D3) — the runtime equivalent of what {@code V9__resign_status_lists.sql} did once via a
+   * one-off data migration, done here at signing-key rotation time instead. {@code
+   * status.worker.KeyRotationHandler} calls this in reaction to {@code key.events.KeyRotated}; the
+   * already-running {@link sy.khatm.platform.status.worker.StatusListPublishSweepWorker#sweep()}
+   * then republishes each with whatever key is now {@code ACTIVE} for that tenant within one sweep
+   * cycle. An immediate bulk statement, same rationale as {@code
+   * key.persistence.IssuerKeyRepository#retireActive}.
+   *
+   * @param tenantId the tenant whose lists should be forced stale
+   * @return the number of rows updated
+   */
+  @Modifying
+  @Transactional
+  @Query("UPDATE StatusList s SET s.version = s.version + 1 WHERE s.tenantId = :tenantId")
+  int bumpVersionForTenant(@Param("tenantId") UUID tenantId);
 }

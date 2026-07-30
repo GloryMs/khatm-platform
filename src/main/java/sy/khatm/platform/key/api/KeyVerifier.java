@@ -13,9 +13,11 @@ import java.util.Optional;
  * property of the caller's own code path, not something the {@code key} module could silently
  * weaken later.
  *
- * <p>An unknown {@code kid}, or a {@code kid} belonging to a {@code RETIRED} key, both resolve to
- * {@link Optional#empty()} — callers must treat that as an unconditional signature failure, never
- * as "try the current key instead."
+ * <p>An unknown {@code kid} resolves to {@link Optional#empty()} — callers must treat that as an
+ * unconditional signature failure, never as "try the current key instead." A {@code kid} belonging
+ * to a {@code RETIRED} key resolves normally (spec FS-0.2 §3.2 / FS-2.3 D2/D4): a document signed
+ * years ago with a since-retired key must keep verifying for as long as that key stays published in
+ * JWKS — that is the entire reason keys are retired rather than deleted.
  */
 public interface KeyVerifier {
 
@@ -23,8 +25,8 @@ public interface KeyVerifier {
    * Resolve the public key for a given {@code kid}.
    *
    * @param kid the key id from a JWS {@code kid} header; must not be {@code null}
-   * @return the public key handle if {@code kid} identifies a known, non-{@code RETIRED} key;
-   *     {@link Optional#empty()} otherwise (unknown {@code kid}, or a {@code RETIRED} one)
+   * @return the public key handle if {@code kid} identifies a known key of any lifecycle state;
+   *     {@link Optional#empty()} only if {@code kid} is unknown
    */
   Optional<PublicKeyHandle> resolvePublicKey(String kid);
 }
