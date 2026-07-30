@@ -20,8 +20,18 @@ section once CI is confirmed green again post-2026-08-01.
 - **feat/KH-2.3a-BE-key-rotation — provider-agnostic signing-key rotation & retirement** (session
   `feat/KH-2.3a-BE-key-rotation`, 2026-07-30, spec `docs/specs/FS-2.3-kms-key-rotation.md` D1-D4/D7/
   D8, veto resolutions V1-V4 pre-approved before this session). `mvn verify` green, **399/399 tests
-  (18 new)**. New `KH-KEY-0404/0409/0422` (Arabic-review gate applies — 3 new `key.*` keys in both
-  bundles, not yet confirmed by Majd). PR opened, **NOT merged**.
+  (18 new)**. New `KH-KEY-0404/0409/0422` (3 new `key.*` keys in both bundles — **Arabic-speaker
+  review confirmed by Majd**, no wording changes needed, same pattern as every prior session's
+  new-key set). **DONE & MERGED via PR #49** (2026-07-30, merge commit `7559b66`, merged via admin
+  override on Majd's explicit instruction — no green CI run, same GitHub Actions billing block as
+  PR #41/#43/#45/#46/#48 — see "CI status (temporary)" above; local `mvn verify` 399/399 was the
+  substitute gate).
+  - **D7 (wallet kid-selection) explicitly postponed, on Majd's instruction (2026-07-30):** not
+    performed this session (no real/emulated wallet device available — see below); deferred until
+    after the next planned session finishes, rather than blocking this merge. **Open item for that
+    future session (or the KH-2.3.3 game-day) to actually run**, per the spec's own D7 wording: if
+    the wallet turns out to pick the first JWKS key instead of matching by `kid`, stop wallet-side
+    and open a W5 ask — do not attempt a platform-side workaround.
   - **Verify-first findings, all recorded before writing (per the brief):**
     1. `key.domain.KeyLifecycleService#rotate` already existed in full since KH-0.5 (the
        `retireActive`-then-insert ordering against the `issuer_key_one_active` partial index) —
