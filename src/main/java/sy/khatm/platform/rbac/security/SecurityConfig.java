@@ -166,6 +166,18 @@ import sy.khatm.platform.shared.audit.AuditService;
  *       caller's own ambient tenant, no cross-tenant path exists.
  * </ul>
  *
+ * <p><b>TOTP second factor (KH-2.2c, spec FS-2.2 V1):</b> {@code POST /api/v1/auth/totp} completes
+ * a login flagged {@code totpRequired} — public, like login itself, since no session exists yet at
+ * that point (the challenge is tracked server-side by an opaque id, not by any session state).
+ * {@code POST /api/v1/users/me/totp/enroll}/{@code /confirm} are self-service — any console
+ * session, declared before the {@code USERS_PATH} wildcard the same way {@code USER_PASSWORD_PATH}
+ * is. {@code POST /api/v1/users/{id}/totp/reset} needs no new rule (already covered by the {@code
+ * USERS_PATH} wildcard's {@code tenant:admin} rule); same for the on-behalf-of {@code POST
+ * /api/v1/admin/tenants/{id}/users/{userId}/totp/reset} (already covered by {@code
+ * ADMIN_TENANTS_PATH}'s {@code platform:admin} rule). {@link TotpEnrollmentEnforcementFilter}
+ * (session chain only, after {@link PasswordChangeEnforcementFilter}) separately walls off every
+ * other endpoint for a user holding a mandatory-2FA scope with no active enrollment yet.
+ *
  * <p><b>Tenant context (KH-2.1, spec FS-2.1 D1):</b> {@link TenantContextFilter} is wired into both
  * chains, positioned right after whichever mechanism resolves the principal ({@link
  * ApiKeyAuthFilter} on the api-key chain, {@link SecurityContextHolderFilter} on the session chain
@@ -223,6 +235,12 @@ class SecurityConfig {
   // tenant:admin — any authenticated console user may change their own password.
   private static final String USERS_PATH = "/api/v1/users/**";
   private static final String USER_PASSWORD_PATH = "/api/v1/users/me/password";
+  // KH-2.2c (spec FS-2.2 V1): TOTP self-service enroll/confirm — any console session, declared
+  // before the USERS_PATH wildcard for the same reason USER_PASSWORD_PATH is (the looser "any
+  // session" rule, not tenant:admin). The login-challenge completion is public, like login itself.
+  private static final String USER_TOTP_ENROLL_PATH = "/api/v1/users/me/totp/enroll";
+  private static final String USER_TOTP_CONFIRM_PATH = "/api/v1/users/me/totp/confirm";
+  private static final String AUTH_TOTP_PATH = "/api/v1/auth/totp";
   private static final String[] SWAGGER_PATHS = {
     "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html"
   };
@@ -260,6 +278,7 @@ class SecurityConfig {
       KhatmAccessDeniedHandler accessDeniedHandler,
       TenantContextFilter tenantContextFilter,
       PasswordChangeEnforcementFilter passwordChangeFilter,
+      TotpEnrollmentEnforcementFilter totpEnrollmentFilter,
       Environment environment)
       throws Exception {
     boolean swaggerEnabled = environment.matchesProfiles("local", "dev");
@@ -282,7 +301,10 @@ class SecurityConfig {
         // user's own tenant under RLS), enforce the forced-password-change gate on the session
         // chain
         // only — API keys carry no human password and are unaffected.
-        .addFilterAfter(passwordChangeFilter, TenantContextFilter.class);
+        .addFilterAfter(passwordChangeFilter, TenantContextFilter.class)
+        // KH-2.2c (spec FS-2.2 V1): after the password-change gate — a temporary-password user
+        // must clear that one first; only then does the mandatory-TOTP-enrollment gate apply.
+        .addFilterAfter(totpEnrollmentFilter, PasswordChangeEnforcementFilter.class);
     return http.build();
   }
 
@@ -303,6 +325,8 @@ class SecurityConfig {
         .requestMatchers(HttpMethod.GET, STATUS_LIST_PATH)
         .permitAll()
         .requestMatchers(HttpMethod.POST, LOGIN_PATH)
+        .permitAll()
+        .requestMatchers(HttpMethod.POST, AUTH_TOTP_PATH)
         .permitAll()
         .requestMatchers(HttpMethod.POST, CLAIMS_REDEEM_PATH)
         .permitAll()
@@ -351,6 +375,10 @@ class SecurityConfig {
         // specifically,
         // as a console session (ACTOR_USER), never an API key.
         .requestMatchers(HttpMethod.POST, USER_PASSWORD_PATH)
+        .access(ScopeGuard.requireUserSession())
+        .requestMatchers(HttpMethod.POST, USER_TOTP_ENROLL_PATH)
+        .access(ScopeGuard.requireUserSession())
+        .requestMatchers(HttpMethod.POST, USER_TOTP_CONFIRM_PATH)
         .access(ScopeGuard.requireUserSession())
         .requestMatchers(USERS_PATH)
         .access(ScopeGuard.requireScopeAndUserSession(ScopeRegistry.TENANT_ADMIN))

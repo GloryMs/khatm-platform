@@ -20,6 +20,7 @@ import sy.khatm.platform.rbac.api.CurrentActorResolver;
 import sy.khatm.platform.rbac.domain.ApiKeyService;
 import sy.khatm.platform.rbac.domain.AuthService;
 import sy.khatm.platform.rbac.domain.CreatedApiKey;
+import sy.khatm.platform.rbac.domain.LoginOutcome;
 import sy.khatm.platform.rbac.domain.LoginResult;
 import sy.khatm.platform.rbac.domain.UserView;
 import sy.khatm.platform.rbac.security.SessionAuthenticator;
@@ -77,20 +78,65 @@ class AuthController {
               + " into the caller's ambient default tenant, unchanged from before. Every failure"
               + " reason — unknown user, wrong password, temporary lockout, administrative LOCKED/"
               + "DISABLED, or an unknown/SUSPENDED tenantSlug — returns the identical generic 401"
-              + " (spec FS-0.6b D7); the real reason is recorded only in the audit log.",
+              + " (spec FS-0.6b D7); the real reason is recorded only in the audit log. If the"
+              + " account has an active TOTP enrollment (spec FS-2.2 V1), no session is created yet"
+              + " — the response body instead carries totpRequired:true and a challengeId to submit"
+              + " to POST /api/v1/auth/totp.",
       responses = {
-        @ApiResponse(responseCode = "200", description = "Login succeeded; session cookie set"),
+        @ApiResponse(
+            responseCode = "200",
+            description =
+                "Login succeeded (session cookie set, empty body), or a TOTP challenge was issued"
+                    + " (no cookie, body carries totpRequired:true + challengeId)"),
         @ApiResponse(
             responseCode = "401",
             description = "Authentication failed (KH-RBC-0401, generic message)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
       })
   @PostMapping("/api/v1/auth/login")
-  ResponseEntity<Void> login(
+  ResponseEntity<LoginChallengeResponse> login(
       @Valid @RequestBody LoginRequest req,
       HttpServletRequest request,
       HttpServletResponse response) {
-    LoginResult result = authService.login(req.username(), req.password(), req.tenantSlug());
+    LoginOutcome outcome = authService.login(req.username(), req.password(), req.tenantSlug());
+    return switch (outcome) {
+      case LoginOutcome.Success success -> {
+        sessionAuthenticator.establish(request, response, success.result());
+        yield ResponseEntity.ok(null);
+      }
+      case LoginOutcome.TotpChallenge challenge ->
+          ResponseEntity.ok(new LoginChallengeResponse(true, challenge.challengeId()));
+    };
+  }
+
+  @Operation(
+      summary = "Complete a TOTP login challenge",
+      description =
+          "Completes a login that POST /api/v1/auth/login flagged totpRequired, with either a live"
+              + " TOTP code or a one-time recovery code (exactly one of the two). On success,"
+              + " establishes the session exactly like a direct login. Rate-limited identically to"
+              + " the password step (spec FS-2.2 V1); every failure reason returns the same generic"
+              + " 401 as login itself.",
+      responses = {
+        @ApiResponse(responseCode = "200", description = "Login completed; session cookie set"),
+        @ApiResponse(
+            responseCode = "400",
+            description = "Neither or both of code/recoveryCode were provided (KH-USR-0400)",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "401",
+            description =
+                "Unknown/expired challenge, TOTP-attempt lockout, or a wrong code (KH-RBC-0401,"
+                    + " generic message)",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
+      })
+  @PostMapping("/api/v1/auth/totp")
+  ResponseEntity<Void> completeTotp(
+      @Valid @RequestBody TotpChallengeRequest req,
+      HttpServletRequest request,
+      HttpServletResponse response) {
+    LoginResult result =
+        authService.completeTotpChallenge(req.challengeId(), req.code(), req.recoveryCode());
     sessionAuthenticator.establish(request, response, result);
     return ResponseEntity.ok().build();
   }

@@ -74,6 +74,13 @@ import org.springframework.http.HttpStatus;
  * KH-KEY-0409} the target key is not {@code RETIRING}, {@code KH-KEY-0422} the min-retiring-age
  * guard (spec V4).
  *
+ * <p><b>{@code USR} batch, third wave</b> (KH-2.2c, spec FS-2.2 V1): TOTP second-factor
+ * enrollment/login-challenge — {@code KH-USR-1403} the mandatory-enrollment wall (a second {@code
+ * 403} in {@code USR}, after {@link #KH_USR_0403}), {@code KH-USR-1409} a TOTP state conflict
+ * (enroll/confirm called out of turn). Wrong-code/wrong-recovery-code failures at the login
+ * challenge itself deliberately reuse {@link #KH_RBC_0401} — the same D7 anti-enumeration
+ * collapsing every other login failure reason already gets, not a new code.
+ *
  * <p>{@code docs/error-codes.md} is generated from this enum by a test ({@code
  * ErrorCodesDocGenerationTest}) — never hand-edited (CLAUDE.md work rule 1).
  */
@@ -310,7 +317,26 @@ public enum ErrorCode {
    * enum's class Javadoc is a mnemonic, not a contract; this is its first exception, recorded here
    * and in {@code docs/error-codes.md} rather than silently breaking the pattern.
    */
-  KH_USR_0423(HttpStatus.CONFLICT, "user.last-admin");
+  KH_USR_0423(HttpStatus.CONFLICT, "user.last-admin"),
+
+  /**
+   * An authenticated user holding a mandatory-2FA scope ({@code revoke}/{@code tenant:admin}/
+   * {@code platform:admin}/{@code key:manage}, spec FS-2.2 V1) with no active TOTP enrollment
+   * called any endpoint other than enroll/confirm ({@code rbac.security
+   * .TotpEnrollmentEnforcementFilter}). A second {@code 403} in {@code USR}, after {@link
+   * #KH_USR_0403} — distinct so the console can route to TOTP enrollment specifically rather than a
+   * generic missing-scope 403 or the unrelated forced-password-change screen.
+   */
+  KH_USR_1403(HttpStatus.FORBIDDEN, "user.totp-required"),
+
+  /**
+   * A TOTP enrollment/confirmation request conflicted with the user's current TOTP state (spec
+   * FS-2.2 V1, {@code rbac.domain.TotpService}): enrolling while already active, confirming with no
+   * pending enrollment, or confirming a pending enrollment that expired ({@code
+   * khatm.auth.totp.enroll-ttl}). One code for every flavor (the reason is substituted into the
+   * message via {@code {0}}), the same collapsing judgment call {@link #KH_SCH_0400} already made.
+   */
+  KH_USR_1409(HttpStatus.CONFLICT, "user.totp-conflict");
 
   private final HttpStatus httpStatus;
   private final String messageKey;

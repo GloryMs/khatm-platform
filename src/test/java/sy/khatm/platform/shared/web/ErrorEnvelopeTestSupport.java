@@ -72,6 +72,7 @@ abstract class ErrorEnvelopeTestSupport {
         () -> TEMP_DIR.resolve("error-envelope-test-keys.p12").toString());
     registry.add("khatm.keys.soft.passphrase", () -> "error-envelope-test-passphrase");
     registry.add("khatm.claims.enc-key", () -> "a2hhdG0tdGVzdC1jbGFpbXMtZW5jLWtleS0zMmJ5dGU=");
+    registry.add("khatm.auth.totp.enc-key", () -> "a2hhdG0tdGVzdC10b3RwLWVuYy1rZXktMzJieXRlcyE=");
     // KH-0.6b: AdminBootstrap fails startup on a blank admin-username/password outside 'local'
     // (spec FS-0.6b D10) — this suite runs under 'test'.
     registry.add("khatm.auth.bootstrap.admin-username", () -> "test-admin");

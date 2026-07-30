@@ -283,5 +283,26 @@ public enum AuditAction {
    * admin's own audit trail), before {@code TenantContext} is switched to the target — {@code
    * entityRef} is the target tenant's slug, identifying which tenant was acted upon.
    */
-  ON_BEHALF_OF
+  ON_BEHALF_OF,
+
+  /**
+   * A TOTP enrollment was confirmed/activated (KH-2.2c, spec FS-2.2 V1, {@code POST
+   * /api/v1/users/me/totp/confirm}). {@code entityRef} is the username.
+   */
+  USER_TOTP_ENROLLED,
+
+  /**
+   * A user's TOTP enrollment was administratively cleared (KH-2.2c, spec FS-2.2 V1, {@code POST
+   * /api/v1/users/{id}/totp/reset} or its on-behalf-of variant) — they re-enroll at next login if a
+   * mandatory scope requires it. {@code entityRef} is the username; {@code detail.hadActive}
+   * records whether there was actually anything to clear (idempotent no-op vs. a real reset).
+   */
+  USER_TOTP_RESET,
+
+  /**
+   * A one-time TOTP recovery code was consumed to complete a login (KH-2.2c, spec FS-2.2 V1).
+   * {@code entityRef} is the username; {@code detail.remaining} is how many recovery codes are left
+   * — never the code itself, used or otherwise.
+   */
+  USER_TOTP_RECOVERY_CODE_USED
 }

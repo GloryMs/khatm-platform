@@ -158,6 +158,33 @@ class TenantProvisioningController {
     return provisioning.listUsersInTenant(id);
   }
 
+  @Operation(
+      summary = "Reset a user's TOTP enrollment in another tenant",
+      description =
+          "Clears the target user's TOTP enrollment on behalf of a tenant other than the caller's"
+              + " own (OnBehalfOfExecutor, audited ON_BEHALF_OF) — they re-enroll at next login if"
+              + " a mandatory scope requires it. Idempotent. Requires the platform:admin scope.",
+      responses = {
+        @ApiResponse(responseCode = "200", description = "TOTP reset (or already inactive)"),
+        @ApiResponse(
+            responseCode = "401",
+            description = "No valid session or API key",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "403",
+            description = "Missing the platform:admin scope (KH-RBC-0403)",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "404",
+            description = "Target tenant (KH-TNT-0404) or user (KH-USR-0404) not found",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
+      })
+  @PostMapping("/{id}/users/{userId}/totp/reset")
+  ResponseEntity<Void> resetTotpInTenant(@PathVariable UUID id, @PathVariable UUID userId) {
+    provisioning.resetTotpInTenant(id, userId);
+    return ResponseEntity.ok().build();
+  }
+
   private static OnboardTenantResponse toResponse(OnboardTenantResult result) {
     TenantView tenant = result.tenant();
     OnboardTenantResponse.InitialAdminResponse admin =

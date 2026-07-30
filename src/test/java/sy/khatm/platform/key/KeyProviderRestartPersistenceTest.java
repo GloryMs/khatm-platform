@@ -89,6 +89,7 @@ class KeyProviderRestartPersistenceTest {
             // (spec FS-0.4 D7) — a full context now needs both secrets, same as any real
             // deployment would.
             "--khatm.claims.enc-key=a2hhdG0tdGVzdC1jbGFpbXMtZW5jLWtleS0zMmJ5dGU=",
+            "--khatm.auth.totp.enc-key=a2hhdG0tdGVzdC10b3RwLWVuYy1rZXktMzJieXRlcyE=",
             // KH-0.6b: AdminBootstrap also fails startup without these outside 'local' (spec
             // FS-0.6b D10).
             "--khatm.auth.bootstrap.admin-username=test-admin",

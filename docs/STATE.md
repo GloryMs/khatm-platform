@@ -17,6 +17,119 @@ rule), and PRs may be merged on Majd's instruction without waiting on GitHub's c
 section once CI is confirmed green again post-2026-08-01.
 
 ## Current phase / task
+- **feat/KH-2.2c-BE-totp-2fa — mandatory TOTP second factor (spec FS-2.2 veto V1)** (session
+  `feat/KH-2.2c-BE-totp-2fa`, 2026-07-30, spec `docs/specs/FS-2.2-rbac-granularity.md` veto V1,
+  RFC 6238). `mvn verify` green, **409/409 tests (10 new)**. New `KH-USR-1403`/`KH-USR-1409` (2 new
+  `user.*` keys in both bundles — **Arabic-speaker review NOT yet confirmed by Majd — merge
+  blocker**, same convention as every prior session's new-key set). **PR opened, NOT merged**, per
+  the brief's explicit instruction — see below.
+  - **Verify-first findings, all recorded before writing (per the brief):** confirmed the
+    KH-2.2d login shape (`LoginResult`/`SessionAuthenticator#establish`, optional `tenantSlug`) had
+    no notion of a partial/challenge outcome — `login` returning a sum type
+    (`rbac.domain.LoginOutcome` sealed interface, `Success`/`TotpChallenge`) was additive, not a
+    breaking change to the wire contract, so the brief's self-stop trigger never fired.
+    `PasswordChangeEnforcementFilter`'s exact shape (live per-request read of a boolean flag,
+    narrow exemption allowlist, its own distinct error code) was confirmed reusable verbatim for
+    the new mandatory-2FA wall rather than inventing a sibling mechanism. `credential.domain
+    .ClaimsEncryptionService` (AES-256-GCM, random nonce prepended) is module-private to
+    `credential` — TOTP secrets get a dedicated sibling, `rbac.domain.TotpSecretEncryptionService`,
+    same algorithm and shape, own `khatm.auth.totp.enc-key`, not a cross-module reuse. The
+    plaintext-once response pattern (`ApiKeyService`'s `CreatedApiKey`/temporary passwords) was
+    mirrored verbatim for both the enrollment secret/`otpauth://` URI and the 10 recovery codes.
+  - **Storage shape decided after reading `app_user` (per the brief's ask):** 3 new columns on
+    `app_user` itself (`totp_secret_enc`, `totp_enrolled_at`, `totp_confirmed_at` — `null`
+    `totp_confirmed_at` means "no active TOTP", read live on every mandatory-scope request) plus a
+    new one-to-many `user_totp_recovery_code` table (10 rows per confirmed enrollment, hash-only,
+    `used_at` marks consumption) — a single `AppUser` column couldn't hold 10 independently-
+    consumable hashes without a JSON blob, which would fight RLS row-level auditability for "which
+    code was used when." `V13__totp_2fa.sql`, full RLS (`FORCE ROW LEVEL SECURITY`,
+    `tenant_isolation`/`system_access`, no `DELETE` grant — recovery codes are marked used, never
+    removed). V1–V12 untouched.
+  - **D1 — self-service enrollment:** `POST /api/v1/users/me/totp/enroll` (any authenticated
+    session) returns a fresh Base32 secret + standard `otpauth://` URI once, encrypted at rest
+    immediately; unconfirmed enrollments expire (`khatm.auth.totp.enroll-ttl: PT10M`) so a stale
+    abandoned enrollment can't later be confirmed with a since-forgotten secret.
+    `POST /me/totp/confirm {code}` activates it (±1 time-step drift tolerance, RFC 6238) and
+    returns 10 one-time recovery codes, hashed at rest, plaintext-once in the response — re-
+    enrolling while already active, or confirming with no pending enrollment/an expired one/a wrong
+    code, all resolve to the shared `KH-USR-1409`/`KH-USR-0400` codes already in the registry
+    (`{0}`-substituted reason for the former, so `error-codes.md` doesn't need a code per rejection
+    reason).
+  - **D2 — login challenge:** `AuthService#login` now returns `LoginOutcome` — `Success` establishes
+    a session exactly as before; `TotpChallenge(challengeId)` (short-lived Redis-backed payload,
+    `khatm.auth.totp.challenge-ttl: PT5M`, Jackson-serialized `tenantId`/`tenantSlug`/`username`) is
+    surfaced to the client as `{"totpRequired":true,"challengeId":"..."}` instead — confirmed
+    additive against the existing contract (previously login returned an empty 200 body on success;
+    it still does). `POST /api/v1/auth/totp {challengeId, code}` completes it, rate-limited via a
+    **new, separate** Redis lockout counter (`khatm:auth:totp-fail:<tenantId>:<username>`) mirroring
+    the password lockout's exact mechanics (`max-attempts: 5`, `window: 15m` from the same
+    `khatm.auth.lockout.*` config family) — a locked-out challenge rejects even the objectively
+    correct code with the identical generic `KH-RBC-0401` every other failure reason gets (D7's
+    anti-enumeration stance, extended to the second factor). Recovery path:
+    `POST /api/v1/auth/totp {challengeId, recoveryCode}` consumes one code atomically (an unused-row
+    conditional update, same single-transaction discipline as the credential-consume invariant) —
+    audited `USER_TOTP_RECOVERY_CODE_USED`, remaining unused count in `details[]`.
+  - **D3 — mandatory enforcement, `rbac.security.TotpEnrollmentEnforcementFilter`:** the exact
+    `PasswordChangeEnforcementFilter` shape, wired immediately after it — any session holding
+    `revoke`/`tenant:admin`/`platform:admin`/`key:manage` (spec FS-2.2 V1 + SEC §7) with no active
+    TOTP is walled to only the enroll/confirm/`/me`/logout/login/totp-challenge endpoints, live
+    per-request read of `app_user.totp_confirmed_at`, distinct `403 KH-USR-1403` so the console can
+    route straight to enrollment rather than a generic 403. `/api/v1/users/me/password` had to be
+    added to the exemption list too — a fresh temp-password holder with a mandatory scope must clear
+    the password gate (step one) before TOTP enrollment (step two) becomes reachable at all, never
+    the reverse.
+  - **D4 — admin reset:** `POST /api/v1/users/{id}/totp/reset` (`tenant:admin`, own tenant) and the
+    on-behalf-of `POST /admin/tenants/{id}/users/{userId}/totp/reset` (`platform:admin`,
+    `TenantProvisioningService#resetTotpInTenant` via the existing `OnBehalfOfExecutor` — no new
+    allowlist-test entry needed, `TenantProvisioningService.java` was already an enumerated caller)
+    both clear all three `app_user` TOTP columns and invalidate every unused recovery code in one
+    bulk update; the user is walled back to enrollment on their very next mandatory-scope request if
+    they still hold one. Audited `USER_TOTP_RESET`.
+  - **A real test-infrastructure problem, found and fixed (not a production bug):** mandatory 2FA
+    for scopes held by virtually every seeded role would have broken the entire existing HTTP test
+    suite, since every scope-gate test logs in as a role-based user and expects full access
+    immediately. Rather than weakening `SecurityConfig` for a test (forbidden, CLAUDE.md/
+    CONVENTIONS), `rbac.SessionTestSupport` (the shared login helper) was extended to transparently
+    satisfy the requirement via real HTTP calls to the actual enroll/confirm endpoints, caching
+    secrets per test-shared user (`support.TotpEnrollmentCache`, a cross-package
+    `ConcurrentHashMap`) so a repeated login for the same user completes its own challenge
+    automatically. `db.CrossTenantIsolationTest` extends the same shared Testcontainers context but
+    does its own raw login with no TOTP handling — it needed the identical transparent-enrollment
+    logic added directly, sharing state via the same cache (a package-private cache in either file
+    alone would break whichever test class runs second in the shared context — documented in both
+    files' Javadoc).
+  - **Contract:** `docs/api/openapi.json` regenerated via `OpenApiContractTest`'s own mechanism —
+    additive-only (313 insertions, 0 deletions, confirmed via `git diff`): new TOTP paths/schemas,
+    `LoginResponse` gains the challenge shape as an alternative, no existing path/schema removed.
+    `docs/error-codes.md` regenerated (2 new `KH-USR-1403`/`KH-USR-1409` rows).
+  - **Tests (10 new):** `rbac.TotpFlowTest` — full coverage: enroll+confirm, wrong-code rejection,
+    expired-enrollment rejection, drift tolerance (±1 step), the mandatory-scope wall triggering and
+    lifting post-confirm (verified against `GET /api/v1/credentials`, session-only, since the
+    initial attempt against `GET /api/v1/users` false-failed on a genuine but unrelated
+    `tenant:admin` scope gap in the test's own fixture role, not the TOTP wall — caught and
+    corrected before trusting the assertion), recovery-code single-use, admin reset (self-tenant and
+    cross-tenant on-behalf-of, the cross-tenant audit-row assertion dropped as redundant with the
+    self-tenant case — same RLS-visibility reason bare test-thread JDBC queries can't see a
+    non-default tenant's rows without going through `OnBehalfOfExecutor` itself, already proven
+    elsewhere).
+  - **DoD — live compose e2e, run for real** (rebuilt `khatm-api`/`khatm-worker` against the
+    existing dev volume, V13 applied cleanly): logged in as the real bootstrap admin → mandatory
+    wall confirmed live (`403 KH-USR-1403` on `GET /api/v1/admin/tenants`) → enrolled → **computed
+    the confirmation code independently** (a standalone RFC 6238 Python script, not the codebase's
+    own implementation — the point of an e2e is testing against a genuinely separate
+    implementation of the same public standard, the way a real authenticator app would) → confirmed
+    (10 recovery codes returned) → logout → login → `{"totpRequired":true,"challengeId":"..."}` →
+    wrong code rejected (generic `401`) → 5 wrong attempts → **lockout confirmed**: even the
+    objectively correct code rejected identically while locked → lockout window cleared (Redis key
+    deleted directly rather than waiting out the real 15-minute production window — the mechanism,
+    not the clock, was what needed proving) → correct code → 200, new session established → logout
+    → login → recovery code consumed → 200, session established → same recovery code replayed on a
+    fresh login → rejected (single-use confirmed) → completed that login with a fresh TOTP code →
+    admin reset (`POST /api/v1/users/{id}/totp/reset` on the admin's own id) → 200 → logout → login
+    → full session established (TOTP no longer active) → mandatory endpoint immediately walled
+    again (`403 KH-USR-1403`) — **reset-forces-re-enrollment confirmed**. Environment left in a
+    working state afterward: re-enrolled and re-confirmed the bootstrap admin so the shared dev
+    stack isn't left walled off for the next session.
 - **feat/KH-2.3a-BE-key-rotation — provider-agnostic signing-key rotation & retirement** (session
   `feat/KH-2.3a-BE-key-rotation`, 2026-07-30, spec `docs/specs/FS-2.3-kms-key-rotation.md` D1-D4/D7/
   D8, veto resolutions V1-V4 pre-approved before this session). `mvn verify` green, **399/399 tests

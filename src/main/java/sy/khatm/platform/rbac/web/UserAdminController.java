@@ -17,6 +17,8 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 import sy.khatm.platform.rbac.api.CurrentActorResolver;
 import sy.khatm.platform.rbac.domain.CreatedUser;
+import sy.khatm.platform.rbac.domain.TotpEnrollment;
+import sy.khatm.platform.rbac.domain.TotpService;
 import sy.khatm.platform.rbac.domain.UserAdminService;
 import sy.khatm.platform.rbac.domain.UserSummary;
 import sy.khatm.platform.shared.web.ErrorEnvelope;
@@ -44,10 +46,15 @@ import sy.khatm.platform.shared.web.ErrorEnvelope;
 class UserAdminController {
 
   private final UserAdminService userAdmin;
+  private final TotpService totpService;
   private final CurrentActorResolver currentActorResolver;
 
-  UserAdminController(UserAdminService userAdmin, CurrentActorResolver currentActorResolver) {
+  UserAdminController(
+      UserAdminService userAdmin,
+      TotpService totpService,
+      CurrentActorResolver currentActorResolver) {
     this.userAdmin = userAdmin;
+    this.totpService = totpService;
     this.currentActorResolver = currentActorResolver;
   }
 
@@ -259,12 +266,100 @@ class UserAdminController {
       })
   @PostMapping("/api/v1/users/me/password")
   ResponseEntity<Void> changeMyPassword(@Valid @RequestBody ChangePasswordRequest req) {
-    UUID userId =
-        currentActorResolver
-            .resolve()
-            .orElseThrow(() -> new IllegalStateException("Authenticated request has no actor"))
-            .id();
+    UUID userId = currentUserId();
     userAdmin.changeOwnPassword(userId, req.currentPassword(), req.newPassword());
     return ResponseEntity.ok().build();
+  }
+
+  @Operation(
+      summary = "Begin TOTP enrollment",
+      description =
+          "Generates a fresh secret (encrypted at rest) and returns it, Base32-encoded, plus an"
+              + " otpauth:// enrollment URI — shown exactly once. Any authenticated console session"
+              + " may enroll its own user. Refused with 409 if TOTP is already active (an"
+              + " administrator must reset it first); calling this again before confirming simply"
+              + " supersedes the previous, not-yet-confirmed secret.",
+      responses = {
+        @ApiResponse(responseCode = "200", description = "Enrollment secret and URI, shown once"),
+        @ApiResponse(
+            responseCode = "403",
+            description = "No valid session",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "409",
+            description = "TOTP is already active for this user (KH-USR-1409)",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
+      })
+  @PostMapping("/api/v1/users/me/totp/enroll")
+  ResponseEntity<TotpEnrollResponse> enrollTotp() {
+    UUID userId = currentUserId();
+    TotpEnrollment enrollment = totpService.enroll(userId);
+    return ResponseEntity.ok(
+        new TotpEnrollResponse(enrollment.secretBase32(), enrollment.otpAuthUri()));
+  }
+
+  @Operation(
+      summary = "Confirm TOTP enrollment",
+      description =
+          "Activates a pending enrollment with a live code from the authenticator app and returns"
+              + " 10 one-time recovery codes — shown exactly once. Refused with 409 if there is no"
+              + " pending enrollment, it is already active, or it has expired (re-enroll in any of"
+              + " those cases); refused with 400 if the code does not match.",
+      responses = {
+        @ApiResponse(
+            responseCode = "200",
+            description = "TOTP activated; recovery codes shown once"),
+        @ApiResponse(
+            responseCode = "400",
+            description = "The code does not match (KH-USR-0400)",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "403",
+            description = "No valid session",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "409",
+            description =
+                "No pending enrollment, already active, or the pending enrollment expired"
+                    + " (KH-USR-1409)",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
+      })
+  @PostMapping("/api/v1/users/me/totp/confirm")
+  ResponseEntity<TotpConfirmResponse> confirmTotp(@Valid @RequestBody TotpConfirmRequest req) {
+    UUID userId = currentUserId();
+    List<String> recoveryCodes = totpService.confirm(userId, req.code());
+    return ResponseEntity.ok(new TotpConfirmResponse(recoveryCodes));
+  }
+
+  @Operation(
+      summary = "Reset a user's TOTP enrollment",
+      description =
+          "Clears the target user's TOTP enrollment and invalidates their remaining recovery"
+              + " codes — they re-enroll at next login if a mandatory scope requires it. Idempotent"
+              + " (a user with no TOTP enrolled is a no-op). Requires the tenant:admin scope.",
+      responses = {
+        @ApiResponse(responseCode = "200", description = "TOTP reset (or already inactive)"),
+        @ApiResponse(
+            responseCode = "403",
+            description =
+                "Missing the tenant:admin scope (KH-RBC-0403), or the caller's own"
+                    + " mustChangePassword flag is set (KH-USR-0403 — see GET /api/v1/auth/me)",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "404",
+            description = "User not found (KH-USR-0404)",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
+      })
+  @PostMapping("/api/v1/users/{id}/totp/reset")
+  ResponseEntity<Void> resetTotp(@PathVariable UUID id) {
+    totpService.resetForUserInCurrentTenant(id);
+    return ResponseEntity.ok().build();
+  }
+
+  private UUID currentUserId() {
+    return currentActorResolver
+        .resolve()
+        .orElseThrow(() -> new IllegalStateException("Authenticated request has no actor"))
+        .id();
   }
 }
