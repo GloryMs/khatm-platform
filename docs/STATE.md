@@ -20,9 +20,13 @@ section once CI is confirmed green again post-2026-08-01.
 - **feat/KH-2.2c-BE-totp-2fa — mandatory TOTP second factor (spec FS-2.2 veto V1)** (session
   `feat/KH-2.2c-BE-totp-2fa`, 2026-07-30, spec `docs/specs/FS-2.2-rbac-granularity.md` veto V1,
   RFC 6238). `mvn verify` green, **409/409 tests (10 new)**. New `KH-USR-1403`/`KH-USR-1409` (2 new
-  `user.*` keys in both bundles — **Arabic-speaker review NOT yet confirmed by Majd — merge
-  blocker**, same convention as every prior session's new-key set). **PR #50 opened, NOT merged**,
-  per the brief's explicit instruction — awaiting Majd's Arabic-review confirmation before merge.
+  `user.*` keys in both bundles — **Arabic-speaker review confirmed by Majd**, no wording changes
+  needed, same pattern as every prior session's new-key set). **DONE & MERGED via PR #50**
+  (2026-07-30, merge commit `b1187eb`, merged via admin override on Majd's explicit instruction —
+  no green CI run, same GitHub Actions billing block as PR #41/#43/#45/#46/#48/#49 — see "CI status
+  (temporary)" above; local `mvn verify` 409/409 was the substitute gate). `khatm-api`/`khatm-worker`
+  rebuilt and redeployed against the merged code post-merge, confirmed clean startup (no errors,
+  `GET /api/v1/auth/me` returns the expected 401 with no session).
   - **Verify-first findings, all recorded before writing (per the brief):** confirmed the
     KH-2.2d login shape (`LoginResult`/`SessionAuthenticator#establish`, optional `tenantSlug`) had
     no notion of a partial/challenge outcome — `login` returning a sum type
