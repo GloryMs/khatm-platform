@@ -21,8 +21,8 @@ section once CI is confirmed green again post-2026-08-01.
   `feat/KH-2.2c-BE-totp-2fa`, 2026-07-30, spec `docs/specs/FS-2.2-rbac-granularity.md` veto V1,
   RFC 6238). `mvn verify` green, **409/409 tests (10 new)**. New `KH-USR-1403`/`KH-USR-1409` (2 new
   `user.*` keys in both bundles — **Arabic-speaker review NOT yet confirmed by Majd — merge
-  blocker**, same convention as every prior session's new-key set). **PR opened, NOT merged**, per
-  the brief's explicit instruction — see below.
+  blocker**, same convention as every prior session's new-key set). **PR #50 opened, NOT merged**,
+  per the brief's explicit instruction — awaiting Majd's Arabic-review confirmation before merge.
   - **Verify-first findings, all recorded before writing (per the brief):** confirmed the
     KH-2.2d login shape (`LoginResult`/`SessionAuthenticator#establish`, optional `tenantSlug`) had
     no notion of a partial/challenge outcome — `login` returning a sum type
