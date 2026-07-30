@@ -28,6 +28,14 @@ import sy.khatm.platform.shared.LocalizedTextConverter;
  * mid-session on an admin password reset, and the spec's guarantee is that the very next call is
  * blocked, so the value is never cached in the session principal).
  *
+ * <p><b>KH-2.2c — TOTP (spec FS-2.2 V1):</b> {@code totpSecretEnc} is AES-256-GCM ciphertext
+ * ({@link TotpSecretEncryptionService}), never plaintext at rest. {@code totpEnrolledAt} is set on
+ * every {@code POST /users/me/totp/enroll} (re)generation; {@code totpConfirmedAt} is set on {@code
+ * POST /users/me/totp/confirm} and is {@code null} until then — {@code null} means "no active TOTP"
+ * for both the login challenge and the mandatory-enrollment gate ({@code
+ * rbac.security.TotpEnrollmentEnforcementFilter}, read live per request for the identical
+ * mid-session-change reason as {@code mustChangePassword}).
+ *
  * <p>This class is module-private; external code must depend on {@code rbac :: api} instead.
  */
 @Entity
@@ -62,6 +70,15 @@ public class AppUser {
 
   @Column(name = "must_change_password", nullable = false)
   private boolean mustChangePassword;
+
+  @Column(name = "totp_secret_enc")
+  private byte[] totpSecretEnc;
+
+  @Column(name = "totp_enrolled_at")
+  private Instant totpEnrolledAt;
+
+  @Column(name = "totp_confirmed_at")
+  private Instant totpConfirmedAt;
 
   @Column(name = "created_at", nullable = false)
   private Instant createdAt;
@@ -136,6 +153,30 @@ public class AppUser {
 
   public void setCreatedAt(Instant createdAt) {
     this.createdAt = createdAt;
+  }
+
+  public byte[] getTotpSecretEnc() {
+    return totpSecretEnc;
+  }
+
+  public void setTotpSecretEnc(byte[] totpSecretEnc) {
+    this.totpSecretEnc = totpSecretEnc;
+  }
+
+  public Instant getTotpEnrolledAt() {
+    return totpEnrolledAt;
+  }
+
+  public void setTotpEnrolledAt(Instant totpEnrolledAt) {
+    this.totpEnrolledAt = totpEnrolledAt;
+  }
+
+  public Instant getTotpConfirmedAt() {
+    return totpConfirmedAt;
+  }
+
+  public void setTotpConfirmedAt(Instant totpConfirmedAt) {
+    this.totpConfirmedAt = totpConfirmedAt;
   }
 
   boolean isActive() {

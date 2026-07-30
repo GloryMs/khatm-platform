@@ -77,6 +77,7 @@ class KeyRotationWorkerTest {
     r.add("khatm.keys.soft.keystore-path", KEYSTORE::toString);
     r.add("khatm.keys.soft.passphrase", () -> "key-rotation-worker-test-passphrase");
     r.add("khatm.claims.enc-key", () -> "a2hhdG0tdGVzdC1jbGFpbXMtZW5jLWtleS0zMmJ5dGU=");
+    r.add("khatm.auth.totp.enc-key", () -> "a2hhdG0tdGVzdC10b3RwLWVuYy1rZXktMzJieXRlcyE=");
     r.add("khatm.auth.bootstrap.admin-username", () -> "test-admin");
     r.add("khatm.auth.bootstrap.admin-password", () -> "test-admin-password-change-me");
     r.add("khatm.public-base-url", () -> "http://localhost:8080");

@@ -103,6 +103,15 @@ khatm:
     lockout:
       max-attempts: 5
       window: 15m
+    totp:
+      # KH-2.2c (spec FS-2.2 V1): AES-256-GCM key for app_user.totp_secret_enc, 32 raw bytes
+      # base64-encoded. Same no-silent-default pattern as khatm.claims.enc-key above —
+      # TotpSecretEncryptionService fails startup if this is blank outside the 'local' profile.
+      enc-key: ${KHATM_AUTH_TOTP_ENC_KEY:}
+      # How long a pending (unconfirmed) enrollment stays confirmable before it must be redone.
+      enroll-ttl: PT10M
+      # How long a login's TOTP-challenge token stays valid (spec FS-2.2 V1's login-challenge step).
+      challenge-ttl: PT5M
     bootstrap:
       # No default here on purpose — AdminBootstrap fails startup if either is blank outside the
       # 'local' profile (spec FS-0.6b D10, same no-silent-default pattern as khatm.keys.soft.*
@@ -235,6 +244,10 @@ khatm:
     # outside 'local' — ClaimsEncryptionService enforces that.
     enc-key: ${KHATM_CLAIMS_ENC_KEY:a2hhdG0tbG9jYWwtZGV2LWNsYWltcy1lbmMta2V5ISE=}
   auth:
+    totp:
+      # Documented local-only default, 32 raw bytes base64-encoded (spec FS-2.2 V1). Never used
+      # outside 'local' — TotpSecretEncryptionService enforces that.
+      enc-key: ${KHATM_AUTH_TOTP_ENC_KEY:a2hhdG0tbG9jYWwtZGV2LXRvdHAtZW5jLWtleSEhISE=}
     bootstrap:
       # Documented local-only default (spec FS-0.6b D10) so `docker compose up` / a bare local
       # run provision a working console admin with zero setup. Never used outside 'local' —

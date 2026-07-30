@@ -38,3 +38,5 @@
 | `KH-USR-0404` | 404 | `user.not-found` |
 | `KH-USR-0409` | 409 | `user.duplicate-username` |
 | `KH-USR-0423` | 409 | `user.last-admin` |
+| `KH-USR-1403` | 403 | `user.totp-required` |
+| `KH-USR-1409` | 409 | `user.totp-conflict` |

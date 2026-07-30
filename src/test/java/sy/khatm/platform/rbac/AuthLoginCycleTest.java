@@ -5,18 +5,26 @@ import static org.assertj.core.api.Assertions.assertThat;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import sy.khatm.platform.rbac.SessionTestSupport.AuthenticatedSession;
 
 /**
  * Spec FS-0.6b DoD #1 — a full {@code login → me → logout} cycle works with the {@code
  * KHATM_SESSION} cookie (D1: server-side, Redis-backed), and the session no longer works after
  * logout.
+ *
+ * <p>Uses {@link SessionTestSupport#login} (not a raw {@code POST /api/v1/auth/login} call) because
+ * the bootstrap admin holds {@code platform:admin} (spec FS-2.2 V1's mandatory-2FA set) — by the
+ * time this test runs in the shared context, an earlier test may already have enrolled TOTP for
+ * this same username via that helper, in which case a raw login here would receive a {@code
+ * totpRequired} challenge instead of a session cookie. The helper transparently completes that
+ * challenge (or performs first-time enrollment) so this test can focus on the login→me→logout cycle
+ * itself.
  */
 class AuthLoginCycleTest extends RbacHttpTestSupport {
 
@@ -24,17 +32,11 @@ class AuthLoginCycleTest extends RbacHttpTestSupport {
 
   @Test
   void loginThenMeThenLogout_worksWithSessionCookie_andLogoutInvalidatesIt() throws Exception {
-    ResponseEntity<Void> loginResponse =
-        rest.postForEntity(
-            "/api/v1/auth/login",
-            Map.of("username", BOOTSTRAP_ADMIN_USERNAME, "password", BOOTSTRAP_ADMIN_PASSWORD),
-            Void.class);
-    assertThat(loginResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
-    String sessionCookie = extractCookie(loginResponse, "KHATM_SESSION");
-    assertThat(sessionCookie).as("KHATM_SESSION cookie must be set on login").isNotBlank();
-    String csrfCookie = extractCookie(loginResponse, "XSRF-TOKEN");
-    assertThat(csrfCookie).as("XSRF-TOKEN cookie must be set (CsrfCookieFilter)").isNotBlank();
-    String csrfValue = csrfCookie.substring(csrfCookie.indexOf('=') + 1);
+    AuthenticatedSession session =
+        SessionTestSupport.login(rest, BOOTSTRAP_ADMIN_USERNAME, BOOTSTRAP_ADMIN_PASSWORD);
+    String sessionCookie = session.sessionCookie();
+    String csrfCookie = session.csrfCookie();
+    String csrfValue = session.csrfValue();
 
     ResponseEntity<String> meResponse =
         rest.exchange("/api/v1/auth/me", HttpMethod.GET, withCookie(sessionCookie), String.class);
@@ -73,20 +75,6 @@ class AuthLoginCycleTest extends RbacHttpTestSupport {
     ResponseEntity<String> meAfterLogout =
         rest.exchange("/api/v1/auth/me", HttpMethod.GET, withCookie(sessionCookie), String.class);
     assertThat(meAfterLogout.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
-  }
-
-  private static String extractCookie(ResponseEntity<?> response, String cookieName) {
-    List<String> setCookies = response.getHeaders().get(HttpHeaders.SET_COOKIE);
-    if (setCookies == null) {
-      return null;
-    }
-    for (String setCookie : setCookies) {
-      if (setCookie.startsWith(cookieName + "=")) {
-        return setCookie.substring(
-            0, setCookie.indexOf(';') >= 0 ? setCookie.indexOf(';') : setCookie.length());
-      }
-    }
-    return null;
   }
 
   private static HttpEntity<Void> withCookie(String cookie) {

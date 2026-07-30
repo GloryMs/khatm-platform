@@ -136,6 +136,7 @@ public abstract class RbacHttpTestSupport {
     registry.add("khatm.keys.soft.keystore-path", KEYSTORE_PATH::toString);
     registry.add("khatm.keys.soft.passphrase", () -> "rbac-http-test-passphrase");
     registry.add("khatm.claims.enc-key", () -> "a2hhdG0tdGVzdC1jbGFpbXMtZW5jLWtleS0zMmJ5dGU=");
+    registry.add("khatm.auth.totp.enc-key", () -> "a2hhdG0tdGVzdC10b3RwLWVuYy1rZXktMzJieXRlcyE=");
     registry.add("khatm.auth.bootstrap.admin-username", () -> BOOTSTRAP_ADMIN_USERNAME);
     registry.add("khatm.auth.bootstrap.admin-password", () -> BOOTSTRAP_ADMIN_PASSWORD);
     // chore/public-base-url: PublicUrlBuilder fails startup on a blank khatm.public-base-url

@@ -10,6 +10,7 @@ import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import javax.sql.DataSource;
@@ -19,11 +20,14 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import sy.khatm.platform.rbac.RbacHttpTestSupport;
 import sy.khatm.platform.rbac.domain.ApiKeyService;
 import sy.khatm.platform.shared.TenantContext;
+import sy.khatm.platform.support.TotpEnrollmentCache;
+import sy.khatm.platform.support.TotpTestCodes;
 
 /**
  * KH-2.1-BE Part B, spec FS-2.1 D10 — the mandatory named leak suite, joining {@code
@@ -46,7 +50,13 @@ import sy.khatm.platform.shared.TenantContext;
  *
  * <p>{@code rbac.SessionTestSupport} is package-private to {@code rbac}, so — like {@code
  * tenant.web.StatusListControllerHttpTest} — this class (living in {@code db}) does the minimal
- * login-cookie dance itself rather than depending on it.
+ * login-cookie dance itself rather than depending on it. It extends {@code RbacHttpTestSupport}
+ * directly, though, so it shares the exact same cached context/database as every {@code rbac}
+ * scope-gate test — {@link #loginAsAdmin} therefore also transparently enrolls/completes TOTP for
+ * the shared bootstrap admin (spec FS-2.2 V1's mandatory-2FA gate would otherwise wall off {@code
+ * POST /api/v1/admin/tenants} itself), sharing {@link TotpEnrollmentCache} with {@code
+ * rbac.SessionTestSupport} rather than tracking its own separate secret — see that cache's own
+ * Javadoc for why a separate one would break whichever of the two ran second.
  */
 class CrossTenantIsolationTest extends RbacHttpTestSupport {
 
@@ -76,15 +86,75 @@ class CrossTenantIsolationTest extends RbacHttpTestSupport {
   }
 
   private AdminSession loginAsAdmin() {
-    ResponseEntity<Void> loginResponse =
+    ResponseEntity<String> loginResponse =
         rest.postForEntity(
             "/api/v1/auth/login",
             Map.of("username", BOOTSTRAP_ADMIN_USERNAME, "password", BOOTSTRAP_ADMIN_PASSWORD),
-            Void.class);
-    String sessionCookie = extractCookie(loginResponse, "KHATM_SESSION");
-    String csrfCookie = extractCookie(loginResponse, "XSRF-TOKEN");
+            String.class);
+
+    if (isTotpChallenge(loginResponse)) {
+      String secret = TotpEnrollmentCache.SECRETS.get(BOOTSTRAP_ADMIN_USERNAME);
+      String challengeId = readTree(loginResponse.getBody()).path("challengeId").asText();
+      Map<String, Object> completeBody =
+          Map.of("challengeId", challengeId, "code", TotpTestCodes.currentCode(secret));
+      ResponseEntity<Void> completed =
+          rest.postForEntity("/api/v1/auth/totp", completeBody, Void.class);
+      return sessionFrom(completed);
+    }
+
+    AdminSession session = sessionFrom(loginResponse);
+    if (!TotpEnrollmentCache.SECRETS.containsKey(BOOTSTRAP_ADMIN_USERNAME)) {
+      tryEnrollAndConfirmTotp(session)
+          .ifPresent(secret -> TotpEnrollmentCache.SECRETS.put(BOOTSTRAP_ADMIN_USERNAME, secret));
+    }
+    return session;
+  }
+
+  private boolean isTotpChallenge(ResponseEntity<String> response) {
+    String body = response.getBody();
+    return body != null && !body.isBlank() && readTree(body).path("totpRequired").asBoolean(false);
+  }
+
+  private static JsonNode readTree(String body) {
+    try {
+      return JSON.readTree(body);
+    } catch (Exception e) {
+      throw new AssertionError("Failed to parse response body: " + body, e);
+    }
+  }
+
+  private static AdminSession sessionFrom(ResponseEntity<?> response) {
+    String sessionCookie = extractCookie(response, "KHATM_SESSION");
+    String csrfCookie = extractCookie(response, "XSRF-TOKEN");
     String csrfValue = csrfCookie.substring(csrfCookie.indexOf('=') + 1);
     return new AdminSession(sessionCookie + "; " + csrfCookie, csrfValue);
+  }
+
+  private Optional<String> tryEnrollAndConfirmTotp(AdminSession session) {
+    ResponseEntity<String> enrollResponse =
+        rest.exchange(
+            "/api/v1/users/me/totp/enroll",
+            HttpMethod.POST,
+            new HttpEntity<>(session.writeHeaders()),
+            String.class);
+    if (enrollResponse.getStatusCode() != HttpStatus.OK) {
+      return Optional.empty();
+    }
+    String secret = readTree(enrollResponse.getBody()).path("secretBase32").asText();
+
+    HttpHeaders confirmHeaders = session.writeHeaders();
+    confirmHeaders.setContentType(MediaType.APPLICATION_JSON);
+    ResponseEntity<String> confirmResponse =
+        rest.exchange(
+            "/api/v1/users/me/totp/confirm",
+            HttpMethod.POST,
+            new HttpEntity<>(
+                "{\"code\":\"" + TotpTestCodes.currentCode(secret) + "\"}", confirmHeaders),
+            String.class);
+    if (confirmResponse.getStatusCode() != HttpStatus.OK) {
+      return Optional.empty();
+    }
+    return Optional.of(secret);
   }
 
   private static String extractCookie(ResponseEntity<?> response, String cookieName) {

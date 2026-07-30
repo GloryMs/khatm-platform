@@ -92,6 +92,7 @@ class SoftKeyProviderPassphraseFailureTest {
                 // FS-0.4 D7) — kept valid here so these tests isolate the passphrase failure
                 // specifically, not an unrelated one.
                 "--khatm.claims.enc-key=a2hhdG0tdGVzdC1jbGFpbXMtZW5jLWtleS0zMmJ5dGU=",
+                "--khatm.auth.totp.enc-key=a2hhdG0tdGVzdC10b3RwLWVuYy1rZXktMzJieXRlcyE=",
                 // KH-0.6b: AdminBootstrap also needs valid bootstrap credentials outside 'local'
                 // (spec FS-0.6b D10) — same isolation reasoning as the claims key above.
                 "--khatm.auth.bootstrap.admin-username=test-admin",

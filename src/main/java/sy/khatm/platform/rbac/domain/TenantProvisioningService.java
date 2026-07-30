@@ -60,18 +60,21 @@ public class TenantProvisioningService {
   private final OnBehalfOfExecutor onBehalfOf;
   private final RoleCatalogSeeder roleCatalogSeeder;
   private final UserAdminService userAdmin;
+  private final TotpService totpService;
 
   public TenantProvisioningService(
       TenantAdmin tenantAdmin,
       TenantDirectory tenants,
       OnBehalfOfExecutor onBehalfOf,
       RoleCatalogSeeder roleCatalogSeeder,
-      UserAdminService userAdmin) {
+      UserAdminService userAdmin,
+      TotpService totpService) {
     this.tenantAdmin = tenantAdmin;
     this.tenants = tenants;
     this.onBehalfOf = onBehalfOf;
     this.roleCatalogSeeder = roleCatalogSeeder;
     this.userAdmin = userAdmin;
+    this.totpService = totpService;
   }
 
   /**
@@ -167,6 +170,30 @@ public class TenantProvisioningService {
             .findById(tenantId)
             .orElseThrow(() -> new NotFoundException(ErrorCode.KH_TNT_0404, "tenant.not-found"));
     return onBehalfOf.runAsTenant(target.id(), target.slug(), userAdmin::list);
+  }
+
+  /**
+   * Reset a user's TOTP enrollment in a tenant other than the caller's own (spec FS-2.2 V1, {@code
+   * POST /api/v1/admin/tenants/{id}/users/{userId}/totp/reset}) — the same on-behalf-of shape as
+   * {@link #createUserInTenant}/{@link #listUsersInTenant}.
+   *
+   * @param tenantId the target tenant
+   * @param userId the user whose TOTP enrollment to clear
+   * @throws NotFoundException {@code KH-TNT-0404} if the target tenant does not exist, or {@code
+   *     KH-USR-0404} if the user does not exist in that tenant
+   */
+  public void resetTotpInTenant(UUID tenantId, UUID userId) {
+    TenantRef target =
+        tenants
+            .findById(tenantId)
+            .orElseThrow(() -> new NotFoundException(ErrorCode.KH_TNT_0404, "tenant.not-found"));
+    onBehalfOf.runAsTenant(
+        target.id(),
+        target.slug(),
+        () -> {
+          totpService.resetForUserInCurrentTenant(userId);
+          return null;
+        });
   }
 
   private OnboardTenantResult provisionInitialStaff(

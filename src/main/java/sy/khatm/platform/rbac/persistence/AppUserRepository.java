@@ -47,6 +47,20 @@ public interface AppUserRepository extends JpaRepository<AppUser, UUID> {
   Optional<Boolean> findMustChangePasswordById(@Param("id") UUID id);
 
   /**
+   * Whether a user currently has an active (confirmed) TOTP enrollment — read live on every
+   * authenticated request by {@code rbac.security.TotpEnrollmentEnforcementFilter} (spec FS-2.2
+   * V1), the identical live-read rationale {@link #findMustChangePasswordById} documents: an
+   * admin's {@code POST /users/{id}/totp/reset} must bite on the target's very next request even
+   * mid-session, so this is never cached in the session principal. Returns empty if the row no
+   * longer exists (same defense-only reasoning as the password-change flag).
+   *
+   * @param id the authenticated user's id
+   * @return {@code true} if {@code totp_confirmed_at} is set, or empty if no such user
+   */
+  @Query("SELECT (u.totpConfirmedAt IS NOT NULL) FROM AppUser u WHERE u.id = :id")
+  Optional<Boolean> findHasActiveTotpById(@Param("id") UUID id);
+
+  /**
    * The number of {@code ACTIVE} users in a tenant who hold the {@code tenant:admin} scope (via any
    * assigned role), excluding one — the heart of the last-tenant-admin guard (spec FS-2.2 D5). A
    * zero here means the excluded user is the tenant's only remaining active administrator.

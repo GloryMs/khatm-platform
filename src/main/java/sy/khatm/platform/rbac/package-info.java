@@ -26,7 +26,9 @@
  * <p><b>Tables owned:</b> {@code app_user}, {@code role}, {@code user_role} (seeded by {@code
  * V1__baseline.sql}, Java persistence added in this module for the first time in KH-0.6b), {@code
  * api_key} (new in {@code V2__auth_api_keys.sql}, spec §4 — replaces the {@code
- * consuming_party.api_key_hash} stand-in the same migration drops).
+ * consuming_party.api_key_hash} stand-in the same migration drops), {@code user_totp_recovery_code}
+ * (new in {@code V13__totp_2fa.sql}, KH-2.2c — {@code app_user} itself gained three columns in the
+ * same migration for the TOTP secret/enrollment/confirmation state).
  *
  * <p><b>Cross-module dependencies:</b> {@code shared} (its open root package — {@link
  * sy.khatm.platform.shared.TenantContext}, {@link sy.khatm.platform.shared.Uuidv7}, {@link
@@ -68,6 +70,21 @@
  * requires {@code platform:admin} specifically, enforced by {@code shared.OnBehalfOfExecutor} — the
  * gap this closes: before this session, any caller holding the endpoint's baseline scope could name
  * an arbitrary foreign {@code tenantId} with no cross-tenant check at all.
+ *
+ * <p><b>KH-2.2c — TOTP second factor (spec FS-2.2 V1):</b> self-service enrollment ({@code POST
+ * /users/me/totp/enroll}/{@code /confirm}, {@link sy.khatm.platform.rbac.domain.TotpService}),
+ * AES-256-GCM secret encryption at rest ({@link
+ * sy.khatm.platform.rbac.domain.TotpSecretEncryptionService} — a second, dedicated-key sibling of
+ * {@code credential.domain.ClaimsEncryptionService}, not a cross-module reuse of that
+ * module-private class), a login challenge for accounts with an active enrollment ({@code
+ * AuthService#login} returns {@code LoginOutcome.TotpChallenge} instead of establishing a session;
+ * {@code POST /api/v1/auth/totp} completes it with a code or a one-time recovery code, rate-limited
+ * identically to the password step), and a mandatory-enrollment wall ({@code
+ * security.TotpEnrollmentEnforcementFilter}, the exact {@code PasswordChangeEnforcementFilter}
+ * shape) for any session holding {@code revoke}/{@code tenant:admin}/{@code platform:admin}/{@code
+ * key:manage} with no active TOTP. Both reset paths (self-tenant {@code tenant:admin}, and
+ * cross-tenant {@code platform:admin} via {@code TenantProvisioningService#resetTotpInTenant} +
+ * {@code OnBehalfOfExecutor}) clear a user's enrollment administratively.
  */
 @org.springframework.modulith.ApplicationModule(
     allowedDependencies = {

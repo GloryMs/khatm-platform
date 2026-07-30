@@ -103,6 +103,7 @@ class CrossProcessRotationKeystoreReloadTest {
             "--khatm.keys.soft.keystore-path=" + keystorePath,
             "--khatm.keys.soft.passphrase=" + passphrase,
             "--khatm.claims.enc-key=a2hhdG0tdGVzdC1jbGFpbXMtZW5jLWtleS0zMmJ5dGU=",
+            "--khatm.auth.totp.enc-key=a2hhdG0tdGVzdC10b3RwLWVuYy1rZXktMzJieXRlcyE=",
             "--khatm.auth.bootstrap.admin-username=test-admin",
             "--khatm.auth.bootstrap.admin-password=test-admin-password-change-me",
             "--khatm.public-base-url=http://localhost:8080");

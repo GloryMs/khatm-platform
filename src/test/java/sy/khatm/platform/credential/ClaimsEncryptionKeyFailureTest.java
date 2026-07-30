@@ -67,6 +67,9 @@ class ClaimsEncryptionKeyFailureTest {
                 // Kept valid so these tests isolate the claims-key failure specifically.
                 "--khatm.keys.soft.keystore-path=" + keystorePath,
                 "--khatm.keys.soft.passphrase=claims-key-failure-test-passphrase",
+                // KH-2.2c: TotpSecretEncryptionService also fails startup without this outside
+                // 'local' — kept valid for the same isolation reason as the rest.
+                "--khatm.auth.totp.enc-key=a2hhdG0tdGVzdC10b3RwLWVuYy1rZXktMzJieXRlcyE=",
                 // KH-0.6b: AdminBootstrap also fails startup without these outside 'local' (spec
                 // FS-0.6b D10) — kept valid for the same isolation reason as the two above.
                 "--khatm.auth.bootstrap.admin-username=test-admin",

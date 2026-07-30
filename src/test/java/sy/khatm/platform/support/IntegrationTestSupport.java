@@ -92,6 +92,15 @@ public abstract class IntegrationTestSupport {
   }
 
   /**
+   * KH-2.2c: same rationale again — {@code TotpSecretEncryptionService} fails startup on a blank
+   * {@code khatm.auth.totp.enc-key} outside {@code local} (spec FS-2.2 V1).
+   */
+  @DynamicPropertySource
+  static void totpEncryptionProperties(DynamicPropertyRegistry registry) {
+    registry.add("khatm.auth.totp.enc-key", () -> "a2hhdG0tdGVzdC10b3RwLWVuYy1rZXktMzJieXRlcyE=");
+  }
+
+  /**
    * KH-0.6b: same rationale again — {@code AdminBootstrap} fails startup on a blank {@code
    * khatm.auth.bootstrap.admin-username}/{@code admin-password} outside {@code local} (spec FS-0.6b
    * D10), and this shared-context suite runs under {@code test}, not {@code local}.
