@@ -837,6 +837,9 @@
           "password" : {
             "type" : "string"
           },
+          "tenantSlug" : {
+            "type" : "string"
+          },
           "username" : {
             "type" : "string"
           }
@@ -2176,6 +2179,66 @@
       }
     },
     "/api/v1/admin/tenants/{id}/users" : {
+      "get" : {
+        "description" : "Every user of the named tenant, newest first — the same row shape GET /api/v1/users returns for a tenant admin's own tenant, run on behalf of the named tenant (OnBehalfOfExecutor, audited ON_BEHALF_OF). Requires the platform:admin scope.",
+        "operationId" : "listUsersInTenant",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/UserSummary"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "The tenant's users"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the platform:admin scope (KH-RBC-0403)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Target tenant not found (KH-TNT-0404)"
+          }
+        },
+        "summary" : "List a tenant's users",
+        "tags" : [ "tenants-admin" ]
+      },
       "post" : {
         "description" : "Creates a user in a tenant other than the caller's own — the same creation shape as a tenant admin's own-user create, run on behalf of the named tenant via OnBehalfOfExecutor (audited ON_BEHALF_OF). Requires the platform:admin scope.",
         "operationId" : "createUserInTenant",
@@ -2306,7 +2369,7 @@
     },
     "/api/v1/auth/login" : {
       "post" : {
-        "description" : "Authenticates a username/password pair for the current tenant and establishes a server-side session (Redis-backed, cookie KHATM_SESSION). Every failure reason — unknown user, wrong password, temporary lockout, administrative LOCKED/DISABLED — returns the identical generic 401 (spec FS-0.6b D7); the real reason is recorded only in the audit log.",
+        "description" : "Authenticates a username/password pair and establishes a server-side session (Redis-backed, cookie KHATM_SESSION). The optional tenantSlug (spec FS-2.2) authenticates against that tenant specifically; omit or leave it blank to log into the caller's ambient default tenant, unchanged from before. Every failure reason — unknown user, wrong password, temporary lockout, administrative LOCKED/DISABLED, or an unknown/SUSPENDED tenantSlug — returns the identical generic 401 (spec FS-0.6b D7); the real reason is recorded only in the audit log.",
         "operationId" : "login",
         "requestBody" : {
           "content" : {

@@ -77,37 +77,74 @@ public class AuthService {
   }
 
   /**
-   * Authenticate a username/password pair for the current tenant.
+   * Authenticate a username/password pair, optionally against an explicitly named tenant (spec
+   * FS-2.2 — multi-tenant console login).
+   *
+   * <p><b>Tenant resolution, and why this method is deliberately NOT {@code @Transactional}:</b> a
+   * blank/{@code null} {@code tenantSlug} resolves to {@link TenantContext#current()} — for the
+   * anonymous request every console login is, that is always the default tenant, preserving this
+   * method's exact pre-existing behavior byte for byte. A non-blank {@code tenantSlug} resolves via
+   * {@link TenantDirectory#findBySlug}, which needs no ambient tenant context at all ({@code
+   * tenant} is the one business table excluded from RLS, spec FS-2.1 D2). Once the target tenant is
+   * resolved, {@link TenantContext#set} switches to it for the remainder of this call — and every
+   * subsequent step ({@code app_user} lookup, {@code audit.record}) must open its <em>own</em>
+   * fresh physical transaction to pick that switch up, exactly the {@code
+   * rbac.domain.ApiKeyService#create(.., UUID)} / {@code tenant.domain.TenantAdminService#create}
+   * pattern: {@code shared.TenantContextTransactionExecutionListener#afterBegin} fires once per
+   * physical transaction and reads whatever {@link TenantContext} holds <em>at that moment</em> — a
+   * single outer {@code @Transactional} boundary around this whole method would begin (and fire the
+   * listener) before the tenant is even resolved, permanently pinning {@code app.tenant_id} to the
+   * caller's ambient default and making a non-default tenant's {@code app_user} row invisible under
+   * RLS regardless of the {@link TenantContext#set} call below. {@code
+   * rbac.persistence.AppUserRepository}'s type-level {@code @Transactional(readOnly = true)} and
+   * {@code shared.audit.AuditService#record}'s own {@code @Transactional} each independently supply
+   * that fresh transaction, so no {@code noRollbackFor} is needed either — each audit write commits
+   * on its own before this method can throw.
    *
    * @param username the submitted username
    * @param rawPassword the submitted plaintext password — never logged, never persisted
+   * @param tenantSlug the tenant to authenticate against, or {@code null}/blank for the caller's
+   *     ambient (default) tenant
    * @return the authenticated user's session-establishing details
    * @throws AuthenticationException always with the same generic {@link ErrorCode#KH_RBC_0401}
-   *     message (D7), for every failure reason
+   *     message (D7), for every failure reason — including an unknown or {@code SUSPENDED} {@code
+   *     tenantSlug}, so an unauthenticated caller can never use this endpoint to probe whether a
+   *     given tenant slug exists (the same unified-failure anti-enumeration stance D7 already
+   *     applies to username/password)
    */
-  // noRollbackFor: every failure path deliberately records an audit row *before* throwing —
-  // AuthenticationException here is an expected business outcome (a rejected login), not an
-  // infrastructure failure, so the audit write it precedes must still commit. Spring's default
-  // rollback-on-any-RuntimeException rule would otherwise discard that very row the same method
-  // just wrote, silently defeating D7's "the real reason lives in the audit log" guarantee.
-  @Transactional(noRollbackFor = AuthenticationException.class)
-  public LoginResult login(String username, String rawPassword) {
-    UUID tenantId = TenantContext.current();
+  public LoginResult login(String username, String rawPassword, String tenantSlug) {
+    TenantRef tenant = resolveTenant(tenantSlug);
 
-    // Spec FS-2.1 D7: a SUSPENDED tenant's own users can't log in at all — same generic failure as
-    // every other reason (D7's "one generic failure, always"), checked before anything
-    // user-specific so no login attempt against a suspended tenant leaks whether the username/
-    // password would otherwise have been valid. An already-existing session survives independently
-    // of this check; rbac.security.TenantContextFilter closes that separate gap per-request.
-    if (!tenants.findById(tenantId).map(TenantRef::isActive).orElse(false)) {
+    // Spec FS-2.1 D7 (extended, spec FS-2.2, to an explicitly named tenant): an unknown or
+    // SUSPENDED tenant's login attempt gets the identical generic failure as every other reason —
+    // checked before anything user-specific so it leaks neither whether the tenant exists nor
+    // whether the username/password would otherwise have been valid. An already-existing session
+    // surviving a later suspension is a separate gap rbac.security.TenantContextFilter closes.
+    if (tenant == null || !tenant.isActive()) {
       audit.record(
           AuditAction.AUTH_LOGIN_FAILED,
           "app_user",
           username,
-          Map.of("reason", "tenant_suspended"));
+          Map.of("reason", tenant == null ? "unknown_tenant" : "tenant_suspended"));
       throw unauthenticated();
     }
 
+    TenantContext.set(tenant.id(), tenant.slug());
+    try {
+      return authenticate(tenant.id(), username, rawPassword);
+    } finally {
+      TenantContext.clear();
+    }
+  }
+
+  private TenantRef resolveTenant(String tenantSlug) {
+    if (tenantSlug == null || tenantSlug.isBlank()) {
+      return tenants.findById(TenantContext.current()).orElse(null);
+    }
+    return tenants.findBySlug(tenantSlug).orElse(null);
+  }
+
+  private LoginResult authenticate(UUID tenantId, String username, String rawPassword) {
     String lockKey = LOCKOUT_KEY_PREFIX + tenantId + ":" + username;
 
     if (isLockedOut(lockKey)) {
@@ -153,7 +190,8 @@ public class AuthService {
         user.getUsername(),
         user.getDisplayNameI18n(),
         user.getPreferredLang(),
-        scopes);
+        scopes,
+        tenantId);
   }
 
   /**

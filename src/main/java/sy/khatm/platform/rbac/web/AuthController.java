@@ -71,11 +71,13 @@ class AuthController {
   @Operation(
       summary = "Console login",
       description =
-          "Authenticates a username/password pair for the current tenant and establishes a"
-              + " server-side session (Redis-backed, cookie KHATM_SESSION). Every failure reason"
-              + " — unknown user, wrong password, temporary lockout, administrative LOCKED/"
-              + "DISABLED — returns the identical generic 401 (spec FS-0.6b D7); the real reason"
-              + " is recorded only in the audit log.",
+          "Authenticates a username/password pair and establishes a server-side session"
+              + " (Redis-backed, cookie KHATM_SESSION). The optional tenantSlug (spec FS-2.2)"
+              + " authenticates against that tenant specifically; omit or leave it blank to log"
+              + " into the caller's ambient default tenant, unchanged from before. Every failure"
+              + " reason — unknown user, wrong password, temporary lockout, administrative LOCKED/"
+              + "DISABLED, or an unknown/SUSPENDED tenantSlug — returns the identical generic 401"
+              + " (spec FS-0.6b D7); the real reason is recorded only in the audit log.",
       responses = {
         @ApiResponse(responseCode = "200", description = "Login succeeded; session cookie set"),
         @ApiResponse(
@@ -88,7 +90,7 @@ class AuthController {
       @Valid @RequestBody LoginRequest req,
       HttpServletRequest request,
       HttpServletResponse response) {
-    LoginResult result = authService.login(req.username(), req.password());
+    LoginResult result = authService.login(req.username(), req.password(), req.tenantSlug());
     sessionAuthenticator.establish(request, response, result);
     return ResponseEntity.ok().build();
   }

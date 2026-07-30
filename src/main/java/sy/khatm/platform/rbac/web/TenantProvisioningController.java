@@ -6,9 +6,11 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -17,18 +19,20 @@ import org.springframework.web.bind.annotation.RestController;
 import sy.khatm.platform.rbac.domain.CreatedUser;
 import sy.khatm.platform.rbac.domain.OnboardTenantResult;
 import sy.khatm.platform.rbac.domain.TenantProvisioningService;
+import sy.khatm.platform.rbac.domain.UserSummary;
 import sy.khatm.platform.shared.web.ErrorEnvelope;
 import sy.khatm.platform.tenant.api.TenantView;
 
 /**
  * The {@code platform:admin} cross-tenant provisioning endpoints under {@code
  * /api/v1/admin/tenants} (spec FS-2.2 D6): onboarding a tenant (with an optional first
- * administrator) and adding a user to an <em>existing</em> tenant. Both create {@code app_user}
- * rows, which is why this controller lives in {@code rbac.web} and not {@code tenant.web} — the
- * same Modulith-cycle avoidance that put {@code rbac.web.ConsumingPartyKeyController} (which mints
- * {@code api_key} rows) in {@code rbac.web}. The tenant-row + signing-key + status-list half of
- * onboarding is delegated to {@code tenant :: api}'s {@code TenantAdmin#create} (unchanged); the
- * list/get/suspend/activate tenant endpoints stay in {@code tenant.web.TenantAdminController}.
+ * administrator), adding a user to an <em>existing</em> tenant, and listing an existing tenant's
+ * users. All three touch {@code app_user} rows, which is why this controller lives in {@code
+ * rbac.web} and not {@code tenant.web} — the same Modulith-cycle avoidance that put {@code
+ * rbac.web.ConsumingPartyKeyController} (which mints {@code api_key} rows) in {@code rbac.web}. The
+ * tenant-row + signing-key + status-list half of onboarding is delegated to {@code tenant :: api}'s
+ * {@code TenantAdmin#create} (unchanged); the list/get/suspend/activate tenant endpoints stay in
+ * {@code tenant.web.TenantAdminController}.
  *
  * <p>Thin: validate → call {@link TenantProvisioningService} → map.
  */
@@ -126,6 +130,32 @@ class TenantProvisioningController {
             id, req.username(), req.displayNameI18n().toLocalizedText(), req.roles());
     return ResponseEntity.ok(
         new CreateUserResponse(created.id(), created.username(), created.temporaryPassword()));
+  }
+
+  @Operation(
+      summary = "List a tenant's users",
+      description =
+          "Every user of the named tenant, newest first — the same row shape GET /api/v1/users"
+              + " returns for a tenant admin's own tenant, run on behalf of the named tenant"
+              + " (OnBehalfOfExecutor, audited ON_BEHALF_OF). Requires the platform:admin scope.",
+      responses = {
+        @ApiResponse(responseCode = "200", description = "The tenant's users"),
+        @ApiResponse(
+            responseCode = "401",
+            description = "No valid session or API key",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "403",
+            description = "Missing the platform:admin scope (KH-RBC-0403)",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "404",
+            description = "Target tenant not found (KH-TNT-0404)",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
+      })
+  @GetMapping("/{id}/users")
+  List<UserSummary> listUsersInTenant(@PathVariable UUID id) {
+    return provisioning.listUsersInTenant(id);
   }
 
   private static OnboardTenantResponse toResponse(OnboardTenantResult result) {
