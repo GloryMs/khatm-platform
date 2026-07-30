@@ -69,6 +69,16 @@ import sy.khatm.platform.key.api.SignResult;
  * chain). Since verification here is always done via standard JCA/Nimbus EC key objects — never via
  * the X.509 chain itself — a minimal self-signed certificate is minted per key purely to satisfy
  * that container-format requirement.
+ *
+ * <p><b>Cross-process reload-on-miss (KH-2.3a, spec FS-2.3 D2):</b> {@code khatm-api} and {@code
+ * khatm-worker} (ADR-09's two roles) are separate JVMs sharing one keystore <em>file</em> (one
+ * Docker volume) but each holds its own in-memory {@link KeyStore}, loaded once at {@link #init()}.
+ * A rotation performed by one process persists the new key to the shared file but does nothing to
+ * the other process's already-loaded copy — {@link #sign} and {@link #publicKey} both reload from
+ * disk once and retry on a miss (never on every call) precisely so the other process picks up a
+ * rotation it didn't itself perform without needing to restart. Found and fixed via this session's
+ * own live compose walkthrough — {@code khatm-worker}'s status-list resign failed with {@code
+ * JOSEException: No such key in keystore} for the newly-rotated key until this fix.
  */
 @Component
 @ConditionalOnProperty(name = "khatm.keys.provider", havingValue = "SOFT", matchIfMissing = true)
@@ -160,14 +170,7 @@ class SoftKeyProvider implements KeyProvider {
 
   @Override
   public SignResult sign(String providerRef, String kid, JWTClaimsSet claims) throws JOSEException {
-    PrivateKey privateKey;
-    synchronized (lock) {
-      try {
-        privateKey = (PrivateKey) keyStore.getKey(providerRef, passphrase);
-      } catch (GeneralSecurityException e) {
-        throw new JOSEException("Unable to load private key for providerRef=" + providerRef, e);
-      }
-    }
+    PrivateKey privateKey = loadPrivateKeyReloadingOnMiss(providerRef);
     if (privateKey == null) {
       throw new JOSEException("No such key in keystore: providerRef=" + providerRef);
     }
@@ -184,15 +187,52 @@ class SoftKeyProvider implements KeyProvider {
 
   @Override
   public Optional<PublicKeyHandle> publicKey(String providerRef, String kid) {
+    Certificate cert = loadCertificateReloadingOnMiss(providerRef);
+    if (cert == null) {
+      return Optional.empty();
+    }
+    return Optional.of(
+        new PublicKeyHandle(kid, JWSAlgorithm.ES256.getName(), (ECPublicKey) cert.getPublicKey()));
+  }
+
+  /**
+   * Look up {@code providerRef}'s private key, reloading the keystore from disk once and retrying
+   * if it is missing from the in-memory copy (spec FS-2.3 D2) — {@code khatm-api} and {@code
+   * khatm-worker} are separate JVMs sharing the same keystore <em>file</em> (one Docker volume),
+   * but each holds its own in-memory {@link KeyStore} loaded once at {@link #init()}. A rotation
+   * performed by one process (typically {@code khatm-api}, which serves the rotate endpoint)
+   * persists the new key to the shared file but does nothing to the other process's already-loaded
+   * in-memory copy — without this reload-on-miss fallback, {@code khatm-worker}'s {@code
+   * StatusListPublisher} would fail every re-sign attempt for a tenant whose key was just rotated
+   * by {@code khatm-api}, since its own in-memory keystore has no entry for the new {@code kid}
+   * until its next restart. Reloads only on an actual miss, never on every call, so this costs
+   * nothing in the far more common case where the requested key was already known.
+   */
+  private PrivateKey loadPrivateKeyReloadingOnMiss(String providerRef) throws JOSEException {
+    synchronized (lock) {
+      try {
+        PrivateKey privateKey = (PrivateKey) keyStore.getKey(providerRef, passphrase);
+        if (privateKey != null) {
+          return privateKey;
+        }
+        keyStore = loadOrCreate();
+        return (PrivateKey) keyStore.getKey(providerRef, passphrase);
+      } catch (GeneralSecurityException e) {
+        throw new JOSEException("Unable to load private key for providerRef=" + providerRef, e);
+      }
+    }
+  }
+
+  /** Same reload-on-miss fallback as {@link #loadPrivateKeyReloadingOnMiss}, for certificates. */
+  private Certificate loadCertificateReloadingOnMiss(String providerRef) {
     synchronized (lock) {
       try {
         Certificate cert = keyStore.getCertificate(providerRef);
-        if (cert == null) {
-          return Optional.empty();
+        if (cert != null) {
+          return cert;
         }
-        return Optional.of(
-            new PublicKeyHandle(
-                kid, JWSAlgorithm.ES256.getName(), (ECPublicKey) cert.getPublicKey()));
+        keyStore = loadOrCreate();
+        return keyStore.getCertificate(providerRef);
       } catch (KeyStoreException e) {
         throw new IllegalStateException(
             "Unable to read certificate for providerRef=" + providerRef, e);

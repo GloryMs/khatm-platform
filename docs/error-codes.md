@@ -9,6 +9,9 @@
 | `KH-CRD-0404` | 404 | `credential.not-found` |
 | `KH-CRD-0409` | 409 | `credential.not-claimable` |
 | `KH-KEY-0500` | 500 | `key.signing-failed` |
+| `KH-KEY-0404` | 404 | `key.not-found` |
+| `KH-KEY-0409` | 409 | `key.not-retiring` |
+| `KH-KEY-0422` | 422 | `key.retiring-too-young` |
 | `KH-SYS-0400` | 400 | `validation.failed` |
 | `KH-SYS-0500` | 500 | `system.unexpected-error` |
 | `KH-RBC-0401` | 401 | `error.rbc.unauthenticated` |

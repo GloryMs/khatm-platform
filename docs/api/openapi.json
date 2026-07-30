@@ -951,6 +951,47 @@
         },
         "type" : "object"
       },
+      "RetireKeyRequest" : {
+        "description" : "Optional min-age bypass for retiring a key",
+        "properties" : {
+          "force" : {
+            "type" : "boolean"
+          }
+        },
+        "type" : "object"
+      },
+      "RetireKeyResponse" : {
+        "description" : "The now-RETIRED signing key",
+        "properties" : {
+          "kid" : {
+            "type" : "string"
+          },
+          "state" : {
+            "type" : "string"
+          },
+          "validTo" : {
+            "format" : "date-time",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "RotateKeyResponse" : {
+        "description" : "The newly created, now-ACTIVE signing key",
+        "properties" : {
+          "kid" : {
+            "type" : "string"
+          },
+          "state" : {
+            "type" : "string"
+          },
+          "validFrom" : {
+            "format" : "date-time",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "SchemaAuthoringRequest" : {
         "properties" : {
           "claimsDef" : {
@@ -1297,7 +1338,7 @@
     "/.well-known/jwks.json" : {
       "get" : {
         "deprecated" : true,
-        "description" : "Public ACTIVE + RETIRING signing keys, no authentication required. Deprecated (spec FS-2.1 V2): aliases the default tenant only — every other tenant's JWKS is at GET /t/{tenantSlug}/.well-known/jwks.json. Stays available through Phase 2.",
+        "description" : "Public signing keys of every lifecycle state (ACTIVE/RETIRING/RETIRED), no authentication required. Deprecated (spec FS-2.1 V2): aliases the default tenant only — every other tenant's JWKS is at GET /t/{tenantSlug}/.well-known/jwks.json. Stays available through Phase 2.",
         "operationId" : "jwks_1",
         "responses" : {
           "200" : {
@@ -1890,6 +1931,133 @@
           }
         },
         "summary" : "List every signing key's lifecycle status",
+        "tags" : [ "admin-signing-keys" ]
+      }
+    },
+    "/api/v1/admin/signing-keys/rotate" : {
+      "post" : {
+        "description" : "Atomically: generate a new key via the configured KeyProvider, move the current ACTIVE key to RETIRING, and activate the new one. The one-ACTIVE-per-tenant partial unique index is the final arbiter under concurrent rotations — at most one concurrent caller ever succeeds. All of the tenant's status lists are also forced stale in the same operation, so the existing periodic sweep re-signs them with the new key within one cycle. Requires the key:manage scope (any actor kind).",
+        "operationId" : "rotate",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RotateKeyResponse"
+                }
+              }
+            },
+            "description" : "The newly created, now-ACTIVE key"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Authenticated without the key:manage scope"
+          }
+        },
+        "summary" : "Rotate the tenant's signing key",
+        "tags" : [ "admin-signing-keys" ]
+      }
+    },
+    "/api/v1/admin/signing-keys/{kid}/retire" : {
+      "post" : {
+        "description" : "Moves a RETIRING key to RETIRED. Only a RETIRING key may be retired (409 otherwise). Rejected with 422 if the key has not yet reached khatm.keys.min-retiring-age (default P30D) unless force=true (bypasses the guard, audited). A RETIRED key stays published in JWKS and stays verifiable — retiring never breaks verification of documents already signed with it. Requires the key:manage scope (any actor kind).",
+        "operationId" : "retire",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "kid",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/RetireKeyRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/RetireKeyResponse"
+                }
+              }
+            },
+            "description" : "The now-RETIRED key"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Authenticated without the key:manage scope"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No such key for the current tenant (KH-KEY-0404)"
+          },
+          "409" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "The key is not currently RETIRING (KH-KEY-0409)"
+          },
+          "422" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "The key has not yet reached khatm.keys.min-retiring-age; force=true to bypass (KH-KEY-0422)"
+          }
+        },
+        "summary" : "Retire a RETIRING signing key",
         "tags" : [ "admin-signing-keys" ]
       }
     },
@@ -4218,7 +4386,7 @@
     },
     "/t/{tenantSlug}/.well-known/jwks.json" : {
       "get" : {
-        "description" : "Public ACTIVE + RETIRING signing keys for the named tenant, no authentication required. Stays available regardless of the tenant's suspension status (spec V4).",
+        "description" : "Public signing keys of every lifecycle state (ACTIVE/RETIRING/RETIRED) for the named tenant, no authentication required. Stays available regardless of the tenant's suspension status (spec V4).",
         "operationId" : "jwks",
         "parameters" : [ {
           "description" : "the tenant's slug",

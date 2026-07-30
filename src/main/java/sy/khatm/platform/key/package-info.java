@@ -20,8 +20,12 @@
  * (spec FS-0.5 §2, D1): other modules still never see general rotation, only these specific, narrow
  * operations.
  *
- * <p><b>Published events:</b> none yet ({@code KeyRotated} — future, once rotation gets an
- * admin-triggered path in KH-2.2).
+ * <p><b>Published events:</b> {@link sy.khatm.platform.key.events.KeyRotated} (KH-2.3a, spec FS-2.3
+ * D3) — fired inside {@code KeyLifecycleService#rotate}'s transaction, externalized to the {@code
+ * khatm.credential.events} stream (ADR-09). Consumed by {@code status.worker}'s rotation handler,
+ * which bumps every one of the rotated tenant's status lists' version so the periodic sweep
+ * re-signs them with the new key. {@code key} itself has no dependency on {@code status} — only
+ * {@code status} (which already depends on {@code key :: api}) knows this event exists.
  *
  * <p><b>Tables owned:</b> {@code issuer_key} (table exists since the KH-0.2.1 baseline schema;
  * populated and rotated as of KH-0.5 by {@link sy.khatm.platform.key.domain.KeyLifecycleService}).
@@ -29,10 +33,19 @@
  * <p><b>Signing-key status (KH-1.1.5-BE, spec FS-1.5.4 #4):</b> {@code
  * web.SigningKeyStatusController} serves {@code GET /api/v1/admin/signing-keys} — every key
  * regardless of state (including {@code RETIRED}), lifecycle fields only, never JWK material — via
- * {@link sy.khatm.platform.key.domain.KeyLifecycleService#listAllStatuses} (new). Entirely inside
- * this module, reading this module's own data; no new {@code key :: api} surface was added (a
- * deliberate scope cut this session — see {@code docs/STATE.md} — so the "other modules must never
- * see rotation" stance above stays untouched for now).
+ * {@link sy.khatm.platform.key.domain.KeyLifecycleService#listAllStatuses}. Entirely inside this
+ * module, reading this module's own data; no new {@code key :: api} surface was added (a deliberate
+ * scope cut — see {@code docs/STATE.md} — so the "other modules must never see rotation" stance
+ * above stays untouched).
+ *
+ * <p><b>Rotation/retirement (KH-2.3a, spec FS-2.3 D2/D4):</b> {@code
+ * web.SigningKeyRotationController} serves {@code POST /api/v1/admin/signing-keys/rotate} and
+ * {@code POST /api/v1/admin/signing-keys/{kid}/retire}, both {@code key:manage}, both acting only
+ * on the caller's own ambient tenant — no cross-tenant path exists for either (the per-tenant
+ * KMS-provider column, spec V3, is out of scope until KH-2.3b), so neither needed {@code
+ * shared.OnBehalfOfExecutor}. {@code RETIRED} keys stay published in JWKS and stay resolvable by
+ * {@code KeyVerifier} (spec FS-0.2 §3.2 / FS-2.3 D2/D4 — corrected this session; earlier code
+ * excluded {@code RETIRED} from both, which was a bug against the spec, not a deliberate design).
  */
 @org.springframework.modulith.ApplicationModule
 package sy.khatm.platform.key;

@@ -1,8 +1,11 @@
 package sy.khatm.platform.key.domain;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.nimbusds.jwt.JWTClaimsSet;
+import java.sql.Timestamp;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import java.util.List;
@@ -16,6 +19,10 @@ import sy.khatm.platform.key.api.SignResult;
 import sy.khatm.platform.key.persistence.IssuerKeyRepository;
 import sy.khatm.platform.shared.TenantContext;
 import sy.khatm.platform.shared.Uuidv7;
+import sy.khatm.platform.shared.error.ConflictException;
+import sy.khatm.platform.shared.error.ErrorCode;
+import sy.khatm.platform.shared.error.NotFoundException;
+import sy.khatm.platform.shared.error.ValidationException;
 import sy.khatm.platform.support.IntegrationTestSupport;
 
 /**
@@ -103,8 +110,15 @@ class KeyLifecycleServiceTest extends IntegrationTestSupport {
     assertThat(resolved).isEmpty();
   }
 
+  /**
+   * Spec FS-0.2 §3.2 / FS-2.3 D2/D4 — corrected as of KH-2.3a: a {@code RETIRED} key must stay
+   * resolvable/verifiable for as long as it stays published in JWKS. This replaces a pre-KH-2.3a
+   * test of the same name that pinned the opposite (and, on verification against the spec, wrong)
+   * behavior — see {@code KeyLifecycleService#resolvePublicKey}'s own Javadoc for the reversal
+   * note.
+   */
   @Test
-  void resolvePublicKey_retiredKid_returnsEmpty_noFallback() {
+  void resolvePublicKey_retiredKid_stillResolves_neverExcludedFromVerification() {
     IssuerKey activeBefore =
         repository.findByTenantIdAndState(TenantContext.current(), "ACTIVE").orElseThrow();
     String oldKid = activeBefore.getKid();
@@ -112,14 +126,14 @@ class KeyLifecycleServiceTest extends IntegrationTestSupport {
     IssuerKeySummary rotated =
         lifecycle.rotate(TenantContext.current(), TenantContext.currentSlug());
 
-    // The pre-rotate ACTIVE key is now RETIRING. The MVP has no automatic RETIRING->RETIRED timer
-    // yet (spec FS-0.5 §5), so force it the rest of the way to exercise "RETIRED never resolves."
+    // The pre-rotate ACTIVE key is now RETIRING. Force it the rest of the way to RETIRED to
+    // exercise "RETIRED still resolves" directly, without waiting on the real min-age guard.
     IssuerKey nowRetiring = repository.findByKid(oldKid).orElseThrow();
     assertThat(nowRetiring.getState()).isEqualTo("RETIRING");
     nowRetiring.setState("RETIRED");
     repository.save(nowRetiring);
 
-    assertThat(lifecycle.resolvePublicKey(oldKid)).isEmpty();
+    assertThat(lifecycle.resolvePublicKey(oldKid)).isPresent();
     // Sanity: the freshly rotated-in ACTIVE key is unaffected and still resolves.
     assertThat(lifecycle.resolvePublicKey(rotated.kid())).isPresent();
   }
@@ -191,6 +205,116 @@ class KeyLifecycleServiceTest extends IntegrationTestSupport {
                 + " 'issuer_key'",
             Integer.class);
     assertThat(count).isGreaterThanOrEqualTo(1);
+  }
+
+  @Test
+  void retire_unknownKid_throwsNotFound() {
+    assertThatThrownBy(() -> lifecycle.retire("nonexistent-tenant:key-999", false))
+        .isInstanceOf(NotFoundException.class)
+        .satisfies(
+            e -> assertThat(((NotFoundException) e).errorCode()).isEqualTo(ErrorCode.KH_KEY_0404));
+  }
+
+  @Test
+  void retire_activeKey_throwsConflict_onlyRetiringMayBeRetired() {
+    IssuerKey active =
+        repository.findByTenantIdAndState(TenantContext.current(), "ACTIVE").orElseThrow();
+
+    assertThatThrownBy(() -> lifecycle.retire(active.getKid(), false))
+        .isInstanceOf(ConflictException.class)
+        .satisfies(
+            e -> assertThat(((ConflictException) e).errorCode()).isEqualTo(ErrorCode.KH_KEY_0409));
+  }
+
+  @Test
+  void retire_alreadyRetired_throwsConflict() {
+    IssuerKey activeBefore =
+        repository.findByTenantIdAndState(TenantContext.current(), "ACTIVE").orElseThrow();
+    String oldKid = activeBefore.getKid();
+    lifecycle.rotate(TenantContext.current(), TenantContext.currentSlug());
+    lifecycle.retire(oldKid, true);
+
+    assertThatThrownBy(() -> lifecycle.retire(oldKid, false))
+        .isInstanceOf(ConflictException.class)
+        .satisfies(
+            e -> assertThat(((ConflictException) e).errorCode()).isEqualTo(ErrorCode.KH_KEY_0409));
+  }
+
+  @Test
+  void retire_tooYoung_withoutForce_throwsValidation() {
+    IssuerKey activeBefore =
+        repository.findByTenantIdAndState(TenantContext.current(), "ACTIVE").orElseThrow();
+    String oldKid = activeBefore.getKid();
+    lifecycle.rotate(TenantContext.current(), TenantContext.currentSlug());
+
+    assertThatThrownBy(() -> lifecycle.retire(oldKid, false))
+        .isInstanceOf(ValidationException.class)
+        .satisfies(
+            e ->
+                assertThat(((ValidationException) e).errorCode()).isEqualTo(ErrorCode.KH_KEY_0422));
+
+    assertThat(repository.findByKid(oldKid).orElseThrow().getState()).isEqualTo("RETIRING");
+  }
+
+  @Test
+  void retire_tooYoung_forced_succeeds_andAuditsForcedTrue() {
+    IssuerKey activeBefore =
+        repository.findByTenantIdAndState(TenantContext.current(), "ACTIVE").orElseThrow();
+    String oldKid = activeBefore.getKid();
+    lifecycle.rotate(TenantContext.current(), TenantContext.currentSlug());
+
+    IssuerKeySummary retired = lifecycle.retire(oldKid, true);
+
+    assertThat(retired.state()).isEqualTo("RETIRED");
+    Integer forcedTrueCount =
+        jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM audit_log WHERE action = 'KEY_RETIRED' AND entity_ref = ? AND"
+                + " detail->>'forced' = 'true'",
+            Integer.class,
+            oldKid);
+    assertThat(forcedTrueCount).isEqualTo(1);
+  }
+
+  @Test
+  void retire_agedPastMinRetiringAge_succeedsWithoutForce_andAuditsForcedFalse() {
+    IssuerKey activeBefore =
+        repository.findByTenantIdAndState(TenantContext.current(), "ACTIVE").orElseThrow();
+    String oldKid = activeBefore.getKid();
+    lifecycle.rotate(TenantContext.current(), TenantContext.currentSlug());
+    // Backdate valid_to (the moment this key became RETIRING) well past the default P30D guard —
+    // same direct-SQL backdating technique CredentialSearchStatusFilterTest's fixture helper uses
+    // for an analogous CHECK-constrained "make this look old" need.
+    jdbcTemplate.update(
+        "UPDATE issuer_key SET valid_to = ? WHERE kid = ?",
+        Timestamp.from(Instant.now().minus(Duration.ofDays(31))),
+        oldKid);
+
+    IssuerKeySummary retired = lifecycle.retire(oldKid, false);
+
+    assertThat(retired.state()).isEqualTo("RETIRED");
+    Integer forcedFalseCount =
+        jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM audit_log WHERE action = 'KEY_RETIRED' AND entity_ref = ? AND"
+                + " detail->>'forced' = 'false'",
+            Integer.class,
+            oldKid);
+    assertThat(forcedFalseCount).isEqualTo(1);
+  }
+
+  @Test
+  void retire_retiredKeyStaysResolvable_andStaysPublished() {
+    IssuerKey activeBefore =
+        repository.findByTenantIdAndState(TenantContext.current(), "ACTIVE").orElseThrow();
+    String oldKid = activeBefore.getKid();
+    lifecycle.rotate(TenantContext.current(), TenantContext.currentSlug());
+
+    lifecycle.retire(oldKid, true);
+
+    assertThat(lifecycle.resolvePublicKey(oldKid)).isPresent();
+    assertThat(
+            lifecycle.publishableKeysForDefaultTenantJwks(TenantContext.current()).stream()
+                .map(PublishedKey::kid))
+        .contains(oldKid);
   }
 
   private static JWTClaimsSet sampleClaims() {

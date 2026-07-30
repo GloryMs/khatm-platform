@@ -2,11 +2,14 @@ package sy.khatm.platform.key.domain;
 
 import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jwt.JWTClaimsSet;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import sy.khatm.platform.key.api.IssuerKeySummaryView;
@@ -15,10 +18,15 @@ import sy.khatm.platform.key.api.PublicKeyHandle;
 import sy.khatm.platform.key.api.PublishedKeyView;
 import sy.khatm.platform.key.api.SignResult;
 import sy.khatm.platform.key.api.TenantKeyProvisioner;
+import sy.khatm.platform.key.events.KeyRotated;
 import sy.khatm.platform.key.persistence.IssuerKeyRepository;
 import sy.khatm.platform.shared.Uuidv7;
 import sy.khatm.platform.shared.audit.AuditAction;
 import sy.khatm.platform.shared.audit.AuditService;
+import sy.khatm.platform.shared.error.ConflictException;
+import sy.khatm.platform.shared.error.ErrorCode;
+import sy.khatm.platform.shared.error.NotFoundException;
+import sy.khatm.platform.shared.error.ValidationException;
 
 /**
  * Owns the {@code issuer_key} lifecycle: state transitions, the one-{@code ACTIVE}-per-tenant
@@ -46,22 +54,33 @@ public class KeyLifecycleService implements TenantKeyProvisioner, JwksLookup {
   private static final String STATE_ACTIVE = "ACTIVE";
   private static final String STATE_RETIRING = "RETIRING";
   private static final String STATE_RETIRED = "RETIRED";
-  private static final List<String> PUBLISHABLE_STATES = List.of(STATE_ACTIVE, STATE_RETIRING);
+  // Spec FS-0.2 §3.2 / FS-2.3 D2/D4: RETIRING and RETIRED both stay published — only a key that
+  // was never issued (PENDING, not reachable by any code path today) would be excluded, and there
+  // is no PENDING row to exclude in practice. Final trimming of long-retired keys out of JWKS is a
+  // Phase 3 trust-bundle concern (spec D4), not this session's.
+  private static final List<String> PUBLISHABLE_STATES =
+      List.of(STATE_ACTIVE, STATE_RETIRING, STATE_RETIRED);
 
   private final IssuerKeyRepository repository;
   private final KeyProvider provider;
   private final AuditService audit;
+  private final ApplicationEventPublisher eventPublisher;
   private final String providerName;
+  private final Duration minRetiringAge;
 
   KeyLifecycleService(
       IssuerKeyRepository repository,
       KeyProvider provider,
       AuditService audit,
-      @Value("${khatm.keys.provider:SOFT}") String providerName) {
+      ApplicationEventPublisher eventPublisher,
+      @Value("${khatm.keys.provider:SOFT}") String providerName,
+      @Value("${khatm.keys.min-retiring-age:P30D}") Duration minRetiringAge) {
     this.repository = repository;
     this.provider = provider;
     this.audit = audit;
+    this.eventPublisher = eventPublisher;
     this.providerName = providerName;
+    this.minRetiringAge = minRetiringAge;
   }
 
   /**
@@ -92,18 +111,84 @@ public class KeyLifecycleService implements TenantKeyProvisioner, JwksLookup {
    * <p>The retiring update runs as an immediate bulk statement ({@link
    * IssuerKeyRepository#retireActive}) strictly before the new key is inserted, so the {@code
    * issuer_key_one_active} partial unique index never sees two {@code ACTIVE} rows for the same
-   * tenant at once (spec FS-0.5 §5, DoD #4).
+   * tenant at once (spec FS-0.5 §5, DoD #4) — this is also the race arbiter for concurrent
+   * rotations: two simultaneous callers both attempt this same sequence, and Postgres row-level
+   * locking on the {@code retireActive} UPDATE serialises them so at most one insert ever lands as
+   * {@code ACTIVE}; the loser's insert fails the partial unique index outright rather than silently
+   * producing two {@code ACTIVE} rows.
+   *
+   * <p>Publishes {@link KeyRotated} inside this same transaction (spec FS-2.3 D3) — {@code
+   * status.worker}'s rotation handler consumes it to bump every one of this tenant's status lists'
+   * version, forcing the existing periodic sweep to re-sign each with the new key within one cycle.
    *
    * @param tenantId the tenant to rotate
    * @param tenantSlug the tenant's slug, used to build the new key's {@code kid}
    * @return the newly created, now-{@code ACTIVE} key's summary
    */
   @Transactional
-  IssuerKeySummary rotate(UUID tenantId, String tenantSlug) {
+  public IssuerKeySummary rotate(UUID tenantId, String tenantSlug) {
+    String oldKid =
+        repository
+            .findByTenantIdAndState(tenantId, STATE_ACTIVE)
+            .map(IssuerKey::getKid)
+            .orElse(null);
     repository.retireActive(tenantId, Instant.now());
     IssuerKey created = createActiveKey(tenantId, tenantSlug);
     audit.record(AuditAction.KEY_ROTATED, "issuer_key", created.getKid(), null);
+    eventPublisher.publishEvent(new KeyRotated(tenantId, oldKid, created.getKid(), Instant.now()));
     return toSummary(created);
+  }
+
+  /**
+   * Retire a {@code RETIRING} key to {@code RETIRED} (spec FS-2.3 D4).
+   *
+   * <p>Only a {@code RETIRING} key may be retired — {@code ACTIVE} must be rotated out first,
+   * {@code RETIRED} is already retired, and {@code PENDING} is never reachable today; any other
+   * state throws {@link ConflictException} {@code KH-KEY-0409}. RLS scopes {@link
+   * IssuerKeyRepository#findByKid} to the caller's own ambient tenant, so a {@code kid} belonging
+   * to another tenant resolves identically to an unknown one — both throw {@link NotFoundException}
+   * {@code KH-KEY-0404}.
+   *
+   * <p>The min-age guard ({@code khatm.keys.min-retiring-age}, default {@code P30D}) protects
+   * long-lived offline documents whose verifier may not have refreshed its JWKS cache recently —
+   * retiring a key too soon after rotation risks a document that was valid yesterday failing to
+   * verify today for no reason the holder can explain. Measured from {@link IssuerKey#getValidTo()}
+   * (set the moment this key left {@code ACTIVE}, i.e. exactly when it became {@code RETIRING}).
+   * {@code force=true} bypasses the guard — always audited with {@code detail.forced=true} so a
+   * deliberate early retirement is distinguishable from a routine one after the fact.
+   *
+   * <p>{@code RETIRED} keys stay published in JWKS and stay resolvable by {@link #resolvePublicKey}
+   * — retiring never breaks verification of documents already signed with this key (spec FS-0.2
+   * §3.2, FS-2.3 D4); only the deferred Phase-3 trust-bundle work will ever drop a key out of JWKS
+   * entirely.
+   *
+   * @param kid the key to retire
+   * @param force bypass the min-age guard (audited)
+   * @return the now-{@code RETIRED} key's summary
+   * @throws NotFoundException {@code KH-KEY-0404} if no such key exists for the current tenant
+   * @throws ConflictException {@code KH-KEY-0409} if the key is not currently {@code RETIRING}
+   * @throws ValidationException {@code KH-KEY-0422} if the key has not yet reached {@code
+   *     khatm.keys.min-retiring-age} and {@code force} is {@code false}
+   */
+  @Transactional
+  public IssuerKeySummary retire(String kid, boolean force) {
+    IssuerKey key =
+        repository
+            .findByKid(kid)
+            .orElseThrow(() -> new NotFoundException(ErrorCode.KH_KEY_0404, "key.not-found"));
+    if (!STATE_RETIRING.equals(key.getState())) {
+      throw new ConflictException(ErrorCode.KH_KEY_0409, "key.not-retiring");
+    }
+    Duration elapsed = Duration.between(key.getValidTo(), Instant.now());
+    if (!force && elapsed.compareTo(minRetiringAge) < 0) {
+      Duration remaining = minRetiringAge.minus(elapsed);
+      throw new ValidationException(
+          ErrorCode.KH_KEY_0422, "key.retiring-too-young", remaining.toString());
+    }
+    key.setState(STATE_RETIRED);
+    repository.save(key);
+    audit.record(AuditAction.KEY_RETIRED, "issuer_key", kid, Map.of("forced", force));
+    return toSummary(key);
   }
 
   /**
@@ -129,24 +214,28 @@ public class KeyLifecycleService implements TenantKeyProvisioner, JwksLookup {
   /**
    * Resolve the public key for a {@code kid}, strictly — no fallback to the current active key.
    *
-   * <p>An unknown {@code kid}, or one belonging to a {@code RETIRED} key, both resolve to {@link
-   * Optional#empty()} (spec FS-0.5 §4, DoD #3).
+   * <p>An unknown {@code kid} resolves to {@link Optional#empty()} (spec FS-0.5 §4, DoD #3). {@code
+   * RETIRED} keys DO still resolve (spec FS-0.2 §3.2 / FS-2.3 D2/D4, corrected as of KH-2.3a —
+   * earlier versions of this method and its {@code key.api.KeyVerifier} caller excluded {@code
+   * RETIRED} here; that was a bug against the spec's own wording, not a deliberate design, fixed
+   * this session): a document signed years ago with a since-retired key must keep verifying for as
+   * long as that key stays in JWKS, which is the entire point of retiring rather than deleting.
    *
    * @param kid the key id to resolve
-   * @return the public key handle, or empty if {@code kid} is unknown or {@code RETIRED}
+   * @return the public key handle, or empty only if {@code kid} is unknown
    */
   @Transactional(readOnly = true)
   Optional<PublicKeyHandle> resolvePublicKey(String kid) {
     return repository
         .findByKid(kid)
-        .filter(k -> !STATE_RETIRED.equals(k.getState()))
         .flatMap(k -> provider.publicKey(k.getProviderRef(), k.getKid()));
   }
 
   /**
-   * List the tenant's publicly publishable keys ({@code ACTIVE} + {@code RETIRING}) for the legacy,
-   * default-tenant-only JWKS endpoint (spec FS-0.5 §6, {@code key.web.JwksController}). {@code
-   * RETIRED} keys are never published.
+   * List the tenant's publicly publishable keys ({@code ACTIVE} + {@code RETIRING} + {@code
+   * RETIRED}) for the legacy, default-tenant-only JWKS endpoint (spec FS-0.5 §6, {@code
+   * key.web.JwksController}). {@code RETIRED} keys stay published (spec FS-0.2 §3.2 / FS-2.3 D4) —
+   * only a Phase-3 trust-bundle mechanism will ever drop one out entirely.
    *
    * <p>Named distinctly from the {@link JwksLookup#publishableKeys(UUID)} cross-module override
    * below — same underlying query, different return type ({@link PublishedKey} is module-private;
@@ -216,8 +305,8 @@ public class KeyLifecycleService implements TenantKeyProvisioner, JwksLookup {
   }
 
   /**
-   * List a tenant's publishable ({@code ACTIVE} + {@code RETIRING}) keys for {@code
-   * tenant.web.TenantJwksController}'s per-tenant JWKS endpoint (spec FS-2.1 D8) — the same
+   * List a tenant's publishable ({@code ACTIVE} + {@code RETIRING} + {@code RETIRED}) keys for
+   * {@code tenant.web.TenantJwksController}'s per-tenant JWKS endpoint (spec FS-2.1 D8) — the same
    * underlying query as {@link #publishableKeysForDefaultTenantJwks(UUID)}, mapped to the
    * cross-module view type.
    *
@@ -253,6 +342,6 @@ public class KeyLifecycleService implements TenantKeyProvisioner, JwksLookup {
   }
 
   private static IssuerKeySummary toSummary(IssuerKey key) {
-    return new IssuerKeySummary(key.getKid(), key.getState(), key.getValidFrom());
+    return new IssuerKeySummary(key.getKid(), key.getState(), key.getValidFrom(), key.getValidTo());
   }
 }

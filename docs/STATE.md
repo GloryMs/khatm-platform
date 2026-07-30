@@ -17,6 +17,128 @@ rule), and PRs may be merged on Majd's instruction without waiting on GitHub's c
 section once CI is confirmed green again post-2026-08-01.
 
 ## Current phase / task
+- **feat/KH-2.3a-BE-key-rotation — provider-agnostic signing-key rotation & retirement** (session
+  `feat/KH-2.3a-BE-key-rotation`, 2026-07-30, spec `docs/specs/FS-2.3-kms-key-rotation.md` D1-D4/D7/
+  D8, veto resolutions V1-V4 pre-approved before this session). `mvn verify` green, **399/399 tests
+  (18 new)**. New `KH-KEY-0404/0409/0422` (Arabic-review gate applies — 3 new `key.*` keys in both
+  bundles, not yet confirmed by Majd). PR opened, **NOT merged**.
+  - **Verify-first findings, all recorded before writing (per the brief):**
+    1. `key.domain.KeyLifecycleService#rotate` already existed in full since KH-0.5 (the
+       `retireActive`-then-insert ordering against the `issuer_key_one_active` partial index) —
+       just never wired to a REST endpoint. D2 was mostly wiring (controller, DTOs, scope gate,
+       concurrency test), not new rotation logic.
+    2. **A real spec-vs-code bug, found and fixed:** both FS-0.2 §3.2 and this session's own FS-2.3
+       explicitly require `RETIRED` keys to stay verifiable and published in JWKS ("`RETIRING`/
+       `RETIRED` تبقى قابلة للتحقق، JWKS يعرضها") — but live code excluded `RETIRED` from both
+       `KeyLifecycleService#resolvePublicKey` and the JWKS `PUBLISHABLE_STATES` set, and an existing
+       test (`resolvePublicKey_retiredKid_returnsEmpty_noFallback`) pinned exactly that wrong
+       behavior. Fixed: `RETIRED` now resolves/publishes identically to `RETIRING`; only an
+       *unknown* `kid` returns empty. The old test was rewritten (not silently deleted) to assert
+       the corrected behavior, same reversal discipline as the KH-1.6 PR #33 precedent.
+    3. Status-list sweep mechanism confirmed: `StatusList.version` (staleness counter) vs
+       `artifactVersion` (last signed) — `findStaleRefs()` already republishes whenever
+       `artifactVersion < version`. D3 needed only a bulk `version + 1` bump per tenant at rotation
+       time (the runtime equivalent of `V9__resign_status_lists.sql`'s one-off migration) — no
+       sweep-worker change.
+    4. Signing call sites (`CredentialService`, `StatusListPublisher`) both resolve the tenant's
+       `ACTIVE` key fresh from DB on every `KeySigner#sign` call — no cached `kid` anywhere.
+  - **D2/D3 cross-module design — a real Modulith constraint, resolved before writing:** `status`
+    already depends on `key :: api` (for `KeySigner`), so `key` depending back on `status` for D3's
+    version-bump would be a cycle. Fixed via the async pattern (ADR-09) already established for
+    same-module event round-trips (`status.events.StatusListChanged`), extended to a genuinely
+    cross-module case for the first time: new `key.events.KeyRotated` (a `@NamedInterface("events")`
+    — required; Modulith rejects a reference to a non-exposed sub-package even for a plain `.class`
+    literal in a `StreamEventHandler#eventType()`, confirmed by `ModulithBoundariesTest` failing
+    until the annotation was added), published inside `rotate()`'s transaction, externalized to the
+    existing `khatm.credential.events` stream; new `status.worker.KeyRotationHandler` consumes it
+    and bumps every one of the tenant's `status_list` rows' `version` via a new
+    `StatusListRepository#bumpVersionForTenant` bulk update — `key` itself never depends on
+    `status`, only publishes an event it doesn't know or care who (if anyone) consumes.
+  - **A second real bug, found only by running the live compose DoD (not by inspection):**
+    `khatm-api` and `khatm-worker` are separate JVMs sharing one `SoftKeyProvider` keystore *file*
+    (one Docker volume) but each holds its own in-memory `KeyStore`, loaded once at startup. Rotating
+    via `khatm-api` persisted the new key to the shared file but left `khatm-worker`'s already-loaded
+    copy stale — its `StatusListPublisher` failed every re-sign attempt for the rotated tenant with
+    `JOSEException: No such key in keystore` until an actual process restart, which would have
+    silently broken D3's own "sweep re-signs within one cycle" guarantee in the real multi-role
+    deployment (ADR-09). Fixed: `SoftKeyProvider#sign`/`#publicKey` now reload the keystore from
+    disk once and retry on a miss (never on every call). New
+    `key.CrossProcessRotationKeystoreReloadTest` reproduces this with two concurrently-alive
+    `ApplicationContext`s sharing one keystore file (not sequential like
+    `KeyProviderRestartPersistenceTest` — a restart naturally reloads from disk; two live processes
+    do not, which is what actually exposed this).
+  - **D2 — `POST /api/v1/admin/signing-keys/rotate`, `key.web.SigningKeyRotationController`:**
+    `key:manage`, acts only on the caller's own ambient tenant (same as the existing `GET`) — no
+    cross-tenant path exists for signing-key rotation this session (V3's per-tenant provider column
+    is KH-2.3b's). New `key.domain.ConcurrentRotationTest` (10 concurrent callers, same tenant):
+    exactly one succeeds, every loser fails outright on the partial unique index (not silently
+    leaving two `ACTIVE` rows), exactly one `ACTIVE` key remains.
+  - **D3 — status-list forced version-bump:** covered above; regression test
+    `status.worker.KeyRotationWorkerTest` (dedicated Postgres+Redis, short sweep debounce) proves
+    the full path — allocate a list, let the sweep publish it under the pre-rotation key, rotate,
+    assert the sweep republishes with the **new** kid (decoded from the artifact's own JWS header).
+  - **D4 — `POST /api/v1/admin/signing-keys/{kid}/retire`:** `RETIRING`→`RETIRED` only (409
+    `KH-KEY-0409` otherwise, including an already-`RETIRED` key); `khatm.keys.min-retiring-age`
+    (default `P30D`, measured from `IssuerKey.validTo` — the moment the key left `ACTIVE`) guards
+    early retirement with `422 KH-KEY-0422` and the remaining wait substituted into the localized
+    message (`details[]` was considered and deliberately not extended for this — `ErrorDetail` is
+    field-shaped for Bean Validation specifically, and `GlobalExceptionHandler` hardcodes
+    `details=[]` for every plain `KhatmException`; extending shared error infra for one call site
+    wasn't justified — recorded as a judgment call, not a silent gap). `force=true` bypasses,
+    audited (`KEY_RETIRED`, `detail.forced`). `RETIRED` keys stay in JWKS/resolvable (the bug-2 fix
+    above is what makes this true). New domain tests (unknown-kid 404, `ACTIVE`-key 409,
+    already-`RETIRED` 409, too-young 422 + state unchanged, forced success + audited
+    `forced:true`, aged-past-guard success without force + audited `forced:false` via a direct
+    `valid_to` backdate — same technique `chore/credential-search-status-filter`'s fixture helper
+    used for an analogous CHECK-constrained "make this look old" need) plus HTTP-level
+    `rbac.SigningKeyRotationGateTest` (401/403/200 for rotate; 401/403/404/409/422→200 for retire).
+    One test-only bug found and fixed along the way (not a production bug): manually
+    `URLEncoder.encode`-ing a `kid` containing `:` before handing it to `TestRestTemplate.exchange`
+    double-encoded it (`%3A` → `%253A`), which Spring Security's `StrictHttpFirewall` correctly
+    rejected as a suspicious `%25` sequence (401, not the expected business-logic status) — fixed by
+    passing the raw `kid` and letting `RestTemplate` encode it exactly once.
+  - **D7 — wallet kid-selection, NOT performed this session:** requires a real/emulated wallet
+    device, unavailable in this session's environment. Every other DoD checkpoint (issue → rotate →
+    old verifies + new issuance carries new kid → status lists re-signed → early retire 422 → forced
+    retire 200 audited → old credential still verifies post-retirement, `RETIRED` in JWKS) was run
+    for real against the rebuilt live compose stack — see below. **Open item for a future session or
+    KH-2.3.3 game-day: actually present a pre-rotation credential to a real wallet and confirm it
+    selects the JWKS entry by `kid` rather than the first key in the array** — if it fails this, per
+    the spec's own D7 wording, stop wallet-side and open a W5 ask; do not attempt a platform-side
+    workaround (weakening JWKS back to one key would defeat rotation entirely).
+  - **D8 — audit/errors/runbook:** `AuditAction.KEY_RETIRED` (`KEY_ROTATED` already existed, reused).
+    `KH-KEY-0404/0409/0422` + 3 new `key.*` message keys (EN done; AR drafted, **Arabic-speaker
+    review not yet confirmed by Majd — merge blocker**). New `docs/runbooks/key-rotation.md`:
+    step-by-step with verification checkpoints at every stage, and an explicit "why rotation is
+    roll-forward-only, no rollback section" rationale (rolling back to a possibly-compromised or
+    already-retiring key is never the safe direction; the remedy for a bad rotation is another
+    rotation).
+  - **`docs/CONVENTIONS.md §12` added** (new section, appended at the end rather than inserted
+    in-place, specifically so existing section numbers — and CLAUDE.md's own "§7" cross-reference to
+    the security/error-handling section — don't shift): the context-switch-before-transaction
+    pattern, its 3 existing occurrences (`ApiKeyService#create`, `TenantAdminService#create`,
+    `AuthService#login`), and an explicit note that this session's rotation/retirement endpoints do
+    **NOT** need it (no cross-tenant caller exists for either).
+  - **Contract:** `docs/api/openapi.json` regenerated via `OpenApiContractTest`'s own mechanism —
+    additive-only (two new operations + their request/response schemas, confirmed via `git diff`, no
+    path/schema removed). `docs/error-codes.md` regenerated (3 new `KH-KEY-*` rows).
+  - **Tests (18 new):** `key.domain.ConcurrentRotationTest` (1, the mandatory race test),
+    `key.domain.KeyLifecycleServiceTest` (+7 — retire lifecycle, min-age guard both directions,
+    RETIRED-stays-resolvable reversal), `rbac.SigningKeyRotationGateTest` (8), `key.
+    CrossProcessRotationKeystoreReloadTest` (1, the SoftKeyProvider cross-process bug), `status.
+    worker.KeyRotationWorkerTest` (1, the D3 regression test).
+  - **DoD — live compose e2e, run for real** (rebuilt `khatm-api`/`khatm-worker` twice — once before
+    finding the cross-process keystore bug, once after fixing it — against the existing dev volume,
+    V1-V12 already applied): issue a credential under `khatm-default:key-1` → `verify` valid → rotate
+    (→ `key-2` `ACTIVE`, `key-1` `RETIRING`, both in JWKS) → old credential still verifies → new
+    issuance carries `key-2` → **first attempt**: worker's status-list resign failed with the
+    cross-process keystore bug (found here, fixed, rebuilt) → **second attempt**: rotated again
+    (→ `key-3`) without restarting either container, worker resigned `sl/khatm-default/default` with
+    `key-3` within one sweep tick, confirmed by decoding the artifact's own JWS header repeatedly →
+    early retire of `key-1` → `422 KH-KEY-0422` with `PT719H51M...` remaining → forced retire → `200`
+    RETIRED, `audit_log` confirms `detail.forced:true` → old credential (`key-1`) still verifies,
+    `key-1` still in JWKS. D7 (wallet) not performed — see above.
+
 - Phase 0 — Production Foundation, fully closed (see prior sessions).
 - **feat/KH-2.2d-BE-multitenant-login — closes the two platform gaps khatm-console recorded
   against FS-2.2's exit walkthrough** (session `feat/KH-2.2d-BE-multitenant-login`, 2026-07-30,

@@ -74,6 +74,11 @@ khatm:
   keys:
     # KH-0.5 (spec FS-0.5 §7): SOFT today; KMS/PKCS11 later are a config change only (D3).
     provider: SOFT
+    # KH-2.3a (spec FS-2.3 D4/V4): a RETIRING key must stay RETIRING for at least this long before
+    # POST /api/v1/admin/signing-keys/{kid}/retire is allowed to retire it (force=true bypasses,
+    # audited) — protects long-lived offline documents that may not resync their verifier's JWKS
+    # cache for a while.
+    min-retiring-age: P30D
     soft:
       keystore-path: ${KHATM_KEYS_KEYSTORE_PATH:/var/khatm/keys/khatm-keys.p12}
       # No default here on purpose — SoftKeyProvider fails startup if this is blank outside the

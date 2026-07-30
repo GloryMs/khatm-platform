@@ -23,6 +23,12 @@
  * fired inside the revoke transaction's bit-flip, externalized to the {@code
  * khatm.credential.events} stream.
  *
+ * <p><b>Consumed events:</b> {@code key.events.KeyRotated} (KH-2.3a, spec FS-2.3 D3) — {@code
+ * worker.KeyRotationHandler} bumps every one of the rotated tenant's status lists' {@code version}
+ * so the periodic {@code worker.StatusListPublishSweepWorker} re-signs each with the tenant's new
+ * key within one cycle. This module already depends on {@code key :: api} (for {@code KeySigner}),
+ * so consuming a second public type from {@code key} adds no new Modulith dependency edge.
+ *
  * <p><b>Tables owned:</b> {@code status_list} (V1 + V3's {@code signed_artifact}/{@code
  * artifact_version} columns).
  */

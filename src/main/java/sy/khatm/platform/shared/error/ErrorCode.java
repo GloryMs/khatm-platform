@@ -68,6 +68,12 @@ import org.springframework.http.HttpStatus;
  * CRD}. {@code KH_USR_0423} is the first code whose suffix ({@code 423}) does not mirror its HTTP
  * status ({@code 409}) — see its own Javadoc.
  *
+ * <p><b>{@code KEY} batch, second wave</b> (KH-2.3a, spec FS-2.3 D2/D4): {@code KEY} already
+ * existed ({@link #KH_KEY_0500}) but had no request-error paths until this session's
+ * admin-triggered rotation/retirement endpoints — {@code KH-KEY-0404} unknown {@code kid}, {@code
+ * KH-KEY-0409} the target key is not {@code RETIRING}, {@code KH-KEY-0422} the min-retiring-age
+ * guard (spec V4).
+ *
  * <p>{@code docs/error-codes.md} is generated from this enum by a test ({@code
  * ErrorCodesDocGenerationTest}) — never hand-edited (CLAUDE.md work rule 1).
  */
@@ -87,6 +93,33 @@ public enum ErrorCode {
 
   /** Signing a credential's SD-JWT failed (spec FS-0.5's {@code KeySigner}, wrapped). */
   KH_KEY_0500(HttpStatus.INTERNAL_SERVER_ERROR, "key.signing-failed"),
+
+  /**
+   * {@code POST /api/v1/admin/signing-keys/{kid}/retire} (KH-2.3a, spec FS-2.3 D4) named a {@code
+   * kid} that does not exist for the current tenant.
+   */
+  KH_KEY_0404(HttpStatus.NOT_FOUND, "key.not-found"),
+
+  /**
+   * {@code POST /api/v1/admin/signing-keys/{kid}/retire} (KH-2.3a, spec FS-2.3 D4) named a key that
+   * is not currently {@code RETIRING} — only a {@code RETIRING} key can be retired ({@code ACTIVE}
+   * must be rotated out first; {@code RETIRED} is already retired; {@code PENDING} is never
+   * reachable today).
+   */
+  KH_KEY_0409(HttpStatus.CONFLICT, "key.not-retiring"),
+
+  /**
+   * {@code POST /api/v1/admin/signing-keys/{kid}/retire} (KH-2.3a, spec FS-2.3 D4/V4) was called on
+   * a {@code RETIRING} key that has not yet reached {@code khatm.keys.min-retiring-age} (default
+   * {@code P30D}) — the guard against retiring a key still needed to verify long-lived offline
+   * documents. {@code details[]} carries the remaining wait duration. {@code force=true} bypasses
+   * this (audited, {@code detail.forced=true} on the {@link
+   * sy.khatm.platform.shared.audit.AuditAction#KEY_RETIRED} row) — the code's suffix mirrors HTTP
+   * 422 Unprocessable Entity, the same divergence-from-HTTP-status precedent {@link #KH_USR_0423}
+   * already set (there, the suffix is thematic and the wire status is 409; here, the suffix
+   * genuinely is the wire status).
+   */
+  KH_KEY_0422(HttpStatus.UNPROCESSABLE_ENTITY, "key.retiring-too-young"),
 
   /** Bean Validation rejected the request body; see the envelope's {@code details[]}. */
   KH_SYS_0400(HttpStatus.BAD_REQUEST, "validation.failed"),

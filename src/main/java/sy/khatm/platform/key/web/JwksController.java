@@ -23,8 +23,10 @@ import sy.khatm.platform.shared.TenantContext;
  * Exposes the default tenant's public signing keys at the standard well-known JWKS URI (spec FS-0.5
  * §6).
  *
- * <p>Serves {@code ACTIVE} and {@code RETIRING} keys only — {@code RETIRED} keys are never
- * published, and only public JWK material ever appears in the response (no private key component).
+ * <p>Serves every lifecycle state ({@code ACTIVE}/{@code RETIRING}/{@code RETIRED}) — spec FS-0.2
+ * §3.2 / FS-2.3 D4: a {@code RETIRED} key stays published for as long as documents signed with it
+ * may still need to verify (only a future Phase-3 trust-bundle mechanism will ever drop one out
+ * entirely) — and only public JWK material ever appears in the response (no private key component).
  * No authentication: JWKS is public by nature. Cached by clients for {@code max-age=300} seconds,
  * balancing normal-path performance against how quickly an emergency rotation should become
  * visible.
@@ -54,13 +56,14 @@ class JwksController {
     this.json = json;
   }
 
-  /** Public JWKS ({@code ACTIVE} + {@code RETIRING} keys) — verifiers cache this. */
+  /** Public JWKS (every lifecycle state — ACTIVE/RETIRING/RETIRED) — verifiers cache this. */
   @Operation(
       summary = "Fetch the JWKS",
       description =
-          "Public ACTIVE + RETIRING signing keys, no authentication required. Deprecated"
-              + " (spec FS-2.1 V2): aliases the default tenant only — every other tenant's JWKS is"
-              + " at GET /t/{tenantSlug}/.well-known/jwks.json. Stays available through Phase 2.",
+          "Public signing keys of every lifecycle state (ACTIVE/RETIRING/RETIRED), no"
+              + " authentication required. Deprecated (spec FS-2.1 V2): aliases the default tenant"
+              + " only — every other tenant's JWKS is at GET /t/{tenantSlug}/.well-known/jwks.json."
+              + " Stays available through Phase 2.",
       deprecated = true)
   @GetMapping(value = "/.well-known/jwks.json", produces = MediaType.APPLICATION_JSON_VALUE)
   ResponseEntity<String> jwks() {

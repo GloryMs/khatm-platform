@@ -41,10 +41,19 @@ public enum AuditAction {
   KEY_CREATED,
 
   /**
-   * An issuer signing key was rotated ({@code key} module, KH-0.5). {@code entityRef} is the new
-   * kid.
+   * An issuer signing key was rotated ({@code key} module, KH-0.5, admin-triggered as of KH-2.3a).
+   * {@code entityRef} is the new kid.
    */
   KEY_ROTATED,
+
+  /**
+   * An issuer signing key transitioned {@code RETIRING} → {@code RETIRED} ({@code key} module,
+   * KH-2.3a, {@code POST /api/v1/admin/signing-keys/{kid}/retire}, spec FS-2.3 D4). {@code
+   * entityRef} is the kid; {@code detail.forced} is {@code true} when the {@code
+   * khatm.keys.min-retiring-age} guard was bypassed via {@code force=true}, {@code false} when the
+   * key had already aged past it naturally.
+   */
+  KEY_RETIRED,
 
   /**
    * The claim-code expiry sweep zeroed one or more codes (ADR-09-worker). Actor is always SYSTEM.

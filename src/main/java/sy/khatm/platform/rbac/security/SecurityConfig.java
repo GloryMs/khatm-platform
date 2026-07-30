@@ -161,6 +161,9 @@ import sy.khatm.platform.shared.audit.AuditService;
  *       here cannot see the request body), not by this class. A bare {@code tenant:admin} caller
  *       may still mint/revoke keys for their own tenant via the same endpoint.
  *   <li>{@code ADMIN_SIGNING_KEYS_PATH} ({@code /api/v1/admin/signing-keys}) — {@code key:manage}.
+ *       KH-2.3a adds {@code ADMIN_SIGNING_KEYS_ROTATE_PATH}/{@code ADMIN_SIGNING_KEYS_RETIRE_PATH}
+ *       (rotation/retirement, spec FS-2.3 D2/D4) under the same scope — both act only on the
+ *       caller's own ambient tenant, no cross-tenant path exists.
  * </ul>
  *
  * <p><b>Tenant context (KH-2.1, spec FS-2.1 D1):</b> {@link TenantContextFilter} is wired into both
@@ -205,6 +208,10 @@ class SecurityConfig {
   private static final String ADMIN_CONSUMING_PARTIES_PATH = "/api/v1/admin/consuming-parties/**";
   private static final String ADMIN_API_KEYS_PATH = "/api/v1/admin/api-keys/**";
   private static final String ADMIN_SIGNING_KEYS_PATH = "/api/v1/admin/signing-keys";
+  // KH-2.3a (spec FS-2.3 D2/D4): rotation/retirement, same key:manage scope as the GET above.
+  private static final String ADMIN_SIGNING_KEYS_ROTATE_PATH = "/api/v1/admin/signing-keys/rotate";
+  private static final String ADMIN_SIGNING_KEYS_RETIRE_PATH =
+      "/api/v1/admin/signing-keys/*/retire";
   private static final String SCHEMAS_PATH = "/api/v1/schemas/**";
   private static final String CLAIMS_REDEEM_PATH = "/api/v1/claims/redeem";
   private static final String CREDENTIALS_LIST_PATH = "/api/v1/credentials";
@@ -318,6 +325,10 @@ class SecurityConfig {
             ScopeGuard.requireAnyScope(
                 Set.of(ScopeRegistry.TENANT_ADMIN, ScopeRegistry.PLATFORM_ADMIN)))
         .requestMatchers(HttpMethod.GET, ADMIN_SIGNING_KEYS_PATH)
+        .access(ScopeGuard.requireScope(ScopeRegistry.KEY_MANAGE))
+        .requestMatchers(HttpMethod.POST, ADMIN_SIGNING_KEYS_ROTATE_PATH)
+        .access(ScopeGuard.requireScope(ScopeRegistry.KEY_MANAGE))
+        .requestMatchers(HttpMethod.POST, ADMIN_SIGNING_KEYS_RETIRE_PATH)
         .access(ScopeGuard.requireScope(ScopeRegistry.KEY_MANAGE))
         .requestMatchers(HttpMethod.GET, SCHEMAS_PATH)
         .access(ScopeGuard.requireAnyScope(ScopeRegistry.SCHEMA_READ_SCOPES))
