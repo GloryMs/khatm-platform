@@ -141,8 +141,9 @@ section once CI is confirmed green again post-2026-08-01.
     into their `code` field itself, not appended by convention) — the consuming party's allowlist
     correctly didn't match a different, freshly-auto-created schema row; fixed by issuing with the
     schema's exact `code`.
-  - **DONE, NOT MERGED — PR not yet opened this turn.** Arabic-speaker review of `key.unknown
-    -provider`/`key.provider-unavailable` (both bundles) is the merge blocker, same gate every
+  - **DONE, NOT MERGED — PR #51 opened** (2026-08-02, `https://github.com/GloryMs/khatm-platform
+    /pull/51`). Arabic-speaker review of `key.unknown-provider`/`key.provider-unavailable` (both
+    bundles) is the merge blocker, same gate every
     prior new-key session has had.
 
 - **feat/KH-2.2c-BE-totp-2fa — mandatory TOTP second factor (spec FS-2.2 veto V1)** (session
