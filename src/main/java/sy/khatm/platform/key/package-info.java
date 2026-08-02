@@ -41,11 +41,27 @@
  * <p><b>Rotation/retirement (KH-2.3a, spec FS-2.3 D2/D4):</b> {@code
  * web.SigningKeyRotationController} serves {@code POST /api/v1/admin/signing-keys/rotate} and
  * {@code POST /api/v1/admin/signing-keys/{kid}/retire}, both {@code key:manage}, both acting only
- * on the caller's own ambient tenant — no cross-tenant path exists for either (the per-tenant
- * KMS-provider column, spec V3, is out of scope until KH-2.3b), so neither needed {@code
- * shared.OnBehalfOfExecutor}. {@code RETIRED} keys stay published in JWKS and stay resolvable by
- * {@code KeyVerifier} (spec FS-0.2 §3.2 / FS-2.3 D2/D4 — corrected this session; earlier code
- * excluded {@code RETIRED} from both, which was a bug against the spec, not a deliberate design).
+ * on the caller's own ambient tenant — no cross-tenant path exists for either, so neither needed
+ * {@code shared.OnBehalfOfExecutor}. {@code RETIRED} keys stay published in JWKS and stay
+ * resolvable by {@code KeyVerifier} (spec FS-0.2 §3.2 / FS-2.3 D2/D4 — corrected this session;
+ * earlier code excluded {@code RETIRED} from both, which was a bug against the spec, not a
+ * deliberate design).
+ *
+ * <p><b>Multi-provider / Vault Transit (KH-2.3b, spec FS-2.3 D5/D6):</b> {@link
+ * sy.khatm.platform.key.domain.VaultTransitProvider} is a second {@link
+ * sy.khatm.platform.key.domain.KeyProvider} implementation, registered alongside {@code
+ * SoftKeyProvider} (not swapped in its place — spec D3's original "one provider, config-selected"
+ * shape is superseded by "every configured provider registered, resolved per key," spec V3's
+ * per-tenant column) whenever {@code khatm.keys.vault.enabled=true}. Signing keys never leave Vault
+ * ({@code exportable=false}); every signature comes back through Vault's own {@code transit/sign}
+ * endpoint. Provider migration (SOFT→Vault or any provider→provider) is not a special operation —
+ * it is {@code POST /rotate} with an explicit {@code provider} field, spec D6's "migration is
+ * nothing but a normal rotation." A connectivity failure to a KMS-class provider at sign/create
+ * time fails closed ({@code KH-KEY-0503}) — never a silent fallback to SOFT, which would be a
+ * key-security downgrade. {@code tenant.key_provider} (new column, veto V3) tracks each tenant's
+ * current provider, kept in sync by {@code tenant.worker.TenantKeyProviderSyncHandler} consuming
+ * {@link sy.khatm.platform.key.events.KeyRotated}'s new {@code provider} field — {@code key} itself
+ * never writes to the {@code tenant} table.
  */
 @org.springframework.modulith.ApplicationModule
 package sy.khatm.platform.key;

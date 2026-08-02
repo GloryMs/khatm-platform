@@ -16,13 +16,13 @@ import sy.khatm.platform.shared.TenantContext;
 import sy.khatm.platform.shared.web.ErrorEnvelope;
 
 /**
- * Signing-key rotation and retirement for the current tenant (spec FS-2.3 D2/D4, KH-2.3a).
+ * Signing-key rotation and retirement for the current tenant (spec FS-2.3 D2/D4, KH-2.3a; {@code
+ * provider} override, D5/D6, KH-2.3b).
  *
- * <p>Both endpoints act only on the caller's own ambient tenant ({@link TenantContext#current()}),
- * the same as {@link SigningKeyStatusController}'s existing {@code GET} — there is no cross-tenant
- * caller for signing-key lifecycle actions (the per-tenant KMS-provider column, spec V3, is out of
- * scope until KH-2.3b), so neither endpoint needs {@code shared.OnBehalfOfExecutor} or the
- * context-switch-before-transaction pattern documented in {@code docs/CONVENTIONS.md §12}.
+ * <p>Both endpoints act only on the caller's own ambient tenant ({@link TenantContext#current()}) —
+ * signing-key lifecycle actions have no cross-tenant caller (unlike, say, tenant onboarding), so
+ * neither needs {@code shared.OnBehalfOfExecutor} or the context-switch-before-transaction pattern
+ * documented in {@code docs/CONVENTIONS.md §12}.
  *
  * <p>Gated by {@code rbac.security.SecurityConfig}'s {@code key:manage} rule, same as the existing
  * {@code GET /api/v1/admin/signing-keys}.
@@ -46,9 +46,16 @@ class SigningKeyRotationController {
               + " unique index is the final arbiter under concurrent rotations — at most one"
               + " concurrent caller ever succeeds. All of the tenant's status lists are also forced"
               + " stale in the same operation, so the existing periodic sweep re-signs them with"
-              + " the new key within one cycle. Requires the key:manage scope (any actor kind).",
+              + " the new key within one cycle. An optional 'provider' in the request body rotates"
+              + " onto a different KeyProvider (e.g. SOFT -> VAULT) — this IS the"
+              + " provider-migration mechanism (spec FS-2.3 D6): omitted, the new key stays on the"
+              + " tenant's current provider. Requires the key:manage scope (any actor kind).",
       responses = {
         @ApiResponse(responseCode = "200", description = "The newly created, now-ACTIVE key"),
+        @ApiResponse(
+            responseCode = "400",
+            description = "Unknown/unregistered provider named in the request body (KH-KEY-0400)",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "401",
             description = "No valid session or API key",
@@ -56,13 +63,22 @@ class SigningKeyRotationController {
         @ApiResponse(
             responseCode = "403",
             description = "Authenticated without the key:manage scope",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "503",
+            description = "The target provider (e.g. Vault) is unreachable (KH-KEY-0503)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
       })
   @PostMapping("/api/v1/admin/signing-keys/rotate")
-  RotateKeyResponse rotate() {
+  RotateKeyResponse rotate(@RequestBody(required = false) RotateKeyRequest body) {
+    String requestedProvider = body == null ? null : body.provider();
     IssuerKeySummary rotated =
-        lifecycle.rotate(TenantContext.current(), TenantContext.currentSlug());
-    return new RotateKeyResponse(rotated.kid(), rotated.state(), rotated.validFrom());
+        requestedProvider == null || requestedProvider.isBlank()
+            ? lifecycle.rotate(TenantContext.current(), TenantContext.currentSlug())
+            : lifecycle.rotate(
+                TenantContext.current(), TenantContext.currentSlug(), requestedProvider);
+    return new RotateKeyResponse(
+        rotated.kid(), rotated.state(), rotated.provider(), rotated.validFrom());
   }
 
   @Operation(

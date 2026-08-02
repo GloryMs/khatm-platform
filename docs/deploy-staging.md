@@ -137,6 +137,45 @@ docker compose exec khatm-postgres psql -U khatm -d khatm -c "
 Then add the `.env`/compose changes above and redeploy as usual — Flyway's `V7` migration handles
 every other `GRANT` itself on that same run.
 
+## Vault hardening for production (KH-2.3b, spec FS-2.3 D5)
+
+`docker-compose.yml`'s `khatm-vault` service is **dev mode only** — auto-unsealed, in-memory
+storage (nothing survives a restart), a fixed root token. None of that is acceptable outside a
+laptop dev loop. A real deployment needs its own, separately operated Vault (or an existing
+organizational Vault cluster) configured as follows before `khatm.keys.vault.enabled=true` is set
+on `khatm-api`/`khatm-worker`:
+
+1. **Real storage backend.** Dev mode's in-memory storage is gone on restart — every transit key
+   created against it (and therefore every `issuer_key` row pointing at one) would become
+   permanently unsignable. Use `raft` (integrated storage, simplest to operate) or an external
+   backend (Consul, cloud KMS-backed) per Vault's own storage documentation — this is a Vault
+   operations decision, not something khatm-platform's config surface controls.
+2. **Manual unseal.** Production Vault is sealed on every start/restart and requires a quorum of
+   unseal keys (Shamir's Secret Sharing, `vault operator init`/`vault operator unseal`) or an
+   auto-unseal mechanism backed by a separate KMS (cloud KMS, another HSM) — never
+   `VAULT_DEV_ROOT_TOKEN_ID`/`VAULT_DEV_LISTEN_ADDRESS`'s auto-unseal convenience. This is exactly
+   why `VaultTransitProvider`'s fail-closed behavior (`KH-KEY-0503`, never a silent SOFT fallback)
+   matters operationally: a sealed Vault must surface as a loud, alarm-friendly platform error, not
+   be silently worked around.
+3. **Audit device.** Enable at least one audit device (`vault audit enable file file_path=...`, or
+   a syslog/socket device) before any production traffic — every transit sign/create call this
+   platform makes should be independently auditable on the Vault side, not just in `audit_log`.
+4. **Least-privilege app token — no admin token in the app, ever.** `khatm-api`/`khatm-worker`
+   authenticate with a token (or AppRole) bound to the policy in
+   `docker/vault-policy/khatm-transit-app.hcl` — `transit/keys/*` create+read, `transit/sign/*`,
+   `transit/verify/*`, nothing else. Mint it, e.g.:
+   ```sh
+   vault policy write khatm-transit-app docker/vault-policy/khatm-transit-app.hcl
+   vault token create -policy=khatm-transit-app -period=24h   # or an AppRole bound to the same policy
+   ```
+   Set the resulting token as `KHATM_KEYS_VAULT_TOKEN` in the deployment's `.env` (never the
+   cluster's root/admin token). Rotate it on the same cadence as any other production secret.
+5. **`KHATM_KEYS_VAULT_ADDRESS`** points at the real cluster's address (with TLS — `https://`, a
+   trusted cert; dev mode's plain `http://` is a local-only convenience). `KHATM_KEYS_VAULT_ENABLED`
+   stays `false` until all of the above is actually in place — flipping it on prematurely means the
+   very first tenant rotated onto `VAULT` starts depending on a Vault instance that isn't yet
+   durable/audited/least-privilege.
+
 ## Staging secrets (GitHub repo → Settings → Secrets → Actions)
 
 | Secret                | Required to activate | Purpose                                                       |

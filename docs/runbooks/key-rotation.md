@@ -1,8 +1,9 @@
 # Runbook — Signing-Key Rotation & Retirement
 
 > Spec `docs/specs/FS-2.3-kms-key-rotation.md` D2/D3/D4/D8. Written in KH-2.3a (provider-agnostic,
-> SOFT), executed literally in KH-2.3.3 (game-day). Applies unchanged once KH-2.3b adds the Vault
-> Transit provider — rotation is provider-agnostic by design (spec D1).
+> SOFT), extended in KH-2.3b with Step 1b (the Vault provider-migration path), executed literally
+> in KH-2.3.3 (game-day). Steps 1-4 below apply unchanged regardless of provider — rotation is
+> provider-agnostic by design (spec D1).
 
 ## Why rotation is roll-FORWARD-only — no rollback section
 
@@ -73,6 +74,42 @@ verification must not notice a rotation happened.
 
 Issue a fresh credential and confirm its JWS header's `kid` matches the new `ACTIVE` key from
 Step 1's response — not the old one.
+
+## Step 1b — Migrating a tenant onto a different provider (KH-2.3b, spec D5/D6)
+
+There is no separate "migrate to Vault" endpoint or ceremony — spec D6's own framing is that
+provider migration **is** Step 1, with one addition: an explicit `provider` field.
+
+```
+POST /api/v1/admin/signing-keys/rotate
+{ "provider": "VAULT" }
+```
+
+Everything from Step 1 onward applies unchanged — one `ACTIVE` (now Vault-backed), the previous
+key `RETIRING` on whatever provider it was created on (commonly `SOFT`), both published in JWKS,
+both still verifiable. `GET /api/v1/admin/signing-keys` now shows a `provider` column per key —
+confirm the new row reads `VAULT` and the retiring row still reads its original provider.
+
+**Verification checkpoint 1b** — the old, pre-migration credential still verifies (repeat
+checkpoint 2 above) with **Vault never involved**: `KeyVerifier#resolvePublicKey` resolves every
+key's public material from `issuer_key.public_jwk` directly (written once at key-creation time),
+never by calling back into whichever `KeyProvider` created it. This means `GET
+/.well-known/jwks.json`, the per-tenant JWKS endpoint, and `POST /api/v1/credentials/verify` all
+keep working even if Vault is unreachable at the moment you check — only **new** signing (new
+issuance, or a status-list resign) needs Vault reachable, since only that touches the private key.
+
+**Verification checkpoint 1c** — fail-closed, never a silent downgrade: if you want to prove the
+fail-closed guarantee directly (safe to skip on a live tenant), stop the Vault backend and attempt
+another rotation with `{"provider":"VAULT"}` or issue a fresh credential for a Vault-active tenant.
+Expect `503 KH-KEY-0503` (`key.provider-unavailable`), not a credential silently issued under a
+freshly-created `SOFT` key — a silent fallback would be a key-security downgrade the platform must
+never perform on its own initiative. Restart Vault and confirm normal operation resumes with no
+further action needed (no key state was left inconsistent by the failed attempt — the tenant's
+previously-`ACTIVE` key, whichever provider it is on, is still `ACTIVE`).
+
+An un-registered provider name (a typo, or naming `VAULT` on a deployment that never set
+`khatm.keys.vault.enabled=true`) is rejected the same way rotation requests are always validated —
+`400 KH-KEY-0400` (`key.unknown-provider`), before any key is touched.
 
 ## Step 2 — Confirm the status lists re-sign with the new key
 
@@ -152,3 +189,9 @@ from ever signing anything new again; it does not stop it from verifying what it
 - [ ] Early retire attempt → `422 KH-KEY-0422` with remaining wait
 - [ ] Forced retire → `200`, audited `forced:true`
 - [ ] Old credential still verifies after retirement (`RETIRED` still in JWKS)
+- [ ] SOFT→Vault migration: `POST /rotate {"provider":"VAULT"}` → new `ACTIVE` reads `provider:
+      VAULT` in `GET /admin/signing-keys`, old key's own provider unchanged
+- [ ] Pre-migration credential still verifies with Vault stopped (public-read paths never call a
+      `KeyProvider`)
+- [ ] Vault stopped → new issuance/rotation attempt → `503 KH-KEY-0503`, never a silent SOFT
+      fallback; Vault restarted → normal operation resumes with no cleanup needed

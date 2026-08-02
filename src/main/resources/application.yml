@@ -72,7 +72,9 @@ khatm:
   # it. The 'local' profile document below supplies the only permitted default.
   public-base-url: ${KHATM_PUBLIC_BASE_URL:}
   keys:
-    # KH-0.5 (spec FS-0.5 §7): SOFT today; KMS/PKCS11 later are a config change only (D3).
+    # KH-0.5 (spec FS-0.5 §7): the platform-default provider a brand-new tenant is bootstrapped
+    # on (KH-2.3b, spec FS-2.3 D5/D6, veto V3: every tenant is born SOFT; migrating onto a
+    # KMS-class provider is always a later, explicit rotation — see key.domain.KeyLifecycleService).
     provider: SOFT
     # KH-2.3a (spec FS-2.3 D4/V4): a RETIRING key must stay RETIRING for at least this long before
     # POST /api/v1/admin/signing-keys/{kid}/retire is allowed to retire it (force=true bypasses,
@@ -85,6 +87,27 @@ khatm:
       # 'local' profile (spec FS-0.5 §3/§8.5). The 'local' profile document below supplies the
       # only permitted default.
       passphrase: ${KHATM_KEYS_PASSPHRASE:}
+    # KH-2.3b (spec FS-2.3 D5): HashiCorp Vault Transit provider. Disabled by default — a
+    # deployment that never sets khatm.keys.vault.enabled=true never registers the
+    # VaultTransitProvider bean at all, so naming "VAULT" in a rotate request fails closed with
+    # KH-KEY-0400 (unknown provider), never a silent no-op or SOFT fallback.
+    vault:
+      enabled: ${KHATM_KEYS_VAULT_ENABLED:false}
+      # Vault's HTTP API address, e.g. http://khatm-vault:8200 (dev-mode compose) or a real
+      # cluster address in staging/production (see docs/deploy-staging.md's Vault hardening
+      # section — production Vault is never dev-mode).
+      address: ${KHATM_KEYS_VAULT_ADDRESS:}
+      # An app token scoped to a least-privilege policy covering ONLY transit/keys/* (create+read),
+      # transit/sign/*, transit/verify/* — never an admin/root token outside a local dev-mode
+      # convenience setup (docs/deploy-staging.md). No default: VaultTransitProvider fails startup
+      # on a blank token whenever it is actually enabled (see its own constructor).
+      token: ${KHATM_KEYS_VAULT_TOKEN:}
+      # Prefixes every transit key name this platform creates, so a shared Vault instance's
+      # transit/keys/ listing is immediately recognizable as khatm-platform's own (kid already
+      # embeds the tenant slug — see VaultTransitProvider#transitKeyName).
+      key-name-prefix: khatm
+      connect-timeout: PT3S
+      read-timeout: PT5S
   claims:
     # KH-0.4 (spec FS-0.4 D7): AES-256-GCM key for claim_code.disclosures_enc, 32 raw bytes
     # base64-encoded. Same no-silent-default pattern as khatm.keys.soft.passphrase above —

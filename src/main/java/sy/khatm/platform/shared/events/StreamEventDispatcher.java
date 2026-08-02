@@ -1,6 +1,7 @@
 package sy.khatm.platform.shared.events;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -30,6 +31,15 @@ import org.springframework.data.redis.core.StringRedisTemplate;
  *
  * <p>Module-private support class; the owning module is {@code shared}, and {@code
  * StreamEventHandler} implementations (the only cross-module touchpoint) are discovered as beans.
+ *
+ * <p><b>Fan-out, one event type to many handlers (KH-2.3b):</b> {@link #handlersByType} maps one
+ * event type to every registered handler for it, not just one — found and fixed this session, when
+ * {@link sy.khatm.platform.key.events.KeyRotated} became the platform's first event with two
+ * independent module consumers ({@code status.worker.KeyRotationHandler} and {@code
+ * tenant.worker.TenantKeyProviderSyncHandler}). Before this fix, a plain one-handler-per-type map
+ * meant whichever handler registered last for a given type silently replaced the other — the
+ * regression this session's own {@code status.worker.KeyRotationWorkerTest} run caught directly
+ * (the status-list resign stopped happening once a second {@code KeyRotated} consumer existed).
  */
 class StreamEventDispatcher {
 
@@ -38,7 +48,7 @@ class StreamEventDispatcher {
 
   private final StringRedisTemplate redis;
   private final WorkerStreamProperties props;
-  private final Map<String, StreamEventHandler> handlersByType;
+  private final Map<String, List<StreamEventHandler>> handlersByType;
 
   StreamEventDispatcher(
       StringRedisTemplate redis, WorkerStreamProperties props, List<StreamEventHandler> handlers) {
@@ -46,7 +56,9 @@ class StreamEventDispatcher {
     this.props = props;
     this.handlersByType = new HashMap<>();
     for (StreamEventHandler handler : handlers) {
-      this.handlersByType.put(handler.eventType(), handler);
+      this.handlersByType
+          .computeIfAbsent(handler.eventType(), key -> new ArrayList<>())
+          .add(handler);
     }
   }
 
@@ -75,8 +87,8 @@ class StreamEventDispatcher {
       return;
     }
 
-    StreamEventHandler handler = handlersByType.get(type);
-    if (handler == null) {
+    List<StreamEventHandler> matchedHandlers = handlersByType.get(type);
+    if (matchedHandlers == null || matchedHandlers.isEmpty()) {
       // No handler for this event type yet (e.g. an event externalized ahead of its consumer).
       // Mark processed + ACK so the entry does not block the group; a future consumer can be added.
       log.debug("no handler for event type {} (entry {}) — acking", type, entryId);
@@ -85,10 +97,16 @@ class StreamEventDispatcher {
       return;
     }
 
+    // Every matched handler runs on every attempt (not just the ones that hadn't yet succeeded) —
+    // handlers must already be idempotent (this interface's own contract, CONVENTIONS §7), so
+    // re-running one that already succeeded on a retried attempt is safe by design, and keeps this
+    // retry loop's shape identical to the single-handler case it replaces.
     Exception lastError = null;
     for (int attempt = 1; attempt <= props.maxAttempts(); attempt++) {
       try {
-        handler.handle(payload);
+        for (StreamEventHandler handler : matchedHandlers) {
+          handler.handle(payload);
+        }
         lastError = null;
         break;
       } catch (Exception e) {

@@ -34,9 +34,14 @@ deleted) or a partial-failure error code, calling `create` again with a slug who
 previously died partway through resumes it; only a slug that already has a fully-onboarded tenant
 (an `ACTIVE` key present) is a genuine `KH-TNT-0409` conflict.
 
-**Events in:** none. **Events out:** none yet.
+**Events in (KH-2.3b, spec FS-2.3 D5/D6):** `tenant.worker.TenantKeyProviderSyncHandler` consumes
+`key.events.KeyRotated` to keep `tenant.key_provider` in sync with whatever provider a rotation
+landed the tenant's new `ACTIVE` key on — no new dependency edge (`tenant` already depends on
+`key :: api`). **Events out:** none yet.
 
-**Tables owned:** `tenant`.
+**Tables owned:** `tenant`, including `key_provider` (veto V3's per-tenant signing-key-provider
+column — `SOFT` for every newly onboarded tenant, `tenant`-module-owned even though only `key`
+module's rotation flow ever changes it, via the event above rather than a direct write).
 
 **Status:** KH-2.1 Part A (this doc) — tenant context resolution, admin/onboarding plane, per-tenant
 trust endpoints. Part B adds RLS enforcement on top of this same module's persistence layer.

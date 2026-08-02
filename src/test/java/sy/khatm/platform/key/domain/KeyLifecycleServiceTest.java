@@ -317,6 +317,22 @@ class KeyLifecycleServiceTest extends IntegrationTestSupport {
         .contains(oldKid);
   }
 
+  /**
+   * Spec FS-2.3 D5/D6: a deployment that never configured Vault (this shared test context's own
+   * situation — {@code khatm.keys.vault.enabled} is unset) has no {@code VAULT} bean registered at
+   * all. Naming it in a rotate request must fail closed with {@code KH-KEY-0400}, never silently
+   * rotate onto SOFT instead — a fallback the brief calls out by name as forbidden.
+   */
+  @Test
+  void rotate_ontoUnregisteredProvider_throwsValidation_neverSilentlyFallsBackToSoft() {
+    assertThatThrownBy(
+            () -> lifecycle.rotate(TenantContext.current(), TenantContext.currentSlug(), "VAULT"))
+        .isInstanceOf(ValidationException.class)
+        .satisfies(
+            e ->
+                assertThat(((ValidationException) e).errorCode()).isEqualTo(ErrorCode.KH_KEY_0400));
+  }
+
   private static JWTClaimsSet sampleClaims() {
     Instant now = Instant.now();
     return new JWTClaimsSet.Builder()

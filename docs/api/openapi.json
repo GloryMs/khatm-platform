@@ -987,10 +987,22 @@
         },
         "type" : "object"
       },
+      "RotateKeyRequest" : {
+        "description" : "Optional provider override — the SOFT->Vault migration mechanism (spec D6)",
+        "properties" : {
+          "provider" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "RotateKeyResponse" : {
         "description" : "The newly created, now-ACTIVE signing key",
         "properties" : {
           "kid" : {
+            "type" : "string"
+          },
+          "provider" : {
             "type" : "string"
           },
           "state" : {
@@ -1132,6 +1144,9 @@
         "description" : "A signing key's lifecycle status, no JWK material",
         "properties" : {
           "kid" : {
+            "type" : "string"
+          },
+          "provider" : {
             "type" : "string"
           },
           "state" : {
@@ -1953,7 +1968,7 @@
     },
     "/api/v1/admin/signing-keys" : {
       "get" : {
-        "description" : "Every signing key for the tenant, newest first, every state including RETIRED — lifecycle fields only (kid/state/validFrom/validTo), never the public JWK or any private material. Requires the key:manage scope (any actor kind).",
+        "description" : "Every signing key for the tenant, newest first, every state including RETIRED — lifecycle fields only (kid/state/provider/validFrom/validTo), never the public JWK or any private material. Requires the key:manage scope (any actor kind).",
         "operationId" : "signingKeys",
         "responses" : {
           "200" : {
@@ -1993,8 +2008,17 @@
     },
     "/api/v1/admin/signing-keys/rotate" : {
       "post" : {
-        "description" : "Atomically: generate a new key via the configured KeyProvider, move the current ACTIVE key to RETIRING, and activate the new one. The one-ACTIVE-per-tenant partial unique index is the final arbiter under concurrent rotations — at most one concurrent caller ever succeeds. All of the tenant's status lists are also forced stale in the same operation, so the existing periodic sweep re-signs them with the new key within one cycle. Requires the key:manage scope (any actor kind).",
+        "description" : "Atomically: generate a new key via the configured KeyProvider, move the current ACTIVE key to RETIRING, and activate the new one. The one-ACTIVE-per-tenant partial unique index is the final arbiter under concurrent rotations — at most one concurrent caller ever succeeds. All of the tenant's status lists are also forced stale in the same operation, so the existing periodic sweep re-signs them with the new key within one cycle. An optional 'provider' in the request body rotates onto a different KeyProvider (e.g. SOFT -> VAULT) — this IS the provider-migration mechanism (spec FS-2.3 D6): omitted, the new key stays on the tenant's current provider. Requires the key:manage scope (any actor kind).",
         "operationId" : "rotate",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/RotateKeyRequest"
+              }
+            }
+          }
+        },
         "responses" : {
           "200" : {
             "content" : {
@@ -2005,6 +2029,16 @@
               }
             },
             "description" : "The newly created, now-ACTIVE key"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Unknown/unregistered provider named in the request body (KH-KEY-0400)"
           },
           "401" : {
             "content" : {
@@ -2025,6 +2059,16 @@
               }
             },
             "description" : "Authenticated without the key:manage scope"
+          },
+          "503" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "The target provider (e.g. Vault) is unreachable (KH-KEY-0503)"
           }
         },
         "summary" : "Rotate the tenant's signing key",

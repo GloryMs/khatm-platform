@@ -12,6 +12,8 @@
 | `KH-KEY-0404` | 404 | `key.not-found` |
 | `KH-KEY-0409` | 409 | `key.not-retiring` |
 | `KH-KEY-0422` | 422 | `key.retiring-too-young` |
+| `KH-KEY-0400` | 400 | `key.unknown-provider` |
+| `KH-KEY-0503` | 503 | `key.provider-unavailable` |
 | `KH-SYS-0400` | 400 | `validation.failed` |
 | `KH-SYS-0500` | 500 | `system.unexpected-error` |
 | `KH-RBC-0401` | 401 | `error.rbc.unauthenticated` |

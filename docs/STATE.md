@@ -17,6 +17,134 @@ rule), and PRs may be merged on Majd's instruction without waiting on GitHub's c
 section once CI is confirmed green again post-2026-08-01.
 
 ## Current phase / task
+- **feat/KH-2.3b-BE-vault-transit — Vault Transit KMS provider + SOFT→Vault migration (spec FS-2.3
+  D5/D6)** (session `feat/KH-2.3b-BE-vault-transit`, 2026-08-02, spec
+  `docs/specs/FS-2.3-kms-key-rotation.md` D5/D6, veto V1/V3 pre-approved before this session).
+  `mvn verify` green, **421/421 tests (17 new)**. New `KH-KEY-0400`/`KH-KEY-0503` (2 new `key.*`
+  keys in both bundles — **Arabic-speaker review NOT yet confirmed by Majd — merge blocker**, same
+  gate pattern as every prior session's new-key set).
+  - **Verify-first findings, all recorded before writing:** `KeyLifecycleService` held exactly one
+    injected `KeyProvider`, selected once at startup via `@ConditionalOnProperty(khatm.keys
+    .provider)` — FS-0.5 D3's original "swap the provider = config change" design assumed only
+    ever one provider live at a time. That shape cannot express "tenant A is on SOFT, tenant B is
+    on Vault, in the same running process," which D5/D6 need. Confirmed via veto V3 (per-tenant
+    provider, not a single platform config) that this was the deliberate resolution, not a gap to
+    route around.
+  - **A genuine architectural decision, made and recorded before writing (V3's literal mechanism
+    wasn't specified in the brief):** every registered `KeyProvider` bean now lives in a
+    name-keyed `Map<String, KeyProvider>` injected into `KeyLifecycleService`, which resolves the
+    provider from whichever row it's actually operating on (`issuer_key.provider`) — never a
+    single ambient default. `rotate(tenantId, tenantSlug)` (existing 2-arg, untouched call sites)
+    stays on the tenant's current provider; a new `rotate(tenantId, tenantSlug, provider)` 3-arg
+    overload is the entire migration mechanism (spec D6: "migration is nothing but a normal
+    rotation"), wired to the REST endpoint via an optional `provider` field on `POST
+    /admin/signing-keys/rotate`. `tenant.key_provider` (new column, V3's literal "per-tenant
+    column") is the tenant-level "current provider" view — `tenant` owns it, `key` never writes to
+    it directly (would be a `key → tenant` Modulith cycle); kept in sync via `KeyRotated` (extended
+    with a `provider` field) consumed by a new `tenant.worker.TenantKeyProviderSyncHandler`.
+  - **A real architectural bug, found only by running the live compose DoD, not by inspection:**
+    `shared.events.StreamEventDispatcher`'s `handlersByType` was a plain `Map<String,
+    StreamEventHandler>` — one handler per event type. `KeyRotated` becoming the platform's first
+    event with two independent consumers (`status.worker.KeyRotationHandler`, this session's new
+    `tenant.worker.TenantKeyProviderSyncHandler`) meant whichever handler registered second
+    silently replaced the first in the map — `status.worker.KeyRotationWorkerTest`'s own
+    pre-existing regression test caught this directly (the status-list resign stopped happening).
+    Fixed: `handlersByType` is now `Map<String, List<StreamEventHandler>>`, every matched handler
+    runs on every dispatch attempt (handlers are already required to be idempotent, so re-running
+    one that already succeeded on a later retry is safe by design). New regression test:
+    `shared.events.RedisStreamWorkerTest#dispatch_twoHandlersRegisteredForTheSameType_bothReceiveIt`.
+  - **A second real bug, found via the DoD's own "public artifacts don't need Vault at read time"
+    claim, which the brief asked to verify rather than assume:** `KeyLifecycleService
+    #resolvePublicKey` (backing `KeyVerifier`, the credential-verify hot path) called
+    `provider.publicKey(providerRef, kid)` on every single call — meaning a Vault-backed tenant's
+    `POST /credentials/verify` would have needed Vault reachable just to check a signature, not
+    only to issue one, and a killed Vault container would have broken verify/consume too. Fixed:
+    `resolvePublicKey` now parses `issuer_key.public_jwk` directly (already written once at
+    generation time, provider-agnostic) — no `KeyProvider` call at all. This is provider-agnostic
+    on its own merits (JWKS publishing was already DB-only; verification now matches), not
+    Vault-specific plumbing. `VaultUnavailableFailClosedTest` and the live DoD both prove this
+    directly: verify/JWKS/status-list reads all kept working with Vault stopped.
+  - **D5 — `key.domain.VaultTransitProvider implements KeyProvider`, registered `@Component("VAULT")`
+    only when `khatm.keys.vault.enabled=true`:** talks to Vault's plain HTTP API via Spring's
+    `RestClient` (no Vault SDK dependency — smaller classpath/attack surface). `generate()`: `POST
+    transit/keys/{name}` (`type: ecdsa-p256, exportable: false`), then reads back the public key
+    (`GET transit/keys/{name}`, PEM → `ECPublicKey` → JWK) — private material never leaves Vault.
+    `sign()`: `POST transit/sign/{name}` requesting `marshaling_algorithm=jws` for the raw
+    fixed-length signature JWS/ES256 needs. **A real, empirically-caught naming mistake, not a
+    documentation guess:** the spec brief said "jose"; a real Vault 1.17's own `vault path-help
+    transit/sign/:name` names the parameter's value `"jws"` — confirmed by actually running
+    against a live Vault Testcontainer and reading the `400 invalid marshaling type "jose"`
+    response. `jws` marshaling also switches Vault's own signature encoding to URL-safe base64,
+    handled accordingly. `normalizeToRawJoseSignature` defensively re-checks the byte length
+    regardless (falls back to DER→raw transcoding via Nimbus's own `ECDSA.transcodeSignatureToConcat`
+    if a response ever isn't already raw) — `key.domain.EcdsaSignatureMarshalingTest` proves both
+    paths with a real DER test vector (a JCA-signed message, independent of `VaultTransitProvider`
+    itself). Fail-closed: any `RestClientException` (connectivity, Vault-side error) at
+    generate/sign time throws `IntegrityException KH-KEY-0503`, logged at ERROR — never a silent
+    SOFT fallback.
+  - **D5/D6 — `SigningKeyRotationController`:** `POST /admin/signing-keys/rotate` gains an optional
+    `provider` request-body field (`RotateKeyRequest`) — the entire migration mechanism. Response
+    (`RotateKeyResponse`) and the existing `GET /admin/signing-keys` listing
+    (`SigningKeyView`/`IssuerKeyStatusView`) both gained a `provider` field per key (a real gap
+    found while touching this code — the future C8 console session needs this, spec's own wording
+    "عرض المزوّد لكل مفتاح," and it didn't exist before this session).
+  - **Compose (dev mode only):** `khatm-vault` (HashiCorp Vault 1.17, `VAULT_DEV_ROOT_TOKEN_ID` +
+    auto-unseal) + `khatm-vault-init` (one-shot, `vault secrets enable transit`, idempotent).
+    `khatm-api`/`khatm-worker` gain `KHATM_KEYS_VAULT_*` env, enabled by default in this **local**
+    compose file only. `docs/deploy-staging.md` gained a "Vault hardening for production" section
+    (real storage backend, manual unseal, an audit device, a least-privilege app token —
+    `docker/vault-policy/khatm-transit-app.hcl` — never an admin/root token) and
+    `docs/runbooks/key-rotation.md` gained Step 1b (the migration walkthrough, fail-closed proof,
+    recovery).
+  - **Migration `V14__tenant_key_provider.sql`:** widened `issuer_key.provider`'s CHECK constraint
+    (`'SOFT','KMS','PKCS11'` → `+ 'VAULT'`, V1 had anticipated a generic `'KMS'` category but a
+    later AWS/GCP adapter on the same SPI, spec D5, needs `VAULT` to stay distinguishable from
+    those) and added `tenant.key_provider` (`NOT NULL DEFAULT 'SOFT'`).
+  - **Contract:** `docs/api/openapi.json` regenerated via `OpenApiContractTest`'s own mechanism —
+    additive-only (new `RotateKeyRequest` schema, `provider` field on `RotateKeyResponse`/
+    `SigningKeyView`, new `400`/`503` responses on `POST /rotate`; confirmed via `git diff`, no
+    path/schema removed). `docs/error-codes.md` regenerated (2 new `KH-KEY-*` rows).
+  - **Tests (17 new):** `key.domain.EcdsaSignatureMarshalingTest` (3, the DER-vs-raw test vector,
+    no Vault container needed), `key.VaultKeyLifecycleAcceptanceTest` (6 — re-runs the FS-0.5 §8 /
+    FS-2.3 D2 acceptance surface against a real Vault Testcontainer: SOFT→Vault migration end to
+    end, one-ACTIVE-after-rotate, plain-rotate-stays-on-current-provider, no private material,
+    unknown-provider 400, the mandatory 10-concurrent-callers race test re-run against Vault),
+    `key.VaultUnavailableFailClosedTest` (1 — kills a live Vault Testcontainer mid-test, proves
+    `KH-KEY-0503` + public-reads-still-work), `key.domain.KeyLifecycleServiceTest` (+1 —
+    unregistered-provider 400 against the SOFT-only shared context), `shared.events
+    .RedisStreamWorkerTest` (+1 — the dispatcher fan-out regression, above). Duplication between
+    the SOFT and Vault acceptance suites is deliberate (brief's own "duplication is acceptable,
+    silent gaps are not").
+  - **DoD — live compose e2e, run for real** (rebuilt `khatm-api`/`khatm-worker`, compose gained
+    `khatm-vault`/`khatm-vault-init`, existing dev volume, V14 applied cleanly): the bootstrap
+    admin's TOTP from the KH-2.2c session couldn't be satisfied (no stored secret) — reset via
+    direct SQL on the local dev DB only (the same recovery an operator would perform for a genuine
+    lockout) and re-enrolled with an independently-computed RFC 6238 code (same standalone-Python
+    technique as the KH-2.2c DoD), consistent with that session's own precedent of leaving the
+    shared dev admin re-confirmed for the next session. Then: default tenant confirmed on `SOFT`
+    (`key-4` `ACTIVE`) → issued + verified a credential under it → `POST /rotate
+    {"provider":"VAULT"}` → `key-5` `ACTIVE` on `VAULT`, `key-4` now `RETIRING`, both in JWKS →
+    issued + verified + **consumed** a fresh credential under the Vault key (a real
+    consuming-party API key, atomic consume path unaffected by provider) → the pre-migration SOFT
+    credential re-verified successfully (both immediately after rotation and again after the Vault
+    outage below) → `tenant.key_provider` confirmed `VAULT` in the DB (the async sync handler,
+    proven live, not just in tests) → `docker stop khatm-vault` → new issuance attempt → `503
+    KH-KEY-0503` exactly, no silent SOFT-backed credential ever created → verify (both the SOFT and
+    the Vault-signed credential), JWKS, and the status-list endpoint all kept returning `200` with
+    Vault down → `docker start khatm-vault` → dev-mode Vault came back **empty** (in-memory
+    storage, expected and documented) → re-ran `khatm-vault-init` → rotated onto `VAULT` again
+    (`key-6`, a fresh transit key against the freshly-initialized Vault) → issuance/verify/consume
+    all confirmed working again, no leftover broken state. One self-inflicted false start along
+    the way, not a platform bug: the first consume attempt 403'd (`KH-CNS-0403`) because the issue
+    call used the bare schema code `"CriminalRecordExtract"` rather than the existing schema's own
+    literal `code` value `"CriminalRecordExtract/v1"` (this platform's schemas can have `/v1` baked
+    into their `code` field itself, not appended by convention) — the consuming party's allowlist
+    correctly didn't match a different, freshly-auto-created schema row; fixed by issuing with the
+    schema's exact `code`.
+  - **DONE, NOT MERGED — PR not yet opened this turn.** Arabic-speaker review of `key.unknown
+    -provider`/`key.provider-unavailable` (both bundles) is the merge blocker, same gate every
+    prior new-key session has had.
+
 - **feat/KH-2.2c-BE-totp-2fa — mandatory TOTP second factor (spec FS-2.2 veto V1)** (session
   `feat/KH-2.2c-BE-totp-2fa`, 2026-07-30, spec `docs/specs/FS-2.2-rbac-granularity.md` veto V1,
   RFC 6238). `mvn verify` green, **409/409 tests (10 new)**. New `KH-USR-1403`/`KH-USR-1409` (2 new
