@@ -10,12 +10,14 @@
 #
 # Proves (per the session brief):
 #   1. GET /.well-known/jwks.json -> 200 with >=1 key        (boot, Flyway V1+V2, KeyBootstrap)
-#   2. login(local bootstrap admin) -> issue a credential -> verify it -> valid:true
-#      (AdminBootstrap, session auth, SD-JWT signing + verify — true end-to-end)
+#   2. login(local bootstrap admin) -> enroll+confirm TOTP -> issue a credential -> verify it ->
+#      valid:true (AdminBootstrap, session auth, mandatory 2FA, SD-JWT signing + verify — true
+#      end-to-end)
 #   3. docker compose down -v, then up again -> checks 1 & 2 pass again (repeatable restore)
 #
-# Requires: docker (Compose v2) + curl. Deliberately does NOT depend on jq — JSON is parsed
-# with sed/grep so the same command works on a minimal Git-Bash and a CI runner.
+# Requires: docker (Compose v2) + curl + python3 (stdlib only, RFC 6238 TOTP — see totp_code()).
+# Deliberately does NOT depend on jq — JSON is parsed with sed/grep so the same command works on
+# a minimal Git-Bash and a CI runner.
 #
 set -euo pipefail
 
@@ -69,6 +71,23 @@ json_value() {
     | head -n1
 }
 
+# RFC 6238 TOTP from a base32 secret, standard-library Python only (no pyotp) — the same
+# independent-implementation technique KH-2.2c's own live DoD used to verify the mandatory-2FA
+# flow end to end (docs/STATE.md), reused here so this script can clear the wall itself.
+totp_code() {
+  python3 - "$1" <<'PY'
+import base64, hashlib, hmac, struct, sys, time
+secret = sys.argv[1]
+key = base64.b32decode(secret)
+counter = int(time.time()) // 30
+msg = struct.pack(">Q", counter)
+h = hmac.new(key, msg, hashlib.sha1).digest()
+offset = h[-1] & 0x0F
+code = (struct.unpack(">I", h[offset:offset + 4])[0] & 0x7fffffff) % 1000000
+print(f"{code:06d}")
+PY
+}
+
 check_e2e() {
   bold "Check 2: login -> /api/v1/auth/me -> issue -> verify (authenticated end-to-end)"
 
@@ -93,7 +112,29 @@ check_e2e() {
   xsrf="$(awk '$6 == "XSRF-TOKEN" { print $7 }' "$COOKIE_JAR")"
   [ -n "$xsrf" ] || fail "no XSRF-TOKEN cookie after /api/v1/auth/me — CSRF cookie was not written"
 
-  # 2c. Issue a credential (session auth + `issue` scope; admin holds it). Echo the CSRF token.
+  # 2c. Enroll + confirm mandatory TOTP (KH-2.2c, spec FS-2.2 V1). The bootstrap admin holds
+  # platform:admin/tenant:admin/key:manage/revoke — every one a mandatory-2FA scope — so a fresh
+  # AdminBootstrap-created admin (exactly this script's own "restore-from-zero" scenario) is
+  # walled to only enroll/confirm/me/logout/login/totp-challenge (403 KH-USR-1403) until this
+  # runs. Not optional here: every later authenticated call in this function would 403 otherwise.
+  local enroll_body secret totp
+  enroll_body="$(curl -fsS \
+    -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
+    -H "X-XSRF-TOKEN: $xsrf" \
+    -X POST "$BASE_URL/api/v1/users/me/totp/enroll")"
+  secret="$(json_value "$enroll_body" secretBase32)"
+  [ -n "$secret" ] || fail "totp/enroll response had no secretBase32: $enroll_body"
+  totp="$(totp_code "$secret")"
+  curl -fsS -o /dev/null \
+    -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
+    -H 'Content-Type: application/json' \
+    -H "X-XSRF-TOKEN: $xsrf" \
+    -d "{\"code\":\"$totp\"}" \
+    "$BASE_URL/api/v1/users/me/totp/confirm" \
+    || fail "totp/confirm failed with independently-computed code $totp for secret $secret"
+  printf '  TOTP enrolled + confirmed\n'
+
+  # 2d. Issue a credential (session auth + `issue` scope; admin holds it). Echo the CSRF token.
   local issue_body
   issue_body="$(curl -fsS \
     -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
@@ -107,7 +148,7 @@ check_e2e() {
   [ -n "$sdjwt" ] || fail "issue response had no sdJwt: $issue_body"
   printf '  issued credential, verifying...\n'
 
-  # 2d. Verify it (public endpoint — no auth). Expect valid:true.
+  # 2e. Verify it (public endpoint — no auth). Expect valid:true.
   local verify_body
   verify_body="$(curl -fsS \
     -H 'Content-Type: application/json' \

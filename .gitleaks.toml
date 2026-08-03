@@ -10,6 +10,15 @@
 #    satisfies ClaimsEncryptionService's non-blank-key requirement during full Spring-context
 #    test boots (KH-0.4 D7). Its 32-byte entropy is what trips the generic-api-key rule. Not a
 #    production key; verified at KH-0.3 Phase-0 closure.
+#  * a2hhdG0tdGVzdC10b3RwLWVuYy1rZXktMzJieXRlcyE= (base64 of the literal string
+#    "khatm-test-totp-enc-key-32bytes!") — the same shape of synthetic test fixture, for
+#    TotpSecretEncryptionService's non-blank-key requirement (KH-2.2c, spec FS-2.2 V1). Already
+#    reused verbatim across several existing test files (KeyProviderRestartPersistenceTest,
+#    CrossProcessRotationKeystoreReloadTest, KeyRotationWorkerTest, RedisStreamWorkerTest, etc.) —
+#    this allowlist entry was simply never added when KH-2.2c introduced it, since every PR from
+#    #43 through #50 had CI skipped outright by the GitHub Actions billing outage (see
+#    docs/STATE.md "CI status (temporary)") and never actually ran gitleaks for real until this
+#    one. Not a production key.
 
 title = "khatm-platform"
 
@@ -24,4 +33,8 @@ regexes = [
   # decoded literal — gitleaks base64-decodes the value above and re-scans, so this form trips
   # the rule independently and must be allowlisted too.
   '''khatm-test-claims-enc-key-32byte''',
+  # base64 form (TOTP fixture, KH-2.2c)
+  '''a2hhdG0tdGVzdC10b3RwLWVuYy1rZXktMzJieXRlcyE=''',
+  # decoded literal
+  '''khatm-test-totp-enc-key-32bytes!''',
 ]
