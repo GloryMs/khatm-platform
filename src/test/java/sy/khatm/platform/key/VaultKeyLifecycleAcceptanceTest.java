@@ -219,11 +219,27 @@ class VaultKeyLifecycleAcceptanceTest {
    * KeyProvider generated the winning row — concurrent HTTP calls to Vault itself introduce no new
    * race window because the ACTIVE-flip happens in Postgres, strictly before any provider call for
    * the new key even starts (spec order: retire-active, then generate).
+   *
+   * <p><b>Real bug found running this against actual CI hardware (not local), fixed here in the
+   * test only:</b> the race must start from a tenant that already has an {@code ACTIVE} key, same
+   * as {@code key.domain.ConcurrentRotationTest} (SOFT). On a genuinely brand-new, keyless tenant
+   * {@code retireActive()} is a no-op for every racing caller — there is no row to lock — so the
+   * only thing arbitrating the race is the tail-end unique-index {@code INSERT}, which requires all
+   * callers' critical sections to genuinely overlap in time. {@code VaultTransitProvider
+   * #generate}'s real HTTP round-trip to Vault is slow/variable enough (far more than SOFT's
+   * in-memory generation) that on a loaded CI runner one caller's whole transaction can commit
+   * before a straggler even starts — the straggler then legitimately finds a fresh {@code ACTIVE}
+   * key to retire and completes its own valid, sequential rotation: a genuine second success, not a
+   * broken invariant (only one {@code ACTIVE} key per tenant held throughout). Provisioning one key
+   * before racing makes {@code retireActive()}'s row lock the actual serializer, which — unlike the
+   * tail-end insert race — blocks regardless of how long {@code generate()} takes.
    */
   @Test
   void rotateOntoVault_tenConcurrentCallers_exactlyOneSucceeds() throws Exception {
     withFreshTenant(
         (tenantId, tenantSlug) -> {
+          lifecycle.rotate(tenantId, tenantSlug, "VAULT");
+
           int concurrentCallers = 10;
           ExecutorService pool = Executors.newFixedThreadPool(concurrentCallers);
           CountDownLatch ready = new CountDownLatch(concurrentCallers);

@@ -17,12 +17,20 @@ rule), and PRs may be merged on Majd's instruction without waiting on GitHub's c
 section once CI is confirmed green again post-2026-08-01.
 
 ## Current phase / task
+- **SESSION-KH-2.4-BE — self-stopped, no code changes** (attempted 2026-08-04, spec
+  `docs/specs/FS-2_4-non-automated-issuer-portal.md`/`FS-2.4`). تمت محاولة KH-2.4-BE بتاريخ
+  2026-08-04، وتم التوقف الذاتي بشكل صحيح بسبب شرط انتظار Game-day، ولم يتم إجراء أي تغييرات على
+  الكود. Session brief's own scheduling rule: "runs after Game-day KH-2.3.3 (standing rule: no
+  platform session before it)" — STATE.md carried no record of that game-day (a manual،
+  Claude-Code-excluded exercise per FS-2.3's own §"KH-2.3.3") having run, so the preamble self-stop
+  fired correctly before any implementation began. No branch created, no files touched other than
+  this STATE.md record.
 - **feat/KH-2.3b-BE-vault-transit — Vault Transit KMS provider + SOFT→Vault migration (spec FS-2.3
   D5/D6)** (session `feat/KH-2.3b-BE-vault-transit`, 2026-08-02, spec
   `docs/specs/FS-2.3-kms-key-rotation.md` D5/D6, veto V1/V3 pre-approved before this session).
   `mvn verify` green, **421/421 tests (17 new)**. New `KH-KEY-0400`/`KH-KEY-0503` (2 new `key.*`
-  keys in both bundles — **Arabic-speaker review NOT yet confirmed by Majd — merge blocker**, same
-  gate pattern as every prior session's new-key set).
+  keys in both bundles — **Arabic-speaker review confirmed by Majd (2026-08-04)**, no wording
+  changes needed, same pattern as every prior session's new-key set).
   - **Verify-first findings, all recorded before writing:** `KeyLifecycleService` held exactly one
     injected `KeyProvider`, selected once at startup via `@ConditionalOnProperty(khatm.keys
     .provider)` — FS-0.5 D3's original "swap the provider = config change" design assumed only
@@ -141,10 +149,10 @@ section once CI is confirmed green again post-2026-08-01.
     into their `code` field itself, not appended by convention) — the consuming party's allowlist
     correctly didn't match a different, freshly-auto-created schema row; fixed by issuing with the
     schema's exact `code`.
-  - **DONE, NOT MERGED — PR #51 opened** (2026-08-02, `https://github.com/GloryMs/khatm-platform
-    /pull/51`). Arabic-speaker review of `key.unknown-provider`/`key.provider-unavailable` (both
-    bundles) is the merge blocker, same gate every
-    prior new-key session has had.
+  - **DONE & MERGED via PR #51** (opened 2026-08-02, merged 2026-08-04, merge commit `5895aca6`,
+    `https://github.com/GloryMs/khatm-platform/pull/51`, standard merge via `gh pr merge --merge`
+    on Majd's explicit instruction after confirming the Arabic review of
+    `key.unknown-provider`/`key.provider-unavailable` above).
 
 - **feat/KH-2.2c-BE-totp-2fa — mandatory TOTP second factor (spec FS-2.2 veto V1)** (session
   `feat/KH-2.2c-BE-totp-2fa`, 2026-07-30, spec `docs/specs/FS-2.2-rbac-granularity.md` veto V1,
@@ -1235,6 +1243,16 @@ section once CI is confirmed green again post-2026-08-01.
 
 
 ## Last completed
+- 2026-08-04: feat/KH-2.3b-BE-vault-transit — Vault Transit KMS provider + SOFT→Vault migration
+  (spec FS-2.3 D5/D6): per-tenant `KeyProvider` resolution via a name-keyed map, `VaultTransitProvider`
+  talking to Vault's Transit engine over plain HTTP, provider-naming on `POST
+  /admin/signing-keys/rotate` as the entire migration mechanism, fail-closed `KH-KEY-0503` on Vault
+  unreachability. `mvn verify` green, 421/421 tests (17 new). **DONE & MERGED via PR #51**
+  (opened 2026-08-02, merged 2026-08-04, merge commit `5895aca6`, standard merge — Arabic-speaker
+  review of `key.unknown-provider`/`key.provider-unavailable` confirmed by Majd, no wording changes
+  needed). See "Current phase / task" above for the full breakdown, including the two real bugs
+  found while verifying the DoD live (`resolvePublicKey`'s unnecessary `KeyProvider` dependency on
+  the verify path, and `StreamEventDispatcher`'s single-handler-per-event-type fan-out gap).
 - 2026-07-30: feat/KH-2.2d-BE-multitenant-login — closed the two platform gaps `khatm-console`
   recorded against FS-2.2's exit walkthrough: `POST /api/v1/auth/login` now accepts an optional
   `tenantSlug` (blank/absent still means the default tenant, unchanged), and new `GET
