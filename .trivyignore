@@ -65,3 +65,27 @@ CVE-2026-27136
 CVE-2026-33814
 CVE-2026-39821
 CVE-2026-39822
+
+# Triage log (PR #52, 2026-08-04): first `trivy fs` run that ever completed without hitting
+# Maven Central's rate limit (see .github/workflows/ci.yml's warmup-step fix, same PR) — these 3
+# findings had never actually been scanned before, not new regressions. All 3 are
+# org.springframework:spring-{expression,webmvc} 6.1.21, HIGH, fix needs 6.2.19+/7.0.8+ (minor
+# bump, spring-boot-starter-parent 3.3.13's managed baseline is 6.1.x — outside a patch-level-only
+# change, deferred to its own dedicated session with full regression testing, not bundled into a
+# docs/CI-cleanup PR).
+
+# 2026-08-04 PR #52 — CVE-2026-41850, DoS via specially crafted SpEL expressions. Unreachable:
+# grepped, no SpelExpressionParser/ExpressionParser/`#{` usage anywhere in this codebase, and (same
+# grounds as CVE-2025-41249 above) no @PreAuthorize/@EnableMethodSecurity either — nothing ever
+# evaluates a SpEL expression, attacker-supplied or otherwise.
+CVE-2026-41850
+
+# 2026-08-04 PR #52 — CVE-2026-41842 (DoS resolving static resources) / CVE-2026-41845 (XSS via
+# incorrect JavaScript escaping in the default error view). Both live in code paths Spring Boot
+# auto-configures by default (the static-resource handler, the whitelabel HTML error page) that
+# this platform never used on purpose (pure JSON REST API, CLAUDE.md P1) but which stayed reachable
+# by any anonymous request to an unmapped path until this same PR explicitly disabled both
+# (spring.web.resources.add-mappings=false, server.error.whitelabel.enabled=false — see
+# application.yml). Confirmed unreachable now, not merely unlikely.
+CVE-2026-41842
+CVE-2026-41845

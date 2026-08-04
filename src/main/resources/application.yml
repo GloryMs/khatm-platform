@@ -1,5 +1,15 @@
 server:
   port: 8080
+  # 2026-08-04 (PR #52, Trivy CVE-2026-41842/CVE-2026-41845 triage) — this platform is a pure
+  # JSON REST API (CLAUDE.md P1: proofs and status only, never content/views); GlobalExceptionHandler
+  # already produces the uniform error envelope for every controller-thrown exception. Spring Boot's
+  # default whitelabel HTML error page and default static-resource handler were never used on
+  # purpose but stayed reachable by any anonymous request to an unmapped path — disabling both here
+  # closes that gap rather than leaving it merely unlikely, and makes those two CVEs genuinely
+  # unreachable (not just unused) for the .trivyignore entries below.
+  error:
+    whitelabel:
+      enabled: false
   servlet:
     session:
       # KH-0.6b (spec FS-0.6b D1/§7): khatm.auth.session.timeout below is the single source of
@@ -16,6 +26,12 @@ server:
         secure: true
 
 spring:
+  web:
+    # See the CVE-2026-41842/CVE-2026-41845 note on server.error.whitelabel above — same
+    # reasoning: no static content is ever served on purpose, so the default handler stays off
+    # rather than merely unused.
+    resources:
+      add-mappings: false
   session:
     store-type: redis
   datasource:
