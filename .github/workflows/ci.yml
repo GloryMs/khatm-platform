@@ -65,6 +65,16 @@ jobs:
       # limit (429, confirmed on this job's own first CI run) since setup-java's cache only helps
       # `mvn`, not trivy. Populating ~/.m2 here first (and caching it) makes trivy resolve from
       # disk instead of the network.
+      #
+      # 2026-08-04 (PR #52) — `dependency:go-offline` alone turned out NOT to be enough: it still
+      # left trivy hitting Central's 429 on `netty-parent` (netty is a real, pinned transitive
+      # dependency here via Lettuce/Redis — see the `netty.version` property override above), a
+      # known `go-offline` gap (it does not reliably fetch every parent POM in a dependency's
+      # chain, only the artifacts it lists). The "Build and verify" job's own full `mvn verify`
+      # never hits this, because a real build always resolves the complete effective-POM graph
+      # (every parent POM included), not just a dependency list. Switched to a real,
+      # tests-skipped `package` build for the same reason — it resolves exactly what a full build
+      # resolves, which `go-offline` does not guarantee.
       - name: Set up JDK 21 (Temurin)
         uses: actions/setup-java@v4
         with:
@@ -73,7 +83,7 @@ jobs:
           cache: maven
 
       - name: Populate local Maven repo (so trivy fs doesn't hit Maven Central cold)
-        run: mvn -B -q -DskipTests dependency:go-offline
+        run: mvn -B -q -DskipTests -Dspotless.check.skip=true -Dcheckstyle.skip=true package
 
       # Build the image once, locally, so trivy image has something to scan. This also doubles
       # as a "the Dockerfile actually builds" gate.
