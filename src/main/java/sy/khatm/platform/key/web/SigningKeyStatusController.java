@@ -39,8 +39,8 @@ class SigningKeyStatusController {
       summary = "List every signing key's lifecycle status",
       description =
           "Every signing key for the tenant, newest first, every state including RETIRED —"
-              + " lifecycle fields only (kid/state/validFrom/validTo), never the public JWK or any"
-              + " private material. Requires the key:manage scope (any actor kind).",
+              + " lifecycle fields only (kid/state/provider/validFrom/validTo), never the public"
+              + " JWK or any private material. Requires the key:manage scope (any actor kind).",
       responses = {
         @ApiResponse(responseCode = "200", description = "Every signing key's lifecycle status"),
         @ApiResponse(
@@ -59,6 +59,7 @@ class SigningKeyStatusController {
   }
 
   private SigningKeyView toView(IssuerKeyStatusView key) {
-    return new SigningKeyView(key.kid(), key.state(), key.validFrom(), key.validTo());
+    return new SigningKeyView(
+        key.kid(), key.state(), key.provider(), key.validFrom(), key.validTo());
   }
 }

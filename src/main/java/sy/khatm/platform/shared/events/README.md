@@ -24,10 +24,17 @@ Redis-less test suite never attempts an `XADD`.
   `khatm.credential.events`, then polls on a schedule (`khatm.worker.stream.poll-interval-ms`,
   default 2000 ms) and hands each entry to `StreamEventDispatcher`.
 - `StreamEventDispatcher` does idempotent dispatch: de-duplicates by stream entry id
-  (`khatm:processed:{stream}:{entryId}`, 24 h TTL), retries the handler up to
+  (`khatm:processed:{stream}:{entryId}`, 24 h TTL), retries the handler(s) up to
   `khatm.worker.stream.max-attempts` (default 3), and on exhaustion copies the entry to the
   dead-letter stream **`khatm.dlq`** and ACKs the original.
 - Modules register handlers by implementing `StreamEventHandler` (the `events` named interface).
+  **Fan-out (KH-2.3b):** more than one handler may register for the same event type — every
+  matched handler runs on every dispatch attempt. Found and fixed this session, when
+  `key.events.KeyRotated` became the first event with two independent consumers
+  (`status.worker.KeyRotationHandler`, `tenant.worker.TenantKeyProviderSyncHandler`); before the
+  fix, `handlersByType` held exactly one handler per type, so whichever handler registered second
+  silently replaced the first. `RedisStreamWorkerTest
+  #dispatch_twoHandlersRegisteredForTheSameType_bothReceiveIt` pins this directly.
 
 ## Events on the wire
 

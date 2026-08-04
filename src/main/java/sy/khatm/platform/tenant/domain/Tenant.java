@@ -44,6 +44,18 @@ public class Tenant {
   @Column(name = "deploy_mode", nullable = false)
   private String deployMode;
 
+  /**
+   * The tenant's current signing-key provider (spec FS-2.3 D5/D6, veto V3) — {@code SOFT} for every
+   * newly onboarded tenant; changes only as a side effect of {@code key.domain
+   * .KeyLifecycleService#rotate} onto a different provider, via {@link
+   * sy.khatm.platform.key.events.KeyRotated} (this module consumes it, {@code key} never writes
+   * here directly — see {@code key/package-info.java}'s dependency-direction note). Not the source
+   * of truth for any individual key's provider (that's {@code issuer_key.provider}, per row); this
+   * column is the tenant-level "which provider is current" view, e.g. for a future console badge.
+   */
+  @Column(name = "key_provider", nullable = false)
+  private String keyProvider;
+
   @Column(nullable = false)
   private String status;
 
@@ -99,6 +111,14 @@ public class Tenant {
 
   public void setDeployMode(String deployMode) {
     this.deployMode = deployMode;
+  }
+
+  public String getKeyProvider() {
+    return keyProvider;
+  }
+
+  public void setKeyProvider(String keyProvider) {
+    this.keyProvider = keyProvider;
   }
 
   public String getStatus() {

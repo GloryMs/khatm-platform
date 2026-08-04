@@ -37,6 +37,43 @@ services:
       retries: 10
     networks: [khatm-net]
 
+  # KH-2.3b (spec FS-2.3 D5): HashiCorp Vault, DEV MODE ONLY — auto-unseals, keeps everything
+  # in-memory (nothing survives a container recreate), and uses a fixed root token for zero-setup
+  # local development. NONE of this is acceptable in staging/production — see
+  # docs/deploy-staging.md's "Vault hardening for production" section (real storage backend,
+  # manual unseal, an audit device, and an app token scoped to a least-privilege policy instead of
+  # this root token).
+  khatm-vault:
+    image: hashicorp/vault:1.17
+    container_name: khatm-vault
+    cap_add: [IPC_LOCK]
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: ${KHATM_KEYS_VAULT_TOKEN:-khatm-vault-dev-root-token-change-me}
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    ports: ["8200:8200"]
+    healthcheck:
+      test: ["CMD", "vault", "status", "-address=http://127.0.0.1:8200"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [khatm-net]
+
+  # One-shot: enables the transit secrets engine VaultTransitProvider talks to. Dev-mode Vault
+  # starts with no secrets engines mounted at all — 'vault secrets enable transit' is idempotent
+  # (a second run against an already-mounted engine is a no-op, not an error), matching the
+  # "|| true" tolerance below for the case where this compose stack is recreated against a Vault
+  # that was already initialized in a prior 'docker compose up'.
+  khatm-vault-init:
+    image: hashicorp/vault:1.17
+    container_name: khatm-vault-init
+    depends_on:
+      khatm-vault: { condition: service_healthy }
+    environment:
+      VAULT_ADDR: http://khatm-vault:8200
+      VAULT_TOKEN: ${KHATM_KEYS_VAULT_TOKEN:-khatm-vault-dev-root-token-change-me}
+    entrypoint: ["sh", "-c", "vault secrets enable transit || true"]
+    networks: [khatm-net]
+
   khatm-api:
     build: .
     container_name: khatm-api
@@ -57,6 +94,13 @@ services:
       # env in any real deployment; this local-only default matches application.yml's 'local'
       # profile document so `docker compose up` works with zero setup.
       KHATM_KEYS_PASSPHRASE: ${KHATM_KEYS_PASSPHRASE:-khatm-local-dev-passphrase-change-me}
+      # KH-2.3b (spec FS-2.3 D5): the khatm-vault dev-mode service above. Enabled by default in
+      # this LOCAL compose file only, so the SOFT->Vault migration DoD walkthrough works with zero
+      # extra setup — see docs/deploy-staging.md for the production-hardened equivalent (a scoped
+      # app token, never this dev root token).
+      KHATM_KEYS_VAULT_ENABLED: ${KHATM_KEYS_VAULT_ENABLED:-true}
+      KHATM_KEYS_VAULT_ADDRESS: http://khatm-vault:8200
+      KHATM_KEYS_VAULT_TOKEN: ${KHATM_KEYS_VAULT_TOKEN:-khatm-vault-dev-root-token-change-me}
       # PublicUrlBuilder roots every self-referential URL here (today: the status-list URI a
       # wallet fetches). 'localhost' only resolves on THIS machine — a phone or any other device
       # on the LAN needs your machine's actual LAN IP instead. Before testing from a real device,
@@ -67,8 +111,9 @@ services:
     ports: ["8080:8080"]
     volumes: [khatm_keys:/var/khatm/keys]
     depends_on:
-      khatm-postgres: { condition: service_healthy }
-      khatm-redis:    { condition: service_healthy }
+      khatm-postgres:   { condition: service_healthy }
+      khatm-redis:      { condition: service_healthy }
+      khatm-vault-init: { condition: service_completed_successfully }
     networks: [khatm-net]
 
   khatm-worker:
@@ -85,13 +130,18 @@ services:
       SPRING_FLYWAY_PASSWORD: ${POSTGRES_PASSWORD:-khatm_local_only}
       SPRING_DATA_REDIS_HOST: khatm-redis
       KHATM_KEYS_PASSPHRASE: ${KHATM_KEYS_PASSPHRASE:-khatm-local-dev-passphrase-change-me}
+      # KH-2.3b: same rationale as khatm-api above.
+      KHATM_KEYS_VAULT_ENABLED: ${KHATM_KEYS_VAULT_ENABLED:-true}
+      KHATM_KEYS_VAULT_ADDRESS: http://khatm-vault:8200
+      KHATM_KEYS_VAULT_TOKEN: ${KHATM_KEYS_VAULT_TOKEN:-khatm-vault-dev-root-token-change-me}
       # PublicUrlBuilder is wired regardless of role — same value as khatm-api above (see its
       # comment for the LAN-IP note).
       KHATM_PUBLIC_BASE_URL: ${KHATM_PUBLIC_BASE_URL:-http://localhost:8080}
     volumes: [khatm_keys:/var/khatm/keys]
     depends_on:
-      khatm-postgres: { condition: service_healthy }
-      khatm-redis:    { condition: service_healthy }
+      khatm-postgres:   { condition: service_healthy }
+      khatm-redis:      { condition: service_healthy }
+      khatm-vault-init: { condition: service_completed_successfully }
     networks: [khatm-net]
 
 volumes:

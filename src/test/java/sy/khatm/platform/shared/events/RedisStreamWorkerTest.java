@@ -91,6 +91,7 @@ class RedisStreamWorkerTest {
 
   @Autowired private CredentialService credentialService;
   @Autowired private RecordingHandler handler;
+  @Autowired private SecondRecordingHandler secondHandler;
   @Autowired private StreamEventDispatcher dispatcher;
   @Autowired private JdbcTemplate jdbc;
 
@@ -125,6 +126,25 @@ class RedisStreamWorkerTest {
     return jdbc.queryForObject(
         "SELECT COUNT(*) FROM event_publication WHERE event_type LIKE '%CredentialIssued%'",
         Integer.class);
+  }
+
+  // ── KH-2.3b regression: two handlers registered for the SAME event type both run ────────────
+  // (found via this session's own key.events.KeyRotated, the platform's first event with two
+  // independent module consumers — status.worker.KeyRotationHandler AND
+  // tenant.worker.TenantKeyProviderSyncHandler; a plain one-handler-per-type map silently dropped
+  // whichever registered second, caught by status.worker.KeyRotationWorkerTest's own regression
+  // failing unexpectedly. Fixed in StreamEventDispatcher; this pins the fix directly.)
+
+  @Test
+  void dispatch_twoHandlersRegisteredForTheSameType_bothReceiveIt() {
+    String marker = "FANOUT-" + UUID.randomUUID();
+    String entryId = "8888888888888-0";
+
+    dispatcher.dispatch(
+        "khatm.credential.events", entryId, CredentialIssued.class.getName(), marker);
+
+    assertThat(handler.markerCount(marker)).isEqualTo(1);
+    assertThat(secondHandler.markerCount(marker)).isEqualTo(1);
   }
 
   // ── 7b: idempotency — same entry id redelivered → side effect applied once ─────────────────
@@ -178,12 +198,40 @@ class RedisStreamWorkerTest {
     }
   }
 
+  /**
+   * A second, independent handler for the SAME event type as {@link RecordingHandler} — a distinct
+   * class (not a second bean of {@link RecordingHandler} itself) so {@code @Autowired} injection by
+   * type stays unambiguous for both.
+   */
+  static final class SecondRecordingHandler implements StreamEventHandler {
+    private final List<String> payloads = Collections.synchronizedList(new ArrayList<>());
+
+    @Override
+    public String eventType() {
+      return CredentialIssued.class.getName();
+    }
+
+    @Override
+    public void handle(String payload) {
+      payloads.add(payload);
+    }
+
+    long markerCount(String marker) {
+      return payloads.stream().filter(marker::equals).count();
+    }
+  }
+
   /** Registers the recording handler bean for this test's context only. */
   @TestConfiguration
   static class RecordingHandlerConfig {
     @Bean
     RecordingHandler credentialIssuedRecordingHandler() {
       return new RecordingHandler();
+    }
+
+    @Bean
+    SecondRecordingHandler secondCredentialIssuedRecordingHandler() {
+      return new SecondRecordingHandler();
     }
   }
 }

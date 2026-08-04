@@ -1,7 +1,9 @@
 package sy.khatm.platform.key.domain;
 
 import com.nimbusds.jose.JOSEException;
+import com.nimbusds.jose.jwk.ECKey;
 import com.nimbusds.jwt.JWTClaimsSet;
+import java.text.ParseException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
@@ -46,6 +48,16 @@ import sy.khatm.platform.shared.error.ValidationException;
  * {@code key :: api} surface: the controller lives inside this module, reading this module's own
  * data directly.
  *
+ * <p><b>Multi-provider routing (KH-2.3b, spec FS-2.3 D5/D6):</b> every registered {@link
+ * KeyProvider} bean is injected as a name-keyed map (bean name {@code "SOFT"}/{@code "VAULT"}
+ * matches the value stored in {@link IssuerKey#getProvider()}), never a single provider. Every
+ * operation that needs to reach a backend — {@link #createActiveKey}, {@link #signWithActiveKey} —
+ * resolves the provider from the row it is actually operating on, never from a single ambient
+ * default, so a tenant that has migrated onto Vault and one still on SOFT are served correctly from
+ * the very same running process, and a tenant's pre-migration SOFT keys stay signable/resolvable
+ * after that migration. {@link #resolvePublicKey} does not consult a provider at all — see its own
+ * Javadoc.
+ *
  * <p>Module-private.
  */
 @Service
@@ -62,25 +74,44 @@ public class KeyLifecycleService implements TenantKeyProvisioner, JwksLookup {
       List.of(STATE_ACTIVE, STATE_RETIRING, STATE_RETIRED);
 
   private final IssuerKeyRepository repository;
-  private final KeyProvider provider;
+  private final Map<String, KeyProvider> providers;
   private final AuditService audit;
   private final ApplicationEventPublisher eventPublisher;
-  private final String providerName;
+  private final String defaultProviderName;
   private final Duration minRetiringAge;
 
   KeyLifecycleService(
       IssuerKeyRepository repository,
-      KeyProvider provider,
+      Map<String, KeyProvider> providers,
       AuditService audit,
       ApplicationEventPublisher eventPublisher,
-      @Value("${khatm.keys.provider:SOFT}") String providerName,
+      @Value("${khatm.keys.provider:SOFT}") String defaultProviderName,
       @Value("${khatm.keys.min-retiring-age:P30D}") Duration minRetiringAge) {
     this.repository = repository;
-    this.provider = provider;
+    this.providers = providers;
     this.audit = audit;
     this.eventPublisher = eventPublisher;
-    this.providerName = providerName;
+    this.defaultProviderName = defaultProviderName;
     this.minRetiringAge = minRetiringAge;
+  }
+
+  /**
+   * Resolve a registered {@link KeyProvider} bean by name (spec FS-2.3 D5/D6).
+   *
+   * @param providerName the provider name, e.g. {@code SOFT}/{@code VAULT}
+   * @return the matching provider bean
+   * @throws ValidationException {@code KH-KEY-0400} if no such provider is registered — either a
+   *     typo or a provider this deployment never configured (e.g. {@code VAULT} without {@code
+   *     khatm.keys.vault.enabled=true}). Deliberately never falls back to any other provider — a
+   *     silent SOFT fallback for an unresolvable KMS-class provider would be a key-security
+   *     downgrade (spec FS-2.3 D5/D6's fail-closed requirement).
+   */
+  private KeyProvider resolveProvider(String providerName) {
+    KeyProvider resolved = providers.get(providerName);
+    if (resolved == null) {
+      throw new ValidationException(ErrorCode.KH_KEY_0400, "key.unknown-provider", providerName);
+    }
+    return resolved;
   }
 
   /**
@@ -99,7 +130,10 @@ public class KeyLifecycleService implements TenantKeyProvisioner, JwksLookup {
     if (repository.findByTenantIdAndState(tenantId, STATE_ACTIVE).isPresent()) {
       return Optional.empty();
     }
-    IssuerKey created = createActiveKey(tenantId, tenantSlug);
+    // Spec FS-2.3 D5/D6, veto V3: every tenant is born on the platform-default provider (SOFT) —
+    // starting a tenant directly on a KMS-class provider is out of scope; migrating there is
+    // always a later, explicit rotation (see #rotate(UUID, String, String)).
+    IssuerKey created = createActiveKey(tenantId, tenantSlug, defaultProviderName);
     audit.record(AuditAction.KEY_CREATED, "issuer_key", created.getKid(), null);
     return Optional.of(toSummary(created));
   }
@@ -119,7 +153,14 @@ public class KeyLifecycleService implements TenantKeyProvisioner, JwksLookup {
    *
    * <p>Publishes {@link KeyRotated} inside this same transaction (spec FS-2.3 D3) — {@code
    * status.worker}'s rotation handler consumes it to bump every one of this tenant's status lists'
-   * version, forcing the existing periodic sweep to re-sign each with the new key within one cycle.
+   * version, forcing the existing periodic sweep to re-sign each with the new key within one cycle;
+   * {@code tenant}'s own handler consumes the same event to keep {@code tenant.key_provider} in
+   * sync (spec V3).
+   *
+   * <p>Stays on whichever provider the tenant's current {@code ACTIVE} key already uses (or the
+   * platform default if the tenant somehow has none) — a plain rotate never changes provider by
+   * itself. Use {@link #rotate(UUID, String, String)} to rotate onto a different provider
+   * explicitly (spec D6: provider migration IS a normal rotation, nothing more).
    *
    * @param tenantId the tenant to rotate
    * @param tenantSlug the tenant's slug, used to build the new key's {@code kid}
@@ -127,15 +168,42 @@ public class KeyLifecycleService implements TenantKeyProvisioner, JwksLookup {
    */
   @Transactional
   public IssuerKeySummary rotate(UUID tenantId, String tenantSlug) {
+    String currentProvider =
+        repository
+            .findByTenantIdAndState(tenantId, STATE_ACTIVE)
+            .map(IssuerKey::getProvider)
+            .orElse(defaultProviderName);
+    return rotate(tenantId, tenantSlug, currentProvider);
+  }
+
+  /**
+   * Rotate the tenant's signing key onto a specific provider (spec FS-2.3 D5/D6) — the mechanism
+   * behind both a same-provider routine rotation ({@link #rotate(UUID, String)} delegates here with
+   * the current provider) and a SOFT→Vault (or any provider→provider) migration: D6's own wording
+   * is that migration is nothing but a normal rotation whose new key happens to land on a different
+   * backend. The retiring old key is untouched — it keeps whatever provider it was created with, so
+   * a tenant's history can span multiple providers across its lifetime, each key routed correctly
+   * by {@link #signWithActiveKey} / {@link #resolvePublicKey}.
+   *
+   * @param tenantId the tenant to rotate
+   * @param tenantSlug the tenant's slug, used to build the new key's {@code kid}
+   * @param requestedProvider the provider the new key should be created on
+   * @return the newly created, now-{@code ACTIVE} key's summary
+   * @throws ValidationException {@code KH-KEY-0400} if {@code requestedProvider} is not a
+   *     registered provider
+   */
+  @Transactional
+  public IssuerKeySummary rotate(UUID tenantId, String tenantSlug, String requestedProvider) {
     String oldKid =
         repository
             .findByTenantIdAndState(tenantId, STATE_ACTIVE)
             .map(IssuerKey::getKid)
             .orElse(null);
     repository.retireActive(tenantId, Instant.now());
-    IssuerKey created = createActiveKey(tenantId, tenantSlug);
+    IssuerKey created = createActiveKey(tenantId, tenantSlug, requestedProvider);
     audit.record(AuditAction.KEY_ROTATED, "issuer_key", created.getKid(), null);
-    eventPublisher.publishEvent(new KeyRotated(tenantId, oldKid, created.getKid(), Instant.now()));
+    eventPublisher.publishEvent(
+        new KeyRotated(tenantId, oldKid, created.getKid(), created.getProvider(), Instant.now()));
     return toSummary(created);
   }
 
@@ -208,6 +276,7 @@ public class KeyLifecycleService implements TenantKeyProvisioner, JwksLookup {
             .findByTenantIdAndState(tenantId, STATE_ACTIVE)
             .orElseThrow(
                 () -> new IllegalStateException("No ACTIVE issuer key for tenant " + tenantId));
+    KeyProvider provider = resolveProvider(active.getProvider());
     return provider.sign(active.getProviderRef(), active.getKid(), claims);
   }
 
@@ -221,14 +290,35 @@ public class KeyLifecycleService implements TenantKeyProvisioner, JwksLookup {
    * this session): a document signed years ago with a since-retired key must keep verifying for as
    * long as that key stays in JWKS, which is the entire point of retiring rather than deleting.
    *
+   * <p><b>Never calls a {@link KeyProvider} (KH-2.3b, spec FS-2.3 D5/D6):</b> before this session,
+   * this method round-tripped to whichever provider generated the key on every single call —
+   * meaning credential verification (spec's own "public artifacts don't need Vault at read time"
+   * DoD claim, verified true only after this change) would have needed a Vault-backed tenant's
+   * Vault reachable just to check a signature, and a killed Vault container would have broken
+   * verify/consume, not just issuance. {@code issuer_key.public_jwk} already holds the complete
+   * public JWK — written once at generation time (spec FS-0.2 §3.2), provider-agnostic, safe to
+   * read directly. Parsing it here removes the round trip entirely, for every provider, not just
+   * Vault: public-key resolution is now pure DB read, so JWKS publishing (already DB-only) and
+   * signature verification are equally unaffected by any provider backend's availability.
+   *
    * @param kid the key id to resolve
    * @return the public key handle, or empty only if {@code kid} is unknown
    */
   @Transactional(readOnly = true)
   Optional<PublicKeyHandle> resolvePublicKey(String kid) {
-    return repository
-        .findByKid(kid)
-        .flatMap(k -> provider.publicKey(k.getProviderRef(), k.getKid()));
+    return repository.findByKid(kid).map(KeyLifecycleService::toPublicKeyHandle);
+  }
+
+  private static PublicKeyHandle toPublicKeyHandle(IssuerKey key) {
+    try {
+      ECKey jwk = ECKey.parse(key.getPublicJwkJson());
+      return new PublicKeyHandle(key.getKid(), key.getAlgo(), jwk.toECPublicKey());
+    } catch (ParseException | JOSEException e) {
+      // The public_jwk column is only ever written by this module's own KeyProvider#generate
+      // implementations (never accepted from a request) — a parse failure here means the stored
+      // row itself is corrupt, an internal invariant break, not a caller-facing input problem.
+      throw new IllegalStateException("Corrupt public_jwk stored for kid=" + key.getKid(), e);
+    }
   }
 
   /**
@@ -264,7 +354,8 @@ public class KeyLifecycleService implements TenantKeyProvisioner, JwksLookup {
     return repository.findByTenantIdOrderByCreatedAtDesc(tenantId).stream()
         .map(
             k ->
-                new IssuerKeyStatusView(k.getKid(), k.getState(), k.getValidFrom(), k.getValidTo()))
+                new IssuerKeyStatusView(
+                    k.getKid(), k.getState(), k.getProvider(), k.getValidFrom(), k.getValidTo()))
         .toList();
   }
 
@@ -321,9 +412,10 @@ public class KeyLifecycleService implements TenantKeyProvisioner, JwksLookup {
         .toList();
   }
 
-  private IssuerKey createActiveKey(UUID tenantId, String tenantSlug) {
+  private IssuerKey createActiveKey(UUID tenantId, String tenantSlug, String providerName) {
     long seq = repository.countByTenantId(tenantId) + 1;
     String kid = tenantSlug + ":key-" + seq;
+    KeyProvider provider = resolveProvider(providerName);
     GeneratedKeyMaterial material = provider.generate(kid);
 
     Instant now = Instant.now();
@@ -342,6 +434,7 @@ public class KeyLifecycleService implements TenantKeyProvisioner, JwksLookup {
   }
 
   private static IssuerKeySummary toSummary(IssuerKey key) {
-    return new IssuerKeySummary(key.getKid(), key.getState(), key.getValidFrom(), key.getValidTo());
+    return new IssuerKeySummary(
+        key.getKid(), key.getState(), key.getProvider(), key.getValidFrom(), key.getValidTo());
   }
 }

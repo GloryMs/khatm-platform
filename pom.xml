@@ -264,6 +264,20 @@
       <artifactId>postgresql</artifactId>
       <scope>test</scope>
     </dependency>
+    <!--
+      KH-2.3b (spec FS-2.3 D5/D6): Vault dev-mode container for VaultTransitProvider's own test
+      suite (re-running the 2.3a acceptance surface against a real Vault transit backend, plus the
+      JOSE-marshaling test vector and the fail-closed-on-unreachable path). Version managed by the
+      testcontainers-bom import above. Production code talks to Vault over its plain HTTP API via
+      Spring's own RestClient (already transitively present via spring-boot-starter-web) — no
+      Vault client SDK dependency needed at compile/runtime scope, keeping the app's own
+      classpath/attack-surface unchanged.
+    -->
+    <dependency>
+      <groupId>org.testcontainers</groupId>
+      <artifactId>vault</artifactId>
+      <scope>test</scope>
+    </dependency>
   </dependencies>
 
   <build>

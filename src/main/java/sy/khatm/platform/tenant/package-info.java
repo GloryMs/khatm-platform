@@ -22,6 +22,12 @@
  *
  * <p><b>Published events:</b> (none yet)
  *
+ * <p><b>Events consumed (KH-2.3b, spec FS-2.3 D5/D6):</b> {@code tenant.worker
+ * .TenantKeyProviderSyncHandler} consumes {@link sy.khatm.platform.key.events.KeyRotated} to keep
+ * {@code tenant.key_provider} — the tenant-level "current signing-key provider" column (veto V3) —
+ * in sync with whatever provider a rotation actually landed the tenant's new key on. Does not add a
+ * new dependency edge: {@code tenant} already depends one-way on {@code key :: api}.
+ *
  * <p><b>Tables owned:</b> {@code tenant}
  *
  * <p><b>Status:</b> KH-2.1 Part A — tenant context resolution, the admin/onboarding plane, and the

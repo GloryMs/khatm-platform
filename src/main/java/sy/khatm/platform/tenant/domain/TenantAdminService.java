@@ -47,6 +47,7 @@ class TenantAdminService implements TenantAdmin {
   private static final String STATUS_ACTIVE = "ACTIVE";
   private static final String STATUS_SUSPENDED = "SUSPENDED";
   private static final String DEFAULT_DEPLOY_MODE = "SAAS";
+  private static final String DEFAULT_KEY_PROVIDER = "SOFT";
 
   private final TenantRepository tenants;
   private final TenantKeyProvisioner keyProvisioner;
@@ -151,6 +152,10 @@ class TenantAdminService implements TenantAdmin {
     tenant.setType(type);
     tenant.setDeployMode(
         deployMode == null || deployMode.isBlank() ? DEFAULT_DEPLOY_MODE : deployMode);
+    // Spec FS-2.3 D5/D6, veto V3: every tenant is born on SOFT — migrating onto a KMS-backed
+    // provider (Vault Transit today) is always an explicit later rotation, never an onboarding
+    // choice (see Tenant#keyProvider's own Javadoc).
+    tenant.setKeyProvider(DEFAULT_KEY_PROVIDER);
     tenant.setStatus(STATUS_ACTIVE);
     Instant now = Instant.now();
     tenant.setCreatedAt(now);

@@ -43,7 +43,6 @@ import org.bouncycastle.operator.jcajce.JcaContentSignerBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
 import org.springframework.stereotype.Component;
@@ -79,9 +78,15 @@ import sy.khatm.platform.key.api.SignResult;
  * rotation it didn't itself perform without needing to restart. Found and fixed via this session's
  * own live compose walkthrough — {@code khatm-worker}'s status-list resign failed with {@code
  * JOSEException: No such key in keystore} for the newly-rotated key until this fix.
+ *
+ * <p><b>Always registered (KH-2.3b, spec FS-2.3 D5/D6):</b> unlike before this session, this bean
+ * is no longer gated behind {@code khatm.keys.provider} — {@link KeyLifecycleService} now holds
+ * every registered {@link KeyProvider} in a name-keyed map and routes each key to whichever
+ * provider actually created it (spec V3's per-tenant column), so SOFT must stay available even on a
+ * deployment where a tenant has since migrated onto {@code VaultTransitProvider}: every key it
+ * created before that migration is still {@code SOFT} and must still resolve/verify.
  */
-@Component
-@ConditionalOnProperty(name = "khatm.keys.provider", havingValue = "SOFT", matchIfMissing = true)
+@Component("SOFT")
 class SoftKeyProvider implements KeyProvider {
 
   private static final Logger log = LoggerFactory.getLogger(SoftKeyProvider.class);

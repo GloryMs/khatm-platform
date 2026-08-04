@@ -74,6 +74,13 @@ import org.springframework.http.HttpStatus;
  * KH-KEY-0409} the target key is not {@code RETIRING}, {@code KH-KEY-0422} the min-retiring-age
  * guard (spec V4).
  *
+ * <p><b>{@code KEY} batch, third wave</b> (KH-2.3b, spec FS-2.3 D5/D6): multi-provider signing
+ * introduces two new failure shapes that did not exist while {@code SOFT} was the only backend —
+ * {@code KH-KEY-0400} an unknown/unregistered {@code provider} named in a rotate request, {@code
+ * KH-KEY-0503} the configured provider backend (Vault Transit today) is unreachable at sign/create
+ * time. Neither is a document-shaped failure the way {@code KH-KEY-0404}/{@code 0409}/{@code 0422}
+ * are — both are infrastructure/operator-facing.
+ *
  * <p><b>{@code USR} batch, third wave</b> (KH-2.2c, spec FS-2.2 V1): TOTP second-factor
  * enrollment/login-challenge — {@code KH-USR-1403} the mandatory-enrollment wall (a second {@code
  * 403} in {@code USR}, after {@link #KH_USR_0403}), {@code KH-USR-1409} a TOTP state conflict
@@ -127,6 +134,26 @@ public enum ErrorCode {
    * genuinely is the wire status).
    */
   KH_KEY_0422(HttpStatus.UNPROCESSABLE_ENTITY, "key.retiring-too-young"),
+
+  /**
+   * {@code POST /api/v1/admin/signing-keys/rotate} (KH-2.3b, spec FS-2.3 D5/D6) named a {@code
+   * provider} in its request body that is not a registered {@link
+   * sy.khatm.platform.key.domain.KeyProvider} bean — either a typo, or a provider this deployment
+   * never configured (e.g. {@code VAULT} without {@code khatm.keys.vault.enabled=true}). The first
+   * {@code 400} in {@code KEY}.
+   */
+  KH_KEY_0400(HttpStatus.BAD_REQUEST, "key.unknown-provider"),
+
+  /**
+   * A sign or key-generation call reached a {@link sy.khatm.platform.key.domain.KeyProvider}
+   * backend that could not be reached (KH-2.3b, spec FS-2.3 D5/D6's fail-closed requirement — a
+   * Vault-backed tenant whose Vault is down must never silently fall back to SOFT, since that would
+   * be a key-security downgrade). Distinct from {@link #KH_KEY_0500} (a signing operation that
+   * reached its backend but failed cryptographically/structurally) specifically so this is
+   * alarm-friendly: an operator or monitor can page on {@code KH-KEY-0503} as "the KMS is
+   * unreachable," a materially different, more urgent situation than a generic signing failure.
+   */
+  KH_KEY_0503(HttpStatus.SERVICE_UNAVAILABLE, "key.provider-unavailable"),
 
   /** Bean Validation rejected the request body; see the envelope's {@code details[]}. */
   KH_SYS_0400(HttpStatus.BAD_REQUEST, "validation.failed"),

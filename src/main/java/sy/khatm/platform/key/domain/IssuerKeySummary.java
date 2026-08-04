@@ -11,8 +11,12 @@ import java.time.Instant;
  * @param kid the key id
  * @param state the key's lifecycle state ({@code PENDING}/{@code ACTIVE}/{@code RETIRING}/{@code
  *     RETIRED})
+ * @param provider the {@link KeyProvider} backend this key's private material lives in ({@code
+ *     SOFT}/{@code VAULT}, spec FS-2.3 D5/D6) — surfaced so a rotate caller can confirm which
+ *     backend the newly created key actually landed on.
  * @param validFrom when this key became valid
  * @param validTo when this key stopped (or will stop) being valid; {@code null} for a key that has
  *     never been retired
  */
-public record IssuerKeySummary(String kid, String state, Instant validFrom, Instant validTo) {}
+public record IssuerKeySummary(
+    String kid, String state, String provider, Instant validFrom, Instant validTo) {}

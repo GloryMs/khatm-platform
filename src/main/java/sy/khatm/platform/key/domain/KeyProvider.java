@@ -15,8 +15,13 @@ import sy.khatm.platform.key.api.SignResult;
  * KmsProvider} implements exactly this interface and {@link KeyLifecycleService}, which owns all
  * persistence and state-machine logic, does not change at all.
  *
- * <p>Module-private. Selected for injection via {@code @ConditionalOnProperty(khatm.keys.provider)}
- * on each implementation (currently only {@link SoftKeyProvider}).
+ * <p>Module-private. Each implementation registers itself under a name (bean name {@code "SOFT"}/
+ * {@code "VAULT"}, gated by its own {@code @ConditionalOnProperty}) — {@link KeyLifecycleService}
+ * holds every registered implementation in a name-keyed map (spec FS-2.3 D5/D6, KH-2.3b) rather
+ * than injecting a single one, and resolves the right one per {@code issuer_key} row's own stored
+ * {@code provider} value, never a single ambient default. See {@link SoftKeyProvider} (always
+ * registered) and {@link VaultTransitProvider} (registered only when {@code
+ * khatm.keys.vault.enabled=true}).
  */
 interface KeyProvider {
 
