@@ -36,6 +36,18 @@ public interface SchemaCatalog {
   Optional<SchemaRef> findById(UUID id);
 
   /**
+   * Look up a schema by its machine {@code code} at version {@code 1}, for the current tenant
+   * (KH-2.4, spec FS-2.4 item 2's bulk-issuance pre-check) — the same {@code (code, version=1)}
+   * resolution {@link #ensurePublished} and the quick-issue path already use exclusively; a schema
+   * authored at a later version is never reachable through this lookup, matching that existing
+   * limitation.
+   *
+   * @param code the schema's machine code; must not be {@code null}
+   * @return the matching schema reference, or empty if no version-1 schema with this code exists
+   */
+  Optional<SchemaRef> findByCode(String code);
+
+  /**
    * List schemas for the current tenant, list-view shape (KH-1.6-early, {@code GET
    * /api/v1/schemas}), optionally filtered by lifecycle status (KH-1.1.1 — the console's schema
    * management view needs to see {@code DRAFT} rows too, unlike the issue-form picker, which keeps

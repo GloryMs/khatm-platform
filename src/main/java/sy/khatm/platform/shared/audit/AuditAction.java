@@ -304,5 +304,15 @@ public enum AuditAction {
    * {@code entityRef} is the username; {@code detail.remaining} is how many recovery codes are left
    * — never the code itself, used or otherwise.
    */
-  USER_TOTP_RECOVERY_CODE_USED
+  USER_TOTP_RECOVERY_CODE_USED,
+
+  /**
+   * A human operator attested a scanned document at issuance time, against a schema with {@code
+   * requires_attestation=true} ({@code credential} module, KH-2.4, spec FS-2.4 item 2). {@code
+   * entityRef} is the issued credential's {@code ref}; {@code detail.note} carries the operator's
+   * optional note — never the document itself or any claim value (P1/SEC §9). Recorded in the same
+   * transaction as, and ordered strictly before, the {@link #CREDENTIAL_ISSUED} row for the same
+   * credential.
+   */
+  SCAN_ATTESTED
 }

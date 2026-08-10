@@ -9,6 +9,8 @@ import sy.khatm.platform.credential.api.BulkIssueItem;
 import sy.khatm.platform.credential.api.BulkIssueRequest;
 import sy.khatm.platform.credential.api.IssueRequest;
 import sy.khatm.platform.credential.api.IssueResponse;
+import sy.khatm.platform.schema.api.SchemaCatalog;
+import sy.khatm.platform.schema.api.SchemaRef;
 import sy.khatm.platform.shared.audit.AuditAction;
 import sy.khatm.platform.shared.audit.AuditService;
 import sy.khatm.platform.shared.error.ErrorCode;
@@ -50,10 +52,13 @@ public class BulkIssuanceService {
 
   private final CredentialService credentialService;
   private final AuditService audit;
+  private final SchemaCatalog schemas;
 
-  public BulkIssuanceService(CredentialService credentialService, AuditService audit) {
+  public BulkIssuanceService(
+      CredentialService credentialService, AuditService audit, SchemaCatalog schemas) {
     this.credentialService = credentialService;
     this.audit = audit;
+    this.schemas = schemas;
   }
 
   /**
@@ -63,7 +68,10 @@ public class BulkIssuanceService {
    * @return the full per-item report
    * @throws ValidationException {@link ErrorCode#KH_CRD_0400} if {@code items} is empty or exceeds
    *     {@value #MAX_ITEMS} entries — a batch-level rejection before any item is processed, never
-   *     counted as a per-item failure
+   *     counted as a per-item failure; {@link ErrorCode#KH_ATT_0402} (KH-2.4, spec FS-2.4 item 2)
+   *     if {@code req.schemaCode()} names a schema with {@code requires_attestation=true} —
+   *     attested schemas are out of scope for bulk issuance entirely, rejected wholesale before any
+   *     item is processed
    */
   public BulkIssueOutcome bulkIssue(BulkIssueRequest req) {
     List<BulkIssueItem> items = req.items() == null ? List.of() : req.items();
@@ -76,6 +84,9 @@ public class BulkIssuanceService {
           ErrorCode.KH_CRD_0400,
           "credential.bulk-validation-failed",
           "items must not exceed " + MAX_ITEMS + " entries, got " + items.size());
+    }
+    if (schemas.findByCode(req.schemaCode()).map(SchemaRef::requiresAttestation).orElse(false)) {
+      throw new ValidationException(ErrorCode.KH_ATT_0402, "attestation.bulk-not-supported");
     }
 
     boolean mintClaimCodes = Boolean.TRUE.equals(req.mintClaimCodes());
@@ -95,6 +106,7 @@ public class BulkIssuanceService {
                 item.maxUses() == null ? defaultMaxUses : item.maxUses(),
                 item.validMinutes() == null ? defaultValidMinutes : item.validMinutes(),
                 item.claims(),
+                null,
                 null);
         // A separate-bean call — the real Spring proxy, its own fresh transaction (see class
         // Javadoc). Never called as a self-invocation of this class's own method.

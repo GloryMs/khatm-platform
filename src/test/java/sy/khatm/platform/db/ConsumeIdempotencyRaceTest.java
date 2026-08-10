@@ -49,7 +49,13 @@ class ConsumeIdempotencyRaceTest extends IntegrationTestSupport {
     IssueResponse issued =
         credentialService.issue(
             new IssueRequest(
-                "IdemRaceProbe/v1", "holder-idem-race", 2, 60, Map.of("field", "value"), null));
+                "IdemRaceProbe/v1",
+                "holder-idem-race",
+                2,
+                60,
+                Map.of("field", "value"),
+                null,
+                null));
     String idemKey = "idem-race-" + UUID.randomUUID();
     String consumerCode = "idem-race-party-" + UUID.randomUUID();
     // Pre-create the consuming party synchronously: ConsumingPartyRegistryService#ensure has its

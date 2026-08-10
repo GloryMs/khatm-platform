@@ -44,6 +44,7 @@ class CredentialExhaustionStatusListTest extends IntegrationTestSupport {
                 1,
                 60,
                 Map.of("field", "value"),
+                null,
                 null));
     UUID credentialId = UUID.fromString(issued.id());
     Map<String, Object> row =

@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HexFormat;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -30,6 +31,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.ApplicationEventPublisher;
@@ -41,6 +43,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import sy.khatm.platform.consumer.api.ConsumingPartyRef;
 import sy.khatm.platform.consumer.api.ConsumingPartyRegistry;
+import sy.khatm.platform.credential.api.AttestationRequest;
 import sy.khatm.platform.credential.api.ConsumeRequest;
 import sy.khatm.platform.credential.api.ConsumeResponse;
 import sy.khatm.platform.credential.api.CredentialPage;
@@ -198,6 +201,8 @@ public class CredentialService {
 
     SchemaRef schemaRef =
         schemas.ensurePublished(buildSchemaDefinition(schemaCode, claims, sdFields, maxUses));
+    validateAttestation(schemaRef, req.attestation());
+    validateClaimPatterns(schemaRef, claims);
     HolderRef holderRef = holders.ensureHolder(holderPseudoRef);
     StatusAllocation allocation = statusLists.allocate(DEFAULT_STATUS_LIST_CODE);
     // KH-1.3 D7: the allocate() call above always creates-or-finds the list row first, so a
@@ -277,6 +282,18 @@ public class CredentialService {
     c.setRevoked(false);
     c.setCreatedAt(now);
     credentials.save(c);
+
+    // KH-2.4 (spec FS-2.4 item 2): recorded before CREDENTIAL_ISSUED, same transaction — a
+    // signing/persistence failure earlier in this method never reaches here, and any failure
+    // between here and commit rolls this row back together with everything else (AuditService
+    // joins the caller's own physical transaction), so there is never an orphan SCAN_ATTESTED row.
+    // validateAttestation above guarantees req.attestation() != null here exactly when the schema
+    // requires it.
+    if (req.attestation() != null) {
+      String note = req.attestation().note();
+      Map<String, Object> detail = note == null || note.isBlank() ? null : Map.of("note", note);
+      audit.record(AuditAction.SCAN_ATTESTED, "credential", ref, detail);
+    }
 
     // ADR-09: publish CredentialIssued inside this transaction. Spring Modulith writes it to the
     // event_publication outbox now (same tx) and externalizes it to the khatm.credential.events
@@ -1001,7 +1018,67 @@ public class CredentialService {
         new LocalizedText(schemaCode, schemaCode),
         claimsDef.toString(),
         sdFields,
-        maxUses);
+        maxUses,
+        // Quick-issued schemas never require attestation — that is only ever set through real
+        // schema authoring (schema.web.SchemaController), never this find-or-create stand-in path.
+        false);
+  }
+
+  /**
+   * Deny-by-default in both directions (KH-2.4, spec FS-2.4 item 2): a schema with {@code
+   * requires_attestation=true} must receive an {@code attestation} object, and one with {@code
+   * requires_attestation=false} must not — no silent ignoring either way.
+   *
+   * @throws ValidationException {@link ErrorCode#KH_ATT_0400} if the schema requires attestation
+   *     and none was submitted; {@link ErrorCode#KH_ATT_0401} if attestation was submitted but the
+   *     schema does not require it
+   */
+  private static void validateAttestation(SchemaRef schemaRef, AttestationRequest attestation) {
+    if (schemaRef.requiresAttestation() && attestation == null) {
+      throw new ValidationException(ErrorCode.KH_ATT_0400, "attestation.required");
+    }
+    if (!schemaRef.requiresAttestation() && attestation != null) {
+      throw new ValidationException(ErrorCode.KH_ATT_0401, "attestation.not-applicable");
+    }
+  }
+
+  /**
+   * Reject a submitted claim value that does not match its {@code claims_def} field's optional
+   * {@code pattern} (KH-2.4, spec FS-2.4 item 3). A field with no {@code pattern}, or one not
+   * present in {@code claims} at all, is not checked here — presence/required-ness at issuance is
+   * unrelated to this format constraint.
+   *
+   * @throws ValidationException {@link ErrorCode#KH_SCH_0400} — the same "standard
+   *     schema-validation error envelope" {@code SchemaAuthoringService} already uses, since a
+   *     claim value failing its schema's own pattern is a schema-validation failure, not a new
+   *     failure vocabulary
+   */
+  private static void validateClaimPatterns(SchemaRef schemaRef, Map<String, Object> claims) {
+    JsonNode claimsDef;
+    try {
+      claimsDef = JSON.readTree(schemaRef.claimsDefJson());
+    } catch (JsonProcessingException e) {
+      throw new IllegalStateException(
+          "Stored claims_def is not valid JSON for schema " + schemaRef.id(), e);
+    }
+    Iterator<Map.Entry<String, JsonNode>> fields = claimsDef.fields();
+    while (fields.hasNext()) {
+      Map.Entry<String, JsonNode> field = fields.next();
+      JsonNode patternNode = field.getValue().get("pattern");
+      if (patternNode == null || patternNode.isNull()) {
+        continue;
+      }
+      Object value = claims.get(field.getKey());
+      if (value == null) {
+        continue;
+      }
+      if (!Pattern.matches(patternNode.asText(), String.valueOf(value))) {
+        throw new ValidationException(
+            ErrorCode.KH_SCH_0400,
+            "schema.validation-failed",
+            "claim \"" + field.getKey() + "\" does not match the required pattern");
+      }
+    }
   }
 
   /**

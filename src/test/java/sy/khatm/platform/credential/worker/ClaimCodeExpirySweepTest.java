@@ -65,7 +65,8 @@ class ClaimCodeExpirySweepTest extends IntegrationTestSupport {
                 1,
                 60,
                 Map.of("result", "NO_RECORD"),
-                List.of()));
+                List.of(),
+                null));
     UUID credentialId = UUID.fromString(issued.id());
     UUID tenant = TenantContext.current();
     // Flush the just-issued credential (and its FK targets) so the raw JDBC inserts below can see
@@ -128,7 +129,8 @@ class ClaimCodeExpirySweepTest extends IntegrationTestSupport {
                 1,
                 60,
                 Map.of("result", "NO_RECORD"),
-                List.of()));
+                List.of(),
+                null));
     UUID credentialId = UUID.fromString(issued.id());
     entityManager.flush();
     // Only an unexpired, populated code — nothing to zero.

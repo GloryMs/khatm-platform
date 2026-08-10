@@ -190,7 +190,7 @@ class CredentialSearchStatusFilterTest extends IntegrationTestSupport {
 
   private IssueResponse issue(String schemaCode, String holderRef) {
     return credentialService.issue(
-        new IssueRequest(schemaCode, holderRef, 1, 60, Map.of("field", "value"), List.of()));
+        new IssueRequest(schemaCode, holderRef, 1, 60, Map.of("field", "value"), List.of(), null));
   }
 
   /**

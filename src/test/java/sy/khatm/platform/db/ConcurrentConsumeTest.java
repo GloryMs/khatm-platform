@@ -44,7 +44,13 @@ class ConcurrentConsumeTest extends IntegrationTestSupport {
     IssueResponse issued =
         credentialService.issue(
             new IssueRequest(
-                "ConcurrentConsumeProbe/v1", "holder-concurrent-probe", 1, 60, Map.of(), null));
+                "ConcurrentConsumeProbe/v1",
+                "holder-concurrent-probe",
+                1,
+                60,
+                Map.of(),
+                null,
+                null));
 
     ExecutorService pool = Executors.newFixedThreadPool(CONCURRENT_CALLERS);
     CountDownLatch ready = new CountDownLatch(CONCURRENT_CALLERS);
@@ -103,6 +109,7 @@ class ConcurrentConsumeTest extends IntegrationTestSupport {
                 maxUses,
                 60,
                 Map.of(),
+                null,
                 null));
     UUID credentialId = UUID.fromString(issued.id());
     Map<String, Object> row =

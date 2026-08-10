@@ -108,7 +108,8 @@ class CredentialListScopeGateTest extends RbacHttpTestSupport {
                 1,
                 60,
                 Map.of("field", "value"),
-                List.of()));
+                List.of(),
+                null));
     credentialService.consume(new ConsumeRequest(exhausted.id(), "consumer-http", null));
     AuthenticatedSession session =
         SessionTestSupport.login(rest, BOOTSTRAP_ADMIN_USERNAME, BOOTSTRAP_ADMIN_PASSWORD);

@@ -34,7 +34,8 @@ class StatusListVerifyAndRedeemIntegrationTest extends IntegrationTestSupport {
                 1,
                 60,
                 Map.of("field", "value"),
-                List.of()));
+                List.of(),
+                null));
 
     VerifyResponse result = credentialService.verify(issued.sdJwt());
 
@@ -54,7 +55,8 @@ class StatusListVerifyAndRedeemIntegrationTest extends IntegrationTestSupport {
                 1,
                 60,
                 Map.of("field", "value"),
-                List.of()));
+                List.of(),
+                null));
     long versionBeforeRevoke = credentialService.verify(issued.sdJwt()).statusListVersion();
     credentialService.revoke(UUID.fromString(issued.id()));
 
@@ -87,7 +89,8 @@ class StatusListVerifyAndRedeemIntegrationTest extends IntegrationTestSupport {
                 1,
                 60,
                 Map.of("field", "value"),
-                List.of()));
+                List.of(),
+                null));
     ClaimCodeIssued claimCode =
         credentialService.issueClaimCode(
             UUID.fromString(issued.id()), issued.sdJwt(), Duration.ofMinutes(5));
@@ -115,7 +118,8 @@ class StatusListVerifyAndRedeemIntegrationTest extends IntegrationTestSupport {
                 1,
                 60,
                 Map.of("field", "value"),
-                List.of()));
+                List.of(),
+                null));
 
     String compactJwt = issued.sdJwt().split("~")[0];
     JWTClaimsSet claims = SignedJWT.parse(compactJwt).getJWTClaimsSet();

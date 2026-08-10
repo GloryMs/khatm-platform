@@ -56,6 +56,9 @@ public class CredentialSchema {
   @Column(name = "default_max_uses", nullable = false)
   private int defaultMaxUses;
 
+  @Column(name = "requires_attestation", nullable = false)
+  private boolean requiresAttestation;
+
   @Column(nullable = false)
   private String status;
 
@@ -127,6 +130,14 @@ public class CredentialSchema {
 
   public void setDefaultMaxUses(int defaultMaxUses) {
     this.defaultMaxUses = defaultMaxUses;
+  }
+
+  public boolean isRequiresAttestation() {
+    return requiresAttestation;
+  }
+
+  public void setRequiresAttestation(boolean requiresAttestation) {
+    this.requiresAttestation = requiresAttestation;
   }
 
   public String getStatus() {

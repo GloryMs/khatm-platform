@@ -64,7 +64,7 @@ class NoDisclosureContentInLogsTest extends IntegrationTestSupport {
 
     IssueResponse issued =
         credentialService.issue(
-            new IssueRequest("LogProbe/v1", "holder-log-probe", 1, 60, claims, List.of()));
+            new IssueRequest("LogProbe/v1", "holder-log-probe", 1, 60, claims, List.of(), null));
     credentialService.verify(issued.sdJwt());
     credentialService.issueClaimCode(
         UUID.fromString(issued.id()), issued.sdJwt(), Duration.ofMinutes(5));
@@ -96,7 +96,8 @@ class NoDisclosureContentInLogsTest extends IntegrationTestSupport {
     Map<String, Object> claims = Map.of("secretValue", "TOP-SECRET-SWEEP-999");
     IssueResponse issued =
         credentialService.issue(
-            new IssueRequest("SweepLogProbe/v1", "holder-sweep-log", 1, 60, claims, List.of()));
+            new IssueRequest(
+                "SweepLogProbe/v1", "holder-sweep-log", 1, 60, claims, List.of(), null));
     credentialService.issueClaimCode(
         UUID.fromString(issued.id()), issued.sdJwt(), Duration.ofMinutes(5));
     List<String> saltsUsed =
@@ -140,7 +141,7 @@ class NoDisclosureContentInLogsTest extends IntegrationTestSupport {
     IssueResponse issued =
         credentialService.issue(
             new IssueRequest(
-                "RedeemLogProbe/v1", "holder-redeem-log-probe", 1, 60, claims, List.of()));
+                "RedeemLogProbe/v1", "holder-redeem-log-probe", 1, 60, claims, List.of(), null));
     ClaimCodeIssued claimCode =
         credentialService.issueClaimCode(
             UUID.fromString(issued.id()), issued.sdJwt(), Duration.ofMinutes(5));
@@ -174,7 +175,8 @@ class NoDisclosureContentInLogsTest extends IntegrationTestSupport {
 
     IssueResponse issued =
         credentialService.issue(
-            new IssueRequest("MintLogProbe/v1", "holder-mint-log-probe", 1, 60, claims, List.of()));
+            new IssueRequest(
+                "MintLogProbe/v1", "holder-mint-log-probe", 1, 60, claims, List.of(), null));
 
     List<String> saltsUsed =
         SDJWT.parse(issued.sdJwt()).getDisclosures().stream()

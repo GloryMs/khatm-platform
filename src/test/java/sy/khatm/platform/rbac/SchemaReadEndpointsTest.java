@@ -140,7 +140,13 @@ class SchemaReadEndpointsTest extends RbacHttpTestSupport {
   private SchemaRef ensureProbeSchema(String code, String nameEn) {
     return catalog.ensurePublished(
         new SchemaDefinition(
-            code, 1, new LocalizedText(nameEn, "فحص القائمة"), "{\"fields\":[]}", List.of(), 1));
+            code,
+            1,
+            new LocalizedText(nameEn, "فحص القائمة"),
+            "{\"fields\":[]}",
+            List.of(),
+            1,
+            false));
   }
 
   private static JsonNode findById(JsonNode entries, UUID id) {

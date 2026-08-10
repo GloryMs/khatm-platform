@@ -101,7 +101,8 @@ class RedisStreamDeadLetterTest {
                 1,
                 60,
                 Map.of("result", "NO_RECORD"),
-                List.of()));
+                List.of(),
+                null));
 
     // The DLQ receives the entry.
     await()

@@ -53,7 +53,8 @@ class ConsumingPartyAdminGateTest extends RbacHttpTestSupport {
   private UUID ensureSchema(String code) {
     SchemaRef ref =
         schemaCatalog.ensurePublished(
-            new SchemaDefinition(code, 1, new LocalizedText(code, code), "{}", List.of(), 1));
+            new SchemaDefinition(
+                code, 1, new LocalizedText(code, code), "{}", List.of(), 1, false));
     return ref.id();
   }
 

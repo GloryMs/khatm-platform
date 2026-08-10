@@ -23,6 +23,8 @@ import java.util.Map;
  *     {@code null} defaults to {@code 1}; must be {@code >= 1} if given
  * @param defaultValidity default validity window as an ISO-8601 duration string (e.g. {@code
  *     "P90D"}); {@code null} means no configured default
+ * @param requiresAttestation whether a credential issued against this schema must carry an {@code
+ *     attestation} object (KH-2.4, spec FS-2.4 item 1); {@code null} defaults to {@code false}
  */
 public record SchemaCreateRequest(
     @NotBlank String code,
@@ -30,4 +32,5 @@ public record SchemaCreateRequest(
     @NotEmpty List<@Valid ClaimFieldRequest> claimsDef,
     List<String> sdFields,
     Integer defaultMaxUses,
-    String defaultValidity) {}
+    String defaultValidity,
+    Boolean requiresAttestation) {}

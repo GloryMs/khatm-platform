@@ -210,9 +210,10 @@ class BulkIssuanceServiceTest extends IntegrationTestSupport {
     return new SchemaCreateRequest(
         code,
         Map.of("en", "Bulk Probe " + UUID.randomUUID(), "ar", "فحص جماعي"),
-        List.of(new ClaimFieldRequest("field", "text", Map.of("en", "Field", "ar", "حقل"))),
+        List.of(new ClaimFieldRequest("field", "text", Map.of("en", "Field", "ar", "حقل"), null)),
         List.of(),
         1,
+        null,
         null);
   }
 }

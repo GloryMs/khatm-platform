@@ -40,7 +40,8 @@ class IssuanceSchemaGuardTest extends IntegrationTestSupport {
                         1,
                         60,
                         Map.of("name", "value"),
-                        List.of())))
+                        List.of(),
+                        null)))
         .isInstanceOf(ConflictException.class);
   }
 
@@ -59,7 +60,8 @@ class IssuanceSchemaGuardTest extends IntegrationTestSupport {
                         1,
                         60,
                         Map.of("name", "value"),
-                        List.of())))
+                        List.of(),
+                        null)))
         .isInstanceOf(ConflictException.class);
   }
 
@@ -75,16 +77,18 @@ class IssuanceSchemaGuardTest extends IntegrationTestSupport {
             1,
             60,
             Map.of("name", "value"),
-            List.of()));
+            List.of(),
+            null));
   }
 
   private static SchemaCreateRequest createRequest(String code) {
     return new SchemaCreateRequest(
         code,
         Map.of("en", "Issuance Guard Probe", "ar", "فحص إصدار"),
-        List.of(new ClaimFieldRequest("name", "text", Map.of("en", "Name", "ar", "الاسم"))),
+        List.of(new ClaimFieldRequest("name", "text", Map.of("en", "Name", "ar", "الاسم"), null)),
         List.of(),
         1,
+        null,
         null);
   }
 }

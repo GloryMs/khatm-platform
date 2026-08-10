@@ -68,7 +68,7 @@ class AttentionServiceTest {
     when(schemas.findById(schemaId))
         .thenReturn(
             java.util.Optional.of(
-                new SchemaRef(schemaId, "CriminalRecordExtract", 1, null, null, List.of())));
+                new SchemaRef(schemaId, "CriminalRecordExtract", 1, null, null, List.of(), false)));
     ConsumingPartyView party =
         new ConsumingPartyView(
             partyId, "acme", new LocalizedText("Acme", "أكمي"), "ACTIVE", Instant.now(), List.of());

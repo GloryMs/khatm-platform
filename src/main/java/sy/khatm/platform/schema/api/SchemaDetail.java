@@ -21,6 +21,8 @@ import sy.khatm.platform.shared.LocalizedText;
  * @param defaultMaxUses default max consumption count for credentials issued against this schema
  * @param defaultValidity default validity window as an ISO-8601 duration string (e.g. {@code
  *     "P90D"}), or {@code null} if the schema has no configured default
+ * @param requiresAttestation whether issuing against this schema requires an {@code attestation}
+ *     object (KH-2.4, spec FS-2.4 item 1)
  */
 public record SchemaDetail(
     UUID id,
@@ -31,4 +33,5 @@ public record SchemaDetail(
     String claimsDefJson,
     List<String> sdFields,
     int defaultMaxUses,
-    String defaultValidity) {}
+    String defaultValidity,
+    boolean requiresAttestation) {}

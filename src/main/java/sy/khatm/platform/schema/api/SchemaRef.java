@@ -18,6 +18,9 @@ import sy.khatm.platform.shared.LocalizedText;
  * @param sdFields names of claims_def fields the holder is permitted to withhold at presentation
  *     time — every other claims_def field is mandatory to disclose (spec FS-0.4 D2); enforced by
  *     the verify path, not the DB schema itself
+ * @param requiresAttestation whether a credential issued against this schema must carry an {@code
+ *     attestation} object (KH-2.4, spec FS-2.4 item 1) — {@code CredentialService#issue}'s
+ *     deny-by-default enforcement source of truth
  */
 public record SchemaRef(
     UUID id,
@@ -25,4 +28,5 @@ public record SchemaRef(
     int version,
     LocalizedText nameI18n,
     String claimsDefJson,
-    List<String> sdFields) {}
+    List<String> sdFields,
+    boolean requiresAttestation) {}
