@@ -17,6 +17,23 @@ rule), and PRs may be merged on Majd's instruction without waiting on GitHub's c
 section once CI is confirmed green again post-2026-08-01.
 
 ## Current phase / task
+GAMEDAY KH-2.3.3 — EXECUTED & PASSED (executed ______ [بين 2026-08-05 و2026-08-10]، recorded 2026-08-10). 
+Manual exercise, Majd + المعماري, no Claude Code (per FS-2.3 §KH-2.3.3). Scope decision: 
+Option A (split) — Part A (full SOFT rotation lifecycle: rotate via console /key-management behind TOTP, 
+JWKS publishes ACTIVE+RETIRING, status list re-signed with new kid within NFR-06, old credentials still verify, 
+new issuance on new key, staged retire stopping at KH-KEY-0422 by design) executed on live bunny staging — all green. 
+Part B (SOFT→Vault migration as a plain rotation with provider: VAULT, provider column flip via KeyRotated fan-out, 
+issuance on Vault key, fail-closed proven live (503 KH-KEY-0503, no silent SOFT fallback), 
+public reads (verify/JWKS/status) proven Vault-independent during outage, recovery via manual unseal) executed on 
+local hardened-Vault compose (real file storage, manual unseal, least-privilege token — not dev-mode; staging runs no 
+Vault by documented decision) — all green. Evidence: 
+attestation-based khatm-docs/evidence/GAMEDAY-2.3.3/SUMMARY.md (+ retro-captured R1–R5 artifacts alongside it, 
+if executed). Deviations recorded there: A8/W3 (rooted-device wallet behavior) not executed — no rooted device available; 
+W3 stays an open risk item, explicitly excluded from this exit evidence. 
+Phase-2 exit evidence, second half: COMPLETE. KH-2.3 is now fully closed 
+(2.3a ✅ D7 ✅ C8 ✅ C8b ✅ 2.3b ✅ 2.3.3 ✅). The KH-2.4-BE scheduling gate is 
+hereby satisfied — its 2026-08-04 self-stop condition no longer holds.
+
 - **SESSION-KH-2.4-BE — self-stopped, no code changes** (attempted 2026-08-04, spec
   `docs/specs/FS-2_4-non-automated-issuer-portal.md`/`FS-2.4`). تمت محاولة KH-2.4-BE بتاريخ
   2026-08-04، وتم التوقف الذاتي بشكل صحيح بسبب شرط انتظار Game-day، ولم يتم إجراء أي تغييرات على
