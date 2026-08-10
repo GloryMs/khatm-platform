@@ -94,9 +94,12 @@ hereby satisfied — its 2026-08-04 self-stop condition no longer holds.
     session's attention as a minor error-handling gap); a second false start used a hand-typed,
     not-actually-64-hex-char `doc_sha256` value, correctly rejected by the pattern validator itself
     (confirming it works) before being replaced with a real, computed digest.
-  - **PR #54** (opened 2026-08-10, `https://github.com/GloryMs/khatm-platform/pull/54`) — CI green
-    (see above); **Arabic-speaker review of the 3 new `attestation.*` keys — merge blocker, not yet
-    confirmed by Majd.**
+  - **DONE & MERGED via PR #54** (opened 2026-08-10, merged 2026-08-10, merge commit `1015e7c5`,
+    `https://github.com/GloryMs/khatm-platform/pull/54`, standard merge via `gh pr merge --merge`
+    on Majd's explicit instruction after confirming the Arabic review of the 3 new
+    `attestation.*` keys above — CI fully green, no override needed). `khatm-api`/`khatm-worker`
+    rebuilt and redeployed against the merged code post-merge, confirmed clean startup (both
+    seeders, including `AttestedDocumentSeeder`, ran with no errors).
 
 - **SESSION-KH-2.4-BE — self-stopped, no code changes** (attempted 2026-08-04, spec
   `docs/specs/FS-2_4-non-automated-issuer-portal.md`/`FS-2.4`). تمت محاولة KH-2.4-BE بتاريخ
