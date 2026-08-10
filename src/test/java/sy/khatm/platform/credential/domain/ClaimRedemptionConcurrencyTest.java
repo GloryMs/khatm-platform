@@ -63,7 +63,8 @@ class ClaimRedemptionConcurrencyTest extends IntegrationTestSupport {
                 1,
                 60,
                 Map.of("result", "X"),
-                List.of()));
+                List.of(),
+                null));
     ClaimCodeIssued claimCode =
         credentialService.issueClaimCode(
             UUID.fromString(issued.id()), issued.sdJwt(), Duration.ofMinutes(5));
@@ -133,7 +134,8 @@ class ClaimRedemptionConcurrencyTest extends IntegrationTestSupport {
                 1,
                 60,
                 Map.of("result", "X"),
-                List.of()));
+                List.of(),
+                null));
     ClaimCodeIssued claimCode =
         credentialService.issueClaimCode(
             UUID.fromString(issued.id()), issued.sdJwt(), Duration.ofMinutes(5));

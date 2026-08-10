@@ -61,7 +61,8 @@ class DemoSeeder implements CommandLineRunner {
                   1,
                   60,
                   claims,
-                  withholdableFields));
+                  withholdableFields,
+                  null));
       ClaimCodeIssued claim =
           service.issueClaimCode(
               UUID.fromString(issued.id()), issued.sdJwt(), Duration.ofMinutes(15));

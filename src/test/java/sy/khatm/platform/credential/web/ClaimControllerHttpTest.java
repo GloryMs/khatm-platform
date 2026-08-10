@@ -43,7 +43,8 @@ class ClaimControllerHttpTest extends RbacHttpTestSupport {
                 1,
                 60,
                 claims,
-                List.of("caseNumber")));
+                List.of("caseNumber"),
+                null));
     ClaimCodeIssued claimCode =
         credentialService.issueClaimCode(
             UUID.fromString(issued.id()), issued.sdJwt(), Duration.ofMinutes(5));
@@ -82,7 +83,8 @@ class ClaimControllerHttpTest extends RbacHttpTestSupport {
                 1,
                 60,
                 Map.of("result", "X"),
-                List.of()));
+                List.of(),
+                null));
     ClaimCodeIssued claimCode =
         credentialService.issueClaimCode(
             UUID.fromString(issued.id()), issued.sdJwt(), Duration.ofMinutes(5));

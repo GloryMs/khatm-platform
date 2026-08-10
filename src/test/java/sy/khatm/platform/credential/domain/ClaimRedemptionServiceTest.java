@@ -44,7 +44,13 @@ class ClaimRedemptionServiceTest extends IntegrationTestSupport {
     IssueResponse issued =
         credentialService.issue(
             new IssueRequest(
-                "RedeemHappy/v1", "holder-redeem-happy", 1, 60, claims, List.of("caseNumber")));
+                "RedeemHappy/v1",
+                "holder-redeem-happy",
+                1,
+                60,
+                claims,
+                List.of("caseNumber"),
+                null));
     ClaimCodeIssued claimCode =
         credentialService.issueClaimCode(
             UUID.fromString(issued.id()), issued.sdJwt(), Duration.ofMinutes(5));
@@ -96,7 +102,8 @@ class ClaimRedemptionServiceTest extends IntegrationTestSupport {
   void redeem_credentialWithZeroClaims_deliversEmptyDisclosureList() {
     IssueResponse issued =
         credentialService.issue(
-            new IssueRequest("RedeemEmpty/v1", "holder-redeem-empty", 1, 60, Map.of(), List.of()));
+            new IssueRequest(
+                "RedeemEmpty/v1", "holder-redeem-empty", 1, 60, Map.of(), List.of(), null));
     ClaimCodeIssued claimCode =
         credentialService.issueClaimCode(
             UUID.fromString(issued.id()), issued.sdJwt(), Duration.ofMinutes(5));
@@ -111,7 +118,13 @@ class ClaimRedemptionServiceTest extends IntegrationTestSupport {
     IssueResponse issued =
         credentialService.issue(
             new IssueRequest(
-                "RedeemTwice/v1", "holder-redeem-twice", 1, 60, Map.of("result", "X"), List.of()));
+                "RedeemTwice/v1",
+                "holder-redeem-twice",
+                1,
+                60,
+                Map.of("result", "X"),
+                List.of(),
+                null));
     ClaimCodeIssued claimCode =
         credentialService.issueClaimCode(
             UUID.fromString(issued.id()), issued.sdJwt(), Duration.ofMinutes(5));
@@ -149,7 +162,8 @@ class ClaimRedemptionServiceTest extends IntegrationTestSupport {
                 1,
                 60,
                 Map.of("result", "X"),
-                List.of()));
+                List.of(),
+                null));
     ClaimCodeIssued claimCode =
         credentialService.issueClaimCode(
             UUID.fromString(issued.id()), issued.sdJwt(), Duration.ofMinutes(5));
@@ -185,7 +199,8 @@ class ClaimRedemptionServiceTest extends IntegrationTestSupport {
                 1,
                 60,
                 Map.of("result", "X"),
-                List.of()));
+                List.of(),
+                null));
     ClaimCodeIssued claimCode =
         credentialService.issueClaimCode(
             UUID.fromString(issued.id()), issued.sdJwt(), Duration.ofMinutes(5));

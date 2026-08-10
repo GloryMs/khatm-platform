@@ -15,6 +15,14 @@ import sy.khatm.platform.shared.LocalizedText;
  * @param nameI18n bilingual display name
  * @param version the schema version
  * @param status the schema's lifecycle status (e.g. {@code PUBLISHED})
+ * @param requiresAttestation whether issuing against this schema requires an {@code attestation}
+ *     object (KH-2.4, spec FS-2.4 item 1) — this is the exact surface the console's issue wizard
+ *     reads to gate the attested flow off at schema-selection time
  */
 public record SchemaSummary(
-    UUID id, String code, LocalizedText nameI18n, int version, String status) {}
+    UUID id,
+    String code,
+    LocalizedText nameI18n,
+    int version,
+    String status,
+    boolean requiresAttestation) {}

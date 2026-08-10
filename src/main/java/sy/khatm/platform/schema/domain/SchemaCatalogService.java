@@ -41,6 +41,15 @@ class SchemaCatalogService implements SchemaCatalog {
 
   @Override
   @Transactional(readOnly = true)
+  public Optional<SchemaRef> findByCode(String code) {
+    UUID tenantId = TenantContext.current();
+    return schemas
+        .findByTenantIdAndCodeAndVersion(tenantId, code, 1)
+        .map(SchemaCatalogService::toRef);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
   public List<SchemaSummary> listAll(String status) {
     UUID tenantId = TenantContext.current();
     List<CredentialSchema> rows =
@@ -88,6 +97,7 @@ class SchemaCatalogService implements SchemaCatalog {
     schema.setClaimsDefJson(definition.claimsDefJson());
     schema.setSdFields(definition.sdFields().toArray(new String[0]));
     schema.setDefaultMaxUses(definition.defaultMaxUses());
+    schema.setRequiresAttestation(definition.requiresAttestation());
     schema.setStatus("PUBLISHED");
     schema.setCreatedAt(now);
     schema.setUpdatedAt(now);
@@ -102,7 +112,8 @@ class SchemaCatalogService implements SchemaCatalog {
         schema.getVersion(),
         schema.getNameI18n(),
         schema.getClaimsDefJson(),
-        List.of(schema.getSdFields()));
+        List.of(schema.getSdFields()),
+        schema.isRequiresAttestation());
   }
 
   private static SchemaSummary toSummary(CredentialSchema schema) {
@@ -111,7 +122,8 @@ class SchemaCatalogService implements SchemaCatalog {
         schema.getCode(),
         schema.getNameI18n(),
         schema.getVersion(),
-        schema.getStatus());
+        schema.getStatus(),
+        schema.isRequiresAttestation());
   }
 
   static SchemaDetail toDetail(CredentialSchema schema, Long defaultValiditySeconds) {
@@ -124,7 +136,8 @@ class SchemaCatalogService implements SchemaCatalog {
         schema.getClaimsDefJson(),
         List.of(schema.getSdFields()),
         schema.getDefaultMaxUses(),
-        toIso8601Duration(defaultValiditySeconds));
+        toIso8601Duration(defaultValiditySeconds),
+        schema.isRequiresAttestation());
   }
 
   /**

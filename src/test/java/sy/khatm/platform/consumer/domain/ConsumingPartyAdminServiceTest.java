@@ -42,7 +42,8 @@ class ConsumingPartyAdminServiceTest extends IntegrationTestSupport {
   private UUID ensureSchema(String code) {
     SchemaRef ref =
         schemas.ensurePublished(
-            new SchemaDefinition(code, 1, new LocalizedText(code, code), "{}", List.of(), 1));
+            new SchemaDefinition(
+                code, 1, new LocalizedText(code, code), "{}", List.of(), 1, false));
     return ref.id();
   }
 

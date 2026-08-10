@@ -20,4 +20,5 @@ public record SchemaAuthoringRequest(
     @NotEmpty List<@Valid ClaimFieldRequest> claimsDef,
     List<String> sdFields,
     Integer defaultMaxUses,
-    String defaultValidity) {}
+    String defaultValidity,
+    Boolean requiresAttestation) {}

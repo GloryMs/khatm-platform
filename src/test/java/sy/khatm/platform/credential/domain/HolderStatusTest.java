@@ -33,7 +33,8 @@ class HolderStatusTest extends IntegrationTestSupport {
                 2,
                 60,
                 Map.of("field", "value"),
-                List.of()));
+                List.of(),
+                null));
 
     HolderStatusResponse status = credentialService.holderStatus(bareJwt(issued));
 
@@ -53,7 +54,8 @@ class HolderStatusTest extends IntegrationTestSupport {
                 1,
                 60,
                 Map.of("field", "value"),
-                List.of()));
+                List.of(),
+                null));
     credentialService.consume(new ConsumeRequest(issued.id(), "consumer-a", null));
 
     HolderStatusResponse status = credentialService.holderStatus(bareJwt(issued));
@@ -73,7 +75,8 @@ class HolderStatusTest extends IntegrationTestSupport {
                 3,
                 60,
                 Map.of("field", "value"),
-                List.of()));
+                List.of(),
+                null));
     credentialService.revoke(UUID.fromString(issued.id()));
 
     HolderStatusResponse status = credentialService.holderStatus(bareJwt(issued));
@@ -98,7 +101,8 @@ class HolderStatusTest extends IntegrationTestSupport {
                 1,
                 60,
                 Map.of("field", "value"),
-                List.of()));
+                List.of(),
+                null));
     String tampered = bareJwt(issued) + "tampered";
 
     assertThatThrownBy(() -> credentialService.holderStatus(tampered))

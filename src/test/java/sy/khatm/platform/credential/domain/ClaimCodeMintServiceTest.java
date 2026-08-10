@@ -34,7 +34,13 @@ class ClaimCodeMintServiceTest extends IntegrationTestSupport {
     IssueResponse issued =
         credentialService.issue(
             new IssueRequest(
-                "MintHappy/v1", "holder-mint-happy", 1, 60, Map.of("field", "value"), List.of()));
+                "MintHappy/v1",
+                "holder-mint-happy",
+                1,
+                60,
+                Map.of("field", "value"),
+                List.of(),
+                null));
 
     ClaimCodeIssued minted =
         credentialService.mintClaimCode(UUID.fromString(issued.id()), issued.sdJwt(), null);
@@ -63,7 +69,7 @@ class ClaimCodeMintServiceTest extends IntegrationTestSupport {
     IssueResponse issued =
         credentialService.issue(
             new IssueRequest(
-                "MintTtl/v1", "holder-mint-ttl", 1, 60, Map.of("field", "value"), List.of()));
+                "MintTtl/v1", "holder-mint-ttl", 1, 60, Map.of("field", "value"), List.of(), null));
 
     Instant before = Instant.now();
     ClaimCodeIssued minted =
@@ -83,7 +89,8 @@ class ClaimCodeMintServiceTest extends IntegrationTestSupport {
                 1,
                 60,
                 Map.of("field", "value"),
-                List.of()));
+                List.of(),
+                null));
 
     ClaimCodeIssued first =
         credentialService.mintClaimCode(UUID.fromString(issued.id()), issued.sdJwt(), null);
@@ -128,7 +135,8 @@ class ClaimCodeMintServiceTest extends IntegrationTestSupport {
                 1,
                 60,
                 Map.of("field", "value"),
-                List.of()));
+                List.of(),
+                null));
     credentialService.revoke(UUID.fromString(issued.id()));
 
     assertThatThrownBy(
@@ -149,7 +157,8 @@ class ClaimCodeMintServiceTest extends IntegrationTestSupport {
                 1,
                 60,
                 Map.of("field", "value"),
-                List.of()));
+                List.of(),
+                null));
     // valid_to > valid_from is a DB CHECK constraint — push both into the past together.
     jdbc.update(
         "UPDATE credential SET valid_from = ?, valid_to = ? WHERE id = ?",

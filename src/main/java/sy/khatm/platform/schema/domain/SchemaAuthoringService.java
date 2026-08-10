@@ -10,6 +10,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import sy.khatm.platform.schema.api.ClaimFieldRequest;
@@ -80,7 +82,13 @@ public class SchemaAuthoringService {
     schema.setTenantId(tenantId);
     schema.setCode(req.code());
     schema.setVersion(1);
-    applyAuthoringFields(schema, req.nameI18n(), req.claimsDef(), req.sdFields(), maxUses);
+    applyAuthoringFields(
+        schema,
+        req.nameI18n(),
+        req.claimsDef(),
+        req.sdFields(),
+        maxUses,
+        Boolean.TRUE.equals(req.requiresAttestation()));
     schema.setStatus("DRAFT");
     schema.setCreatedAt(now);
     schema.setUpdatedAt(now);
@@ -109,7 +117,13 @@ public class SchemaAuthoringService {
     int maxUses = requireValidMaxUses(req.defaultMaxUses());
     Long validitySeconds = parseValiditySeconds(req.defaultValidity());
 
-    applyAuthoringFields(schema, req.nameI18n(), req.claimsDef(), req.sdFields(), maxUses);
+    applyAuthoringFields(
+        schema,
+        req.nameI18n(),
+        req.claimsDef(),
+        req.sdFields(),
+        maxUses,
+        Boolean.TRUE.equals(req.requiresAttestation()));
     schema.setUpdatedAt(Instant.now());
     schemas.save(schema);
     schemas.updateDefaultValidity(id, validitySeconds);
@@ -167,7 +181,13 @@ public class SchemaAuthoringService {
     version.setTenantId(source.getTenantId());
     version.setCode(source.getCode());
     version.setVersion(source.getVersion() + 1);
-    applyAuthoringFields(version, req.nameI18n(), req.claimsDef(), req.sdFields(), maxUses);
+    applyAuthoringFields(
+        version,
+        req.nameI18n(),
+        req.claimsDef(),
+        req.sdFields(),
+        maxUses,
+        Boolean.TRUE.equals(req.requiresAttestation()));
     version.setStatus("DRAFT");
     version.setCreatedAt(now);
     version.setUpdatedAt(now);
@@ -212,19 +232,23 @@ public class SchemaAuthoringService {
       Map<String, String> nameI18n,
       List<ClaimFieldRequest> claimsDef,
       List<String> sdFields,
-      int maxUses) {
+      int maxUses,
+      boolean requiresAttestation) {
     schema.setNameI18n(toLocalizedText(nameI18n));
     List<String> sd = sdFields == null ? List.of() : sdFields;
     schema.setClaimsDefJson(claimsDefJson(claimsDef, sd));
     schema.setSdFields(sd.toArray(new String[0]));
     schema.setDefaultMaxUses(maxUses);
+    schema.setRequiresAttestation(requiresAttestation);
   }
 
   /**
    * @throws ValidationException {@link ErrorCode#KH_SCH_0400} on the first rule that fails: {@code
    *     nameI18n} missing {@code en}/{@code ar}, a claim field with a blank name, a duplicate claim
    *     field name, an unsupported claim field {@code type}, a claim field's {@code labelI18n}
-   *     missing {@code en}/{@code ar}, or an {@code sdFields} entry not among the claim field names
+   *     missing {@code en}/{@code ar}, a claim field's {@code pattern} that does not compile as a
+   *     regex (KH-2.4, spec FS-2.4 item 3), or an {@code sdFields} entry not among the claim field
+   *     names
    */
   private static void validateAuthoringFields(
       Map<String, String> nameI18n, List<ClaimFieldRequest> claimsDef, List<String> sdFields) {
@@ -252,6 +276,14 @@ public class SchemaAuthoringService {
                 + ")");
       }
       requireBilingual(field.labelI18n(), "claimsDef[\"" + field.name() + "\"].labelI18n");
+      if (field.pattern() != null) {
+        try {
+          Pattern.compile(field.pattern());
+        } catch (PatternSyntaxException e) {
+          throw invalid(
+              "claim field \"" + field.name() + "\" has an invalid pattern: " + e.getMessage());
+        }
+      }
     }
 
     if (sdFields != null) {
@@ -316,6 +348,9 @@ public class SchemaAuthoringService {
       ObjectNode fieldNode = root.putObject(field.name());
       fieldNode.put("type", field.type());
       fieldNode.put("required", !withholdable.contains(field.name()));
+      if (field.pattern() != null) {
+        fieldNode.put("pattern", field.pattern());
+      }
       ObjectNode label = fieldNode.putObject("label_i18n");
       label.put("en", field.labelI18n().get("en"));
       label.put("ar", field.labelI18n().get("ar"));

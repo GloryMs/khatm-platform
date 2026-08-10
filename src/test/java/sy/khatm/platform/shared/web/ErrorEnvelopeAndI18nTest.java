@@ -264,7 +264,8 @@ class ErrorEnvelopeAndI18nTest extends ErrorEnvelopeTestSupport {
             5,
             60,
             Map.of("field1", "value1", "field2", "value2"),
-            List.of("field2"));
+            List.of("field2"),
+            null);
     ResponseEntity<IssueResponse> issued =
         rest.exchange(
             "/api/v1/credentials/issue",

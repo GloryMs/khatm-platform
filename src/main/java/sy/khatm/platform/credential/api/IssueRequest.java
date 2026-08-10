@@ -1,6 +1,7 @@
 package sy.khatm.platform.credential.api;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +28,10 @@ import java.util.Map;
  *     time (spec FS-0.4 D2); any {@code claims} key not listed here is mandatory to disclose in
  *     every presentation. {@code null} means every claim is withholdable (used when the caller has
  *     no mandatory/optional distinction to express yet)
+ * @param attestation required when the resolved schema has {@code requires_attestation=true},
+ *     forbidden otherwise (KH-2.4, spec FS-2.4 item 2, deny-by-default in both directions — {@code
+ *     CredentialService#issue} rejects a mismatch as {@code KH-ATT-0400}/{@code KH-ATT-0401} rather
+ *     than silently ignoring it); {@code null} for every schema that does not require it
  */
 @Schema(name = "IssueRequest", description = "Request to issue a new SD-JWT verifiable credential")
 public record IssueRequest(
@@ -35,4 +40,5 @@ public record IssueRequest(
     Integer maxUses,
     Integer validMinutes,
     Map<String, Object> claims,
-    List<String> sdFields) {}
+    List<String> sdFields,
+    @Valid AttestationRequest attestation) {}

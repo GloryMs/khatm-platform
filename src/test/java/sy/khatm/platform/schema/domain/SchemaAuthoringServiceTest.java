@@ -48,7 +48,8 @@ class SchemaAuthoringServiceTest extends IntegrationTestSupport {
             List.of(field("name", "text")),
             List.of(),
             1,
-            "P90D");
+            "P90D",
+            null);
 
     SchemaDetail created = authoring.create(req);
 
@@ -72,6 +73,7 @@ class SchemaAuthoringServiceTest extends IntegrationTestSupport {
             List.of(field("name", "text")),
             List.of(),
             1,
+            null,
             null);
 
     assertThatThrownBy(() -> authoring.create(req)).isInstanceOf(ValidationException.class);
@@ -86,6 +88,7 @@ class SchemaAuthoringServiceTest extends IntegrationTestSupport {
             List.of(field("photo", "image")),
             List.of(),
             1,
+            null,
             null);
 
     assertThatThrownBy(() -> authoring.create(req)).isInstanceOf(ValidationException.class);
@@ -100,6 +103,7 @@ class SchemaAuthoringServiceTest extends IntegrationTestSupport {
             List.of(field("name", "text")),
             List.of("nonexistent"),
             1,
+            null,
             null);
 
     assertThatThrownBy(() -> authoring.create(req)).isInstanceOf(ValidationException.class);
@@ -114,6 +118,7 @@ class SchemaAuthoringServiceTest extends IntegrationTestSupport {
             List.of(),
             List.of(),
             1,
+            null,
             null);
 
     assertThatThrownBy(() -> authoring.create(req)).isInstanceOf(ValidationException.class);
@@ -131,6 +136,7 @@ class SchemaAuthoringServiceTest extends IntegrationTestSupport {
                 List.of(field("name", "text"), field("age", "number")),
                 List.of("age"),
                 2,
+                null,
                 null));
 
     assertThat(updated.nameI18n().en()).isEqualTo("Updated Name");
@@ -153,6 +159,7 @@ class SchemaAuthoringServiceTest extends IntegrationTestSupport {
                         List.of(field("name", "text")),
                         List.of(),
                         1,
+                        null,
                         null)))
         .isInstanceOf(ConflictException.class);
   }
@@ -188,6 +195,7 @@ class SchemaAuthoringServiceTest extends IntegrationTestSupport {
                 List.of(field("name", "text")),
                 List.of(),
                 1,
+                null,
                 null));
 
     assertThat(version.code()).isEqualTo("AuthoringVersion/v1");
@@ -209,6 +217,7 @@ class SchemaAuthoringServiceTest extends IntegrationTestSupport {
                         List.of(field("name", "text")),
                         List.of(),
                         1,
+                        null,
                         null)))
         .isInstanceOf(ConflictException.class);
   }
@@ -238,11 +247,12 @@ class SchemaAuthoringServiceTest extends IntegrationTestSupport {
         List.of(field("name", "text"), field("age", "number")),
         List.of("age"),
         1,
+        null,
         null);
   }
 
   private static ClaimFieldRequest field(String name, String type) {
-    return new ClaimFieldRequest(name, type, Map.of("en", name, "ar", name));
+    return new ClaimFieldRequest(name, type, Map.of("en", name, "ar", name), null);
   }
 
   private int auditCount(String action, String entityRef) {

@@ -107,7 +107,8 @@ class RedisStreamWorkerTest {
                 1,
                 60,
                 Map.of("result", "NO_RECORD"),
-                List.of()));
+                List.of(),
+                null));
 
     // The outbox captured the event — a CredentialIssued row in event_publication.
     await()

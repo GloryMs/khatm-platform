@@ -97,6 +97,17 @@
         },
         "type" : "object"
       },
+      "AttestationRequest" : {
+        "description" : "Human attestation of a scanned document, required by schemas with requires_attestation=true",
+        "properties" : {
+          "note" : {
+            "maxLength" : 500,
+            "minLength" : 0,
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "BulkIssueDefaults" : {
         "description" : "Batch-wide defaults, overridable per item",
         "properties" : {
@@ -267,6 +278,9 @@
             "type" : "object"
           },
           "name" : {
+            "type" : "string"
+          },
+          "pattern" : {
             "type" : "string"
           },
           "type" : {
@@ -776,6 +790,9 @@
       "IssueRequest" : {
         "description" : "Request to issue a new SD-JWT verifiable credential",
         "properties" : {
+          "attestation" : {
+            "$ref" : "#/components/schemas/AttestationRequest"
+          },
           "claims" : {
             "additionalProperties" : {
               "type" : "object"
@@ -1036,6 +1053,9 @@
             },
             "type" : "object"
           },
+          "requiresAttestation" : {
+            "type" : "boolean"
+          },
           "sdFields" : {
             "items" : {
               "type" : "string"
@@ -1070,6 +1090,9 @@
             },
             "type" : "object"
           },
+          "requiresAttestation" : {
+            "type" : "boolean"
+          },
           "sdFields" : {
             "items" : {
               "type" : "string"
@@ -1102,6 +1125,9 @@
           "nameI18n" : {
             "$ref" : "#/components/schemas/LocalizedText"
           },
+          "requiresAttestation" : {
+            "type" : "boolean"
+          },
           "sdFields" : {
             "items" : {
               "type" : "string"
@@ -1129,6 +1155,9 @@
           },
           "nameI18n" : {
             "$ref" : "#/components/schemas/LocalizedText"
+          },
+          "requiresAttestation" : {
+            "type" : "boolean"
           },
           "status" : {
             "type" : "string"

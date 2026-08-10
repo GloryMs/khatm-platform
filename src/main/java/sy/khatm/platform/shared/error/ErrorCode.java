@@ -88,6 +88,14 @@ import org.springframework.http.HttpStatus;
  * challenge itself deliberately reuse {@link #KH_RBC_0401} — the same D7 anti-enumeration
  * collapsing every other login failure reason already gets, not a new code.
  *
+ * <p><b>{@code ATT} batch</b> (KH-2.4, spec FS-2.4 items 1/2): attested-document support — a new
+ * module tag for the {@code credential} module's attestation vocabulary, the same "bounded concern,
+ * not owning-module" separation {@code CLM}/{@code USR} already established. {@code KH-ATT-0400}/
+ * {@code 0401} are {@code CredentialService#issue}'s deny-by-default enforcement in both directions
+ * (a {@code requires_attestation} schema with no {@code attestation} object, and vice versa);
+ * {@code KH-ATT-0402} is the bulk-issuance path's wholesale rejection of an attested schema (FS-2.4
+ * scope: the portal is a single-document, human-attested flow by definition).
+ *
  * <p>{@code docs/error-codes.md} is generated from this enum by a test ({@code
  * ErrorCodesDocGenerationTest}) — never hand-edited (CLAUDE.md work rule 1).
  */
@@ -363,7 +371,26 @@ public enum ErrorCode {
    * khatm.auth.totp.enroll-ttl}). One code for every flavor (the reason is substituted into the
    * message via {@code {0}}), the same collapsing judgment call {@link #KH_SCH_0400} already made.
    */
-  KH_USR_1409(HttpStatus.CONFLICT, "user.totp-conflict");
+  KH_USR_1409(HttpStatus.CONFLICT, "user.totp-conflict"),
+
+  /**
+   * {@code POST /api/v1/credentials} (KH-2.4, spec FS-2.4 item 2) named a schema with {@code
+   * requires_attestation=true} but the request carried no {@code attestation} object.
+   */
+  KH_ATT_0400(HttpStatus.BAD_REQUEST, "attestation.required"),
+
+  /**
+   * {@code POST /api/v1/credentials} (KH-2.4, spec FS-2.4 item 2) carried an {@code attestation}
+   * object but the named schema has {@code requires_attestation=false} — no silent ignoring.
+   */
+  KH_ATT_0401(HttpStatus.BAD_REQUEST, "attestation.not-applicable"),
+
+  /**
+   * {@code POST /api/v1/credentials/bulk} (KH-2.4, spec FS-2.4 item 2) named a schema with {@code
+   * requires_attestation=true} — attested schemas are out of scope for bulk issuance entirely (the
+   * portal is a single-document, human-attested flow by definition).
+   */
+  KH_ATT_0402(HttpStatus.BAD_REQUEST, "attestation.bulk-not-supported");
 
   private final HttpStatus httpStatus;
   private final String messageKey;
