@@ -2,20 +2,6 @@
 # STATE — khatm-platform
 > Updated at the end of EVERY Claude Code session. This file is the session anchor.
 
-## CI status (temporary) — ignore red CI through 2026-07-31
-GitHub Actions CI is failing instantly on every job (`Build and verify`, `gitleaks`, `Trivy vuln
-scan`, `compose-smoke`) — not a code problem. `gh run view` shows the actual cause: **"The job was
-not started because recent account payments have failed or your spending limit needs to be
-increased"** (GitHub Actions billing issue on the `GloryMs` account/org, first hit on PR #43,
-2026-07-28). Majd's explicit instruction (2026-07-28): **ignore CI red/not-started status through
-the end of July 2026** — GitHub Actions usage resets **2026-08-01**, at which point CI should run
-normally again (assuming the underlying billing/spending-limit issue is also resolved on GitHub's
-side by then — if CI is still failing after 2026-08-01, that's a real signal again, not this same
-billing gap). Until then: **run `mvn verify` locally as the actual gate** (still mandatory, still
-must be green — this bypass is CI-infrastructure-only, not a relaxation of the "tests must pass"
-rule), and PRs may be merged on Majd's instruction without waiting on GitHub's checks. Remove this
-section once CI is confirmed green again post-2026-08-01.
-
 ## Current phase / task
 GAMEDAY KH-2.3.3 — EXECUTED & PASSED (executed ______ [بين 2026-08-05 و2026-08-10]، recorded 2026-08-10). 
 Manual exercise, Majd + المعماري, no Claude Code (per FS-2.3 §KH-2.3.3). Scope decision: 
@@ -33,6 +19,84 @@ W3 stays an open risk item, explicitly excluded from this exit evidence.
 Phase-2 exit evidence, second half: COMPLETE. KH-2.3 is now fully closed 
 (2.3a ✅ D7 ✅ C8 ✅ C8b ✅ 2.3b ✅ 2.3.3 ✅). The KH-2.4-BE scheduling gate is 
 hereby satisfied — its 2026-08-04 self-stop condition no longer holds.
+
+- **feat/KH-2.4-BE-attested-document — attested-document support (spec FS-2.4 items 1-4)** (session
+  `feat/KH-2.4-BE-attested-document`, 2026-08-10, spec
+  `docs/specs/FS-2_4-non-automated-issuer-portal.md`/FS-2.4). `mvn verify` green, **432/432 tests
+  (11 new — `credential.domain.AttestationEnforcementTest`)**. New `KH-ATT-0400`/`0401`/`0402` (3
+  new `attestation.*` keys in both bundles — Arabic drafted, review pending per the standing gate).
+  **Preamble note:** step 1's gate depended on `chore/state-gameday-2.3.3-record` (PR #53) — that
+  branch's uncommitted GAMEDAY draft was committed and merged to `main` earlier in this same overall
+  working session on Majd's explicit "commit and push"/"merge it" instructions, closing the exact
+  gap the 2026-08-04 self-stop above had correctly caught.
+  - **CI health re-check (preamble 3):** confirmed genuinely green on this session's own PR (#54) —
+    `Build and verify`/Trivy/gitleaks/compose-smoke all ran and passed on a real `pull_request`
+    trigger, closing the July billing gap for good. One transient failure on the first run
+    (`VaultKeyLifecycleAcceptanceTest`'s own concurrent-rotation race, already "stabilized" once
+    before per PR #52/`02ea05b`) cleared on an immediate re-run — a known flake under CI's runner
+    contention, not a regression; not re-investigated further since it's pre-existing and outside
+    this session's scope. **Item 5 (STATE hygiene) executed accordingly:** the expired "CI status
+    (temporary)" waiver section (dated through 2026-07-31) is removed from this file as of this
+    entry — CI is confirmed live and green, so the waiver's own removal condition is met.
+  - **Verify-first finding (preamble 4), recorded before writing:** `schema.domain
+    .SchemaAuthoringService`/`ClaimFieldRequest` supported only `name`/`type`
+    (`text`/`number`/`date`)/`labelI18n` — no regex/pattern constraint existed anywhere in
+    `claims_def`. Item 3 (pattern validation) was therefore required, not a no-op.
+  - **Item 1 — `requires_attestation`:** new `V15__credential_schema_requires_attestation.sql`
+    (additive, `NOT NULL DEFAULT false`). Threaded through the full schema-module DTO chain
+    (`CredentialSchema` entity, `SchemaDefinition`/`SchemaRef`/`SchemaSummary`/`SchemaDetail`/
+    `SchemaCreateRequest`/`SchemaAuthoringRequest`) — confirmed `SchemaSummary` (`GET
+    /api/v1/schemas`) is the exact list surface the console's issue wizard reads, per the brief's
+    own ask, so the flag was added there too, not just `SchemaDetail`.
+  - **Item 2 — `attestation` object + enforcement:** new `credential.api.AttestationRequest`
+    (`note`, ≤500 chars) on `IssueRequest`. `CredentialService#issue` deny-by-default both
+    directions right after resolving `schemaRef` (before signing, so a validation failure never
+    wastes a signing call): `KH-ATT-0400` required+absent, `KH-ATT-0401` not-required+present.
+    `SCAN_ATTESTED` (new `AuditAction`) written after `credentials.save(c)`, strictly before
+    `CREDENTIAL_ISSUED`, same `@Transactional` method — proven both for successful ordering and for
+    the "no orphan row" invariant on rollback (a `TransactionTemplate`-wrapped outer transaction
+    forced to roll back after a real `issue()` call, asserting the audit row never independently
+    survives). Bulk (`POST /credentials/bulk`) rejects an attested `schemaCode` wholesale before any
+    item is processed (`KH-ATT-0402`) — needed a new `SchemaCatalog#findByCode` lookup (additive API
+    surface), `BulkIssuanceService` gained a `SchemaCatalog` constructor dependency.
+  - **Item 3 — `pattern` validation:** `ClaimFieldRequest` gained an optional `pattern` field,
+    compiled (and rejected as `KH-SCH-0400` if invalid) at authoring time, written into
+    `claims_def` JSON, and enforced against submitted claim values at issuance — reuses the
+    existing `schema.validation-failed` envelope/code rather than a new one, per the brief's own
+    "standard schema-validation error envelope" framing.
+  - **Item 4 — seed + docs:** new `credential.seed.AttestedDocumentSeeder` (`local`/`dev` only,
+    alongside the existing `DemoSeeder`): authors `AttestedDocument/v1`
+    (`requires_attestation=true`; `doc_sha256` pattern `^[0-9a-f]{64}$`, `doc_type`,
+    `original_issue_date`, `attestation_note`, all four in `sdFields`) via `SchemaCatalog
+    #ensurePublished` directly (a hand-built `claimsDefJson`, since `SchemaAuthoringService` is
+    module-private to `schema`) and issues one demo credential against it with a real
+    `attestation` object. `docs/api/openapi.json` regenerated (additive-only, 29 insertions, 0
+    deletions, confirmed via `git diff`). `docs/error-codes.md` regenerated (3 new `KH-ATT-*` rows).
+  - **Tests (11 new, `AttestationEnforcementTest`):** all four enforcement quadrants, audit
+    ordering + the rollback/no-orphan-row proof, bulk wholesale rejection, three malformed-pattern
+    shapes (wrong length, uppercase, non-hex) plus one well-formed positive case. The standing six
+    (`MessageBundleParityTest`, `MigrationImmutabilityTest`, `ModulithBoundariesTest`,
+    `RepositoryDefaultTransactionsTest`, `CrossTenantIsolationTest`, `ConcurrentConsumeTest`)
+    untouched and green.
+  - **DoD — live compose e2e, run for real** (rebuilt `khatm-api`/`khatm-worker` against the
+    existing dev volume, V15 applied cleanly, both seeders ran clean on boot): the bootstrap admin's
+    TOTP from a prior session couldn't be satisfied (no stored secret, same recurring situation
+    KH-2.3b's own DoD hit) — reset via direct SQL on the local dev DB only and re-enrolled with an
+    independently-computed RFC 6238 code, same standalone-Python technique as prior sessions →
+    `POST /api/v1/credentials/issue` against `AttestedDocument/v1` with a real `attestation` object
+    → `200`, `sdJwt` returned → `POST /verify` → `valid:true` → `audit_log` confirms `SCAN_ATTESTED`
+    (id N) strictly before `CREDENTIAL_ISSUED` (id N+1) for the same `ref`, `detail.note` present,
+    actor correctly attributed to the admin's own session (never a request field) → negative-path
+    spot-check: same schema, `attestation` omitted → `400 KH-ATT-0400` exactly.
+    One self-inflicted false start along the way, not a platform bug: the issuance endpoint is
+    `POST /api/v1/credentials/issue`, not `POST /api/v1/credentials` (a bare `/api/v1/credentials`
+    POST 500'd instead of 404/405 — not investigated further, out of scope, but worth a future
+    session's attention as a minor error-handling gap); a second false start used a hand-typed,
+    not-actually-64-hex-char `doc_sha256` value, correctly rejected by the pattern validator itself
+    (confirming it works) before being replaced with a real, computed digest.
+  - **PR #54** (opened 2026-08-10, `https://github.com/GloryMs/khatm-platform/pull/54`) — CI green
+    (see above); **Arabic-speaker review of the 3 new `attestation.*` keys — merge blocker, not yet
+    confirmed by Majd.**
 
 - **SESSION-KH-2.4-BE — self-stopped, no code changes** (attempted 2026-08-04, spec
   `docs/specs/FS-2_4-non-automated-issuer-portal.md`/`FS-2.4`). تمت محاولة KH-2.4-BE بتاريخ
