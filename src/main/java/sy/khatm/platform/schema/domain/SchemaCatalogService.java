@@ -17,6 +17,7 @@ import sy.khatm.platform.shared.TenantContext;
 import sy.khatm.platform.shared.Uuidv7;
 import sy.khatm.platform.shared.error.ConflictException;
 import sy.khatm.platform.shared.error.ErrorCode;
+import sy.khatm.platform.shared.error.NotFoundException;
 
 /**
  * Default {@link SchemaCatalog} implementation.
@@ -74,17 +75,7 @@ class SchemaCatalogService implements SchemaCatalog {
     Optional<CredentialSchema> existing =
         schemas.findByTenantIdAndCodeAndVersion(tenantId, definition.code(), definition.version());
     if (existing.isPresent()) {
-      CredentialSchema schema = existing.get();
-      // KH-1.1.1: real schema authoring (create/publish/archive) exists now, so a resolved
-      // existing row is no longer guaranteed PUBLISHED the way it always was when this method's
-      // only callers were find-or-create ones (e.g. the demo seeder, which always created
-      // PUBLISHED rows directly). Issuing against a DRAFT schema would sign credentials against
-      // claim fields that might still change before publish; issuing against an ARCHIVED one
-      // defeats the whole point of archiving (SEC/KH-1.1.1: archive stops NEW issuance).
-      if (!"PUBLISHED".equals(schema.getStatus())) {
-        throw new ConflictException(ErrorCode.KH_SCH_1409, "schema.invalid-transition");
-      }
-      return toRef(schema);
+      return toRef(requirePublished(existing.get()));
     }
 
     Instant now = Instant.now();
@@ -103,6 +94,32 @@ class SchemaCatalogService implements SchemaCatalog {
     schema.setUpdatedAt(now);
     schemas.save(schema);
     return toRef(schema);
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public SchemaRef requirePublishedById(UUID id) {
+    CredentialSchema schema =
+        schemas
+            .findById(id)
+            .orElseThrow(
+                () -> new NotFoundException(ErrorCode.KH_SCH_0404, "schema.not-found", id));
+    return toRef(requirePublished(schema));
+  }
+
+  /**
+   * KH-1.1.1: real schema authoring (create/publish/archive) exists now, so a resolved existing row
+   * is no longer guaranteed {@code PUBLISHED} the way it always was when this method's only callers
+   * were find-or-create ones (e.g. the demo seeder, which always created {@code PUBLISHED} rows
+   * directly). Issuing against a {@code DRAFT} schema would sign credentials against claim fields
+   * that might still change before publish; issuing against an {@code ARCHIVED} one defeats the
+   * whole point of archiving (SEC/KH-1.1.1: archive stops NEW issuance).
+   */
+  private static CredentialSchema requirePublished(CredentialSchema schema) {
+    if (!"PUBLISHED".equals(schema.getStatus())) {
+      throw new ConflictException(ErrorCode.KH_SCH_1409, "schema.invalid-transition");
+    }
+    return schema;
   }
 
   static SchemaRef toRef(CredentialSchema schema) {

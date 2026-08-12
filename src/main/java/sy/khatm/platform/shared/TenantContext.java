@@ -33,17 +33,25 @@ import org.springframework.security.core.context.SecurityContextHolder;
  * reads/writes to the default tenant instead of failing loudly. {@link #current()}/{@link
  * #currentSlug()} therefore check {@link SecurityContextHolder}: if it holds a real, authenticated,
  * non-{@link AnonymousAuthenticationToken} principal but nothing was ever set on this thread, that
- * is exactly the "bypassed the filter" shape, and they throw rather than fall back. Every current
- * call site is safe against this — verified by reading, not inferred: the five genuinely anonymous
- * HTTP paths ({@code SecurityConfig}'s {@code VERIFY_PATH}/{@code JWKS_PATH}/{@code
- * TENANT_JWKS_PATH}/{@code STATUS_LIST_PATH}/{@code CLAIMS_REDEEM_PATH}) always carry an {@code
- * AnonymousAuthenticationToken} when hit without a session (the guard's predicate is false, exactly
- * the legal fallback case); {@code SystemAccessExecutor}-wrapped worker/anonymous-lookup code paths
- * run on threads Spring Security's {@code SecurityContextHolder} never populates at all ({@code
- * getAuthentication()} is {@code null}); and every seeder/test either runs with no {@code
- * SecurityContext} either, or (for the {@code RbacHttpTestSupport}-based HTTP tests) goes through
- * the real filter chain, which always sets this before a real principal's request reaches
- * application code.
+ * is exactly the "bypassed the filter" shape, and they throw rather than fall back.
+ *
+ * <p>The five genuinely anonymous HTTP paths ({@code SecurityConfig}'s {@code VERIFY_PATH}/{@code
+ * JWKS_PATH}/{@code TENANT_JWKS_PATH}/{@code STATUS_LIST_PATH}/{@code CLAIMS_REDEEM_PATH}) are
+ * {@code permitAll}, which means "no credentials required" — not "credentials ignored". Hit with no
+ * session at all they carry an {@code AnonymousAuthenticationToken} (the guard's predicate is
+ * false, the legal fallback case); but a browser with a live console session still attaches its
+ * cookie to a same-origin call to any of them, which resolves to a real, authenticated,
+ * non-anonymous principal just like any other request from that session. Two of these paths write
+ * an {@code audit_log} row and so must resolve a tenant to attribute it to even then: {@code
+ * credential.web.CredentialController#verify} and {@code credential.domain.ClaimRedemptionService
+ * #redeem} both wrap that write in {@link #runAsDefaultTenant} for exactly this reason (a gap fixed
+ * post-KH-2.4-BE — both crashed with this guard's {@link IllegalStateException} the first time
+ * either was hit from an authenticated session instead of a bare {@code curl}). {@code
+ * SystemAccessExecutor}-wrapped worker/anonymous-lookup code paths run on threads Spring Security's
+ * {@code SecurityContextHolder} never populates at all ({@code getAuthentication()} is {@code
+ * null}); and every seeder/test either runs with no {@code SecurityContext} either, or (for the
+ * {@code RbacHttpTestSupport}-based HTTP tests) goes through the real filter chain, which always
+ * sets this before a real principal's request reaches application code.
  */
 public final class TenantContext {
 
@@ -133,6 +141,35 @@ public final class TenantContext {
               + " SecurityContext but no tenant was ever set on this thread — this would silently"
               + " misattribute the request to the default tenant instead of failing. Every"
               + " authenticated route must run behind rbac.security.TenantContextFilter.");
+    }
+  }
+
+  /**
+   * Run {@code action} with {@link #DEFAULT_TENANT_ID}/{@link #DEFAULT_TENANT_SLUG} established on
+   * this thread for its duration — for the handful of genuinely anonymous-endpoint code paths
+   * ({@code /verify}, {@code /claims/redeem}) that must still write an {@code audit_log} row with
+   * no real tenant to attribute it to (spec FS-2.1 D5).
+   *
+   * <p>Exists because those endpoints are reachable by a real, authenticated principal too — {@code
+   * SecurityConfig} grants them {@code permitAll}, which means "no credentials required", not
+   * "credentials ignored": a browser with a live console session still attaches its cookie to a
+   * same-origin call here even though the endpoint never asked for it. When that happens, {@link
+   * #current()}'s fail-fast guard correctly refuses its default-tenant fallback (a real
+   * authenticated principal with nothing set on this thread is exactly the "filter was bypassed"
+   * shape it exists to catch) — this method is the deliberate, narrow way to say "no, this really
+   * is meant to fall back, regardless of who's asking" for exactly the call sites that need it.
+   * Mirrors {@link sy.khatm.platform.shared.SystemAccessExecutor#runAsSystem} in shape and
+   * rationale — same "anonymous endpoint, real work to do" problem, one level down: pure Java
+   * {@link ThreadLocal} state here, no SQL/RLS involved.
+   *
+   * @param action the write to perform attributed to the default tenant
+   */
+  public static void runAsDefaultTenant(Runnable action) {
+    set(DEFAULT_TENANT_ID, DEFAULT_TENANT_SLUG);
+    try {
+      action.run();
+    } finally {
+      clear();
     }
   }
 

@@ -30,6 +30,20 @@ public interface CredentialSchemaRepository extends JpaRepository<CredentialSche
   List<CredentialSchema> findAllByTenantIdAndStatus(UUID tenantId, String status);
 
   /**
+   * The highest {@code version} already registered for this {@code (tenantId, code)}, across every
+   * status — {@code SchemaAuthoringService#createVersion} needs this rather than {@code
+   * source.getVersion() + 1}, because {@code source} is whichever {@code PUBLISHED} row the caller
+   * happened to version from, not necessarily the newest row for the code (an older published
+   * version can still be versioned again while a newer draft/archived version already exists for
+   * the same code, e.g. after an experimental version was created and later archived).
+   */
+  @Query(
+      "SELECT MAX(s.version) FROM CredentialSchema s WHERE s.tenantId = :tenantId AND s.code ="
+          + " :code")
+  Integer findMaxVersionByTenantIdAndCode(
+      @Param("tenantId") UUID tenantId, @Param("code") String code);
+
+  /**
    * The schema's {@code default_validity} (a Postgres {@code interval}, unmapped on the entity
    * itself — see {@link CredentialSchema}'s Javadoc) as total seconds, or {@code null} if the
    * column is {@code NULL}.

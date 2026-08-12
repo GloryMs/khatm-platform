@@ -809,6 +809,10 @@
           "schemaCode" : {
             "type" : "string"
           },
+          "schemaId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
           "sdFields" : {
             "items" : {
               "type" : "string"

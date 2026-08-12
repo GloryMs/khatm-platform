@@ -48,6 +48,21 @@ public interface SchemaCatalog {
   Optional<SchemaRef> findByCode(String code);
 
   /**
+   * Resolve a schema by its internal id for issuance, requiring it be {@code PUBLISHED} — the exact
+   * validation {@link #ensurePublished} already applies to a resolved existing row, exposed for
+   * callers that already know precisely which schema version they mean (KH-2.4-BE follow-up: {@code
+   * CredentialService#issue} previously had no way to honor a specific version the console had the
+   * operator select, and always fell back to {@code (code, version=1)} via {@link
+   * #ensurePublished}/{@link #findByCode} — see those two methods' Javadoc for that limitation).
+   *
+   * @param id the schema's internal UUID; must not be {@code null}
+   * @return the matching schema reference
+   * @throws sy.khatm.platform.shared.error.NotFoundException if no schema with this id exists
+   * @throws sy.khatm.platform.shared.error.ConflictException if the schema is not {@code PUBLISHED}
+   */
+  SchemaRef requirePublishedById(UUID id);
+
+  /**
    * List schemas for the current tenant, list-view shape (KH-1.6-early, {@code GET
    * /api/v1/schemas}), optionally filtered by lifecycle status (KH-1.1.1 — the console's schema
    * management view needs to see {@code DRAFT} rows too, unlike the issue-form picker, which keeps

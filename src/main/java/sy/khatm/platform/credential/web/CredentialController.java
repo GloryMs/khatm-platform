@@ -42,6 +42,7 @@ import sy.khatm.platform.credential.domain.BulkIssueOutcome;
 import sy.khatm.platform.credential.domain.ClaimCodeIssued;
 import sy.khatm.platform.credential.domain.CredentialService;
 import sy.khatm.platform.shared.SystemAccessExecutor;
+import sy.khatm.platform.shared.TenantContext;
 import sy.khatm.platform.shared.audit.AuditAction;
 import sy.khatm.platform.shared.audit.AuditService;
 import sy.khatm.platform.shared.error.ErrorCode;
@@ -245,12 +246,23 @@ class CredentialController {
     // readOnly=true transaction — a read-only transaction cannot accept this write. `ref` comes
     // from the already-decoded structural claims (never re-parsed), and is null whenever verify()
     // never reached a credential row (malformed, bad signature, unknown kid).
+    //
+    // Wrapped in TenantContext.runAsDefaultTenant: /verify is permitAll (genuinely anonymous), but
+    // a caller with a live console session still attaches their cookie to this same-origin call —
+    // TenantContext.current() then sees a real authenticated principal with nothing set on this
+    // thread and refuses its silent default-tenant fallback (see that guard's Javadoc). This write
+    // has no real tenant to attribute to either way, so it deliberately asks for the same fallback
+    // an anonymous caller gets.
     String ref = result.claims() == null ? null : (String) result.claims().get("ref");
-    audit.record(
-        result.valid() ? AuditAction.CREDENTIAL_VERIFY_OK : AuditAction.CREDENTIAL_VERIFY_FAILED,
-        "credential",
-        ref,
-        Map.of("reason", result.reason()));
+    TenantContext.runAsDefaultTenant(
+        () ->
+            audit.record(
+                result.valid()
+                    ? AuditAction.CREDENTIAL_VERIFY_OK
+                    : AuditAction.CREDENTIAL_VERIFY_FAILED,
+                "credential",
+                ref,
+                Map.of("reason", result.reason())));
 
     return new VerifyResponse(
         result.valid(),
