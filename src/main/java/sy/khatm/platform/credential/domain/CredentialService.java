@@ -200,7 +200,9 @@ public class CredentialService {
     List<String> sdFields = req.sdFields() == null ? List.copyOf(claims.keySet()) : req.sdFields();
 
     SchemaRef schemaRef =
-        schemas.ensurePublished(buildSchemaDefinition(schemaCode, claims, sdFields, maxUses));
+        req.schemaId() != null
+            ? schemas.requirePublishedById(req.schemaId())
+            : schemas.ensurePublished(buildSchemaDefinition(schemaCode, claims, sdFields, maxUses));
     validateAttestation(schemaRef, req.attestation());
     validateClaimPatterns(schemaRef, claims);
     HolderRef holderRef = holders.ensureHolder(holderPseudoRef);
@@ -217,7 +219,7 @@ public class CredentialService {
 
     Instant now = Instant.now();
     Instant exp = now.plus(Duration.ofMinutes(validMinutes));
-    String ref = buildRef(schemaCode);
+    String ref = buildRef(schemaRef.code());
     String vct = schemaRef.code() + ":" + schemaRef.version();
 
     // D1: every claim becomes a salted disclosure — no business claim ever appears explicitly

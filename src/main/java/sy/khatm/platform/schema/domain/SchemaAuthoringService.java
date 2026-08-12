@@ -175,12 +175,18 @@ public class SchemaAuthoringService {
     int maxUses = requireValidMaxUses(req.defaultMaxUses());
     Long validitySeconds = parseValiditySeconds(req.defaultValidity());
 
+    // Not source.getVersion() + 1: source is whichever PUBLISHED row the caller versioned from,
+    // which is not necessarily the newest row for this code (e.g. an older published version can
+    // be versioned again after a newer draft/archived version already exists for the same code).
+    int nextVersion =
+        schemas.findMaxVersionByTenantIdAndCode(source.getTenantId(), source.getCode()) + 1;
+
     Instant now = Instant.now();
     CredentialSchema version = new CredentialSchema();
     version.setId(Uuidv7.generate());
     version.setTenantId(source.getTenantId());
     version.setCode(source.getCode());
-    version.setVersion(source.getVersion() + 1);
+    version.setVersion(nextVersion);
     applyAuthoringFields(
         version,
         req.nameI18n(),

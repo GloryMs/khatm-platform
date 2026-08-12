@@ -118,7 +118,17 @@ public class ClaimRedemptionService {
     claimCode.setDisclosuresEnc(null);
     claimCodes.save(claimCode);
 
-    audit.record(AuditAction.CLAIM_CODE_REDEEMED, "credential", credential.getRef(), null);
+    // Wrapped in TenantContext.runAsDefaultTenant: /claims/redeem is permitAll (genuinely
+    // anonymous), but a caller with a live console session still attaches their cookie to this
+    // same-origin call — TenantContext.current() then sees a real authenticated principal with
+    // nothing set on this thread and refuses its silent default-tenant fallback (see that guard's
+    // Javadoc on TenantContext). This write has no real tenant to attribute to either way, so it
+    // deliberately asks for the same fallback an anonymous caller gets. (Not the same thing as
+    // findRefForTenant below, which sets the credential's OWN tenant for a read, later in this
+    // method.)
+    TenantContext.runAsDefaultTenant(
+        () ->
+            audit.record(AuditAction.CLAIM_CODE_REDEEMED, "credential", credential.getRef(), null));
 
     SchemaDetail schema =
         schemas
