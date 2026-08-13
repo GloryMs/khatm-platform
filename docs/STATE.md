@@ -67,6 +67,9 @@ images are built from merged main only after it passes.
   relevant admin action — scoped out of this session on purpose, not forgotten; pick up in a future
   platform session with its own branch/tests, not as a quick edit.
   No production code, tests, or `docs/error-codes.md` touched this session; no staging calls made.
+  **DONE & MERGED via PR #57** (opened 2026-08-13, merged 2026-08-13T12:29:49Z, merge commit
+  `c6c2b8a`, `https://github.com/GloryMs/khatm-platform/pull/57`, standard merge via `gh pr merge
+  --merge` on Majd's explicit instruction).
 
 GAMEDAY KH-2.3.3 — EXECUTED & PASSED (executed ______ [بين 2026-08-05 و2026-08-10]، recorded 2026-08-10).
 Manual exercise, Majd + المعماري, no Claude Code (per FS-2.3 §KH-2.3.3). Scope decision:
