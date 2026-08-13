@@ -88,6 +88,20 @@ Phase-2 exit evidence, second half: COMPLETE. KH-2.3 is now fully closed
 (2.3a ✅ D7 ✅ C8 ✅ C8b ✅ 2.3b ✅ 2.3.3 ✅). The KH-2.4-BE scheduling gate is
 hereby satisfied — its 2026-08-04 self-stop condition no longer holds.
 
+GAMEDAY SUMMARY.md's A7 finding (no `KEY_RETIRE_REJECTED` audit line anywhere in the
+captured staging window) → **RESOLVED 2026-08-13 by QS-A7-GITCHECK: H1 confirmed.**
+`key.domain.KeyLifecycleService#retire` throws `KH-KEY-0422` (lines 251–254) strictly
+before the method's only `audit.record` call (line 258, success path after
+`setState(STATE_RETIRED)`) — the rejection branch never reaches an audit write, and
+`AuditAction` defines no `KEY_RETIRE_REJECTED` value anywhere (repo-wide grep: the
+string existed only as a hypothesis in the evidence brief's SQL comment). The staging
+audit trail's silence is therefore correct-by-construction; A7 closes as-is. Per V1
+default, no rejection-path audit line was added — if wanted later, it is a scoped
+SESSION-KH-2.4x item (new AuditAction value + tests + docs/error-codes), not a
+quick-session edit. Same session's git part: staging-image gate **PASS** —
+`origin/main == c7c3d1b` (PR #56 merge commit) verified to contain all three
+2026-08-11/12 interactive hotfixes; zero open PRs.
+
 - **Hotfix (interactive, not a WBS session) — TenantContext crash on /verify and /claims/redeem when
   hit from an authenticated console session** (2026-08-11, found live: Majd rebuilt khatm-api/worker
   from `main` in Docker Desktop post-KH-2.4-BE, logged into the console, attested a document,
