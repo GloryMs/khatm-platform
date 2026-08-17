@@ -96,8 +96,23 @@ images are built from merged main only after it passes.
       `MeResponse.tenantSlug` and `MeResponse.totpEnabled` are now live on `main` once this PR
       merges — C10's own preamble gate 2 (`MeResponse.tenantSlug` availability, unlocking its
       optional D4) can now pass.
-    - **PR opened on `khatm-platform` (`feat/KH-2.4x-BE-contract-closeouts`), pending Majd's
-      review/merge.**
+    - **DONE & MERGED via PR #60** (opened 2026-08-17, merged 2026-08-17T11:27:40Z, merge commit
+      `9085965`, standard merge via `gh pr merge --merge` on Majd's explicit instruction).
+    - **CI status at merge — two failures, both confirmed pre-existing on `main` itself, neither
+      caused by this PR (no `pom.xml` change; `git diff main -- pom.xml` empty):**
+        1. `VaultKeyLifecycleAcceptanceTest.rotateOntoVault_tenConcurrentCallers_exactlyOneSucceeds`
+           — the same recurring concurrent-rotation-race flake already noted stabilized-once-before
+           (PR #52) and seen again on PR #57/#58/#59's own post-merge `main` runs; not
+           re-investigated further, consistent with those sessions' scope decisions.
+        2. **New this session, worth Majd's attention:** Trivy now flags
+           `org.springframework.data:spring-data-commons:3.3.13` for **CVE-2026-41716 (HIGH)** — a
+           DoS via cache, fixed in `4.0.6`/`3.5.12`. Confirmed via `main`'s own post-PR-#59 CI run
+           (`32014611488`, unrelated to this session, already red on both counts before this PR
+           branched) that this is a freshly-disclosed CVE against an already-pinned transitive
+           dependency (via `spring-boot-starter-parent`), not something introduced here. **Not
+           fixed this session** (out of scope — a dependency-version bump is its own small task,
+           needs a `mvn verify` re-run to confirm nothing else shifts); flagged here as a real,
+           unresolved finding, distinct from the flaky-test line above.
 
 - **QS-A7-GITCHECK — quick investigation session, report-only, no code changes** (2026-08-13, brief
   `docs/sessions/SESSION-QS-A7-GITCHECK.md`). Two parts, both closed.
@@ -2031,11 +2046,21 @@ quick-session edit. Same session's git part: staging-image gate **PASS** —
   appears to have already been resolved (or it was never actually added) before this chore session
   ran. No action taken; noted so its earlier "awaiting disposition" status isn't carried forward
   stale.
-- **Two source comments still restate the old `transit/keys/*` capability set** (`create+read`
-  instead of `create, update, read`): `src/main/resources/application.yml:116` and
-  `src/main/java/sy/khatm/platform/key/domain/VaultTransitProvider.java:50`. Left uncorrected on
-  purpose — this chore session is documentation/config-only and does not touch `src/**`; pick up as
-  a one-line comment fix in a future session that already has a reason to touch either file.
+- **~~Two source comments still restate the old `transit/keys/*` capability set~~ — CLOSED
+  (KH-2.4x-BE, PR #60, 2026-08-17).** `application.yml` and `VaultTransitProvider`'s class Javadoc
+  both now say `create, update, read`, with a pointer to the 2026-08-15 empirical finding.
+- **`spring-data-commons:3.3.13` — CVE-2026-41716 (HIGH, DoS via cache), opened 2026-08-17.**
+  Surfaced by Trivy on PR #60 and confirmed pre-existing on `main` itself (PR #59's own post-merge
+  CI run already showed it) — not introduced by KH-2.4x-BE, no `pom.xml` touched that session.
+  Fixed upstream in `4.0.6`/`3.5.12`. Not yet bumped — needs its own small session: confirm which
+  version the current `spring-boot-starter-parent` pulls in transitively, bump (directly or via a
+  parent-BOM upgrade), re-run `mvn verify` in full (this codebase's Spring Data usage is
+  non-trivial — RLS-scoped repositories, native queries), and confirm Trivy clears.
+- **`VaultKeyLifecycleAcceptanceTest`'s concurrent-rotation-race CI flake — still recurring.**
+  Seen again on PR #60 (and independently on `main`'s own PR #57/#58/#59 post-merge runs) —
+  the exact same test noted "stabilized once" after PR #52. Not re-investigated this session
+  (out of scope); if it keeps recurring, worth a dedicated look at whether GitHub-hosted-runner
+  contention is exposing a real narrow race rather than a pure test artifact.
 
 ## Next up (ordered)
 
