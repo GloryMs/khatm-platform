@@ -212,6 +212,11 @@ class TotpFlowTest extends RbacHttpTestSupport {
 
     ResponseEntity<String> me = SessionTestSupport.get(rest, "/api/v1/auth/me", session);
     assertThat(me.getStatusCode()).isEqualTo(HttpStatus.OK);
+    // KH-2.4x: totpEnabled reflects the actual enrollment state, not the mandatory-scope wall
+    // this test also exercises — a walled user has no active TOTP yet by definition.
+    assertThat(readTree(me.getBody()).get("totpEnabled").asBoolean())
+        .as("no confirmed TOTP enrollment yet")
+        .isFalse();
 
     String secret = readTree(enroll(session).getBody()).get("secretBase32").asText();
     assertThat(confirm(session, TotpTestCodes.currentCode(secret)).getStatusCode())
@@ -219,6 +224,13 @@ class TotpFlowTest extends RbacHttpTestSupport {
 
     ResponseEntity<String> unwalled = SessionTestSupport.get(rest, "/api/v1/credentials", session);
     assertThat(unwalled.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+    ResponseEntity<String> meAfterConfirm =
+        SessionTestSupport.get(rest, "/api/v1/auth/me", session);
+    assertThat(meAfterConfirm.getStatusCode()).isEqualTo(HttpStatus.OK);
+    assertThat(readTree(meAfterConfirm.getBody()).get("totpEnabled").asBoolean())
+        .as("TOTP confirmed above")
+        .isTrue();
   }
 
   // ── Login challenge ──────────────────────────────────────────────────────────────────────

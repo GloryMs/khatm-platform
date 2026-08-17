@@ -236,7 +236,9 @@ public class KeyLifecycleService implements TenantKeyProvisioner, JwksLookup {
    * @throws NotFoundException {@code KH-KEY-0404} if no such key exists for the current tenant
    * @throws ConflictException {@code KH-KEY-0409} if the key is not currently {@code RETIRING}
    * @throws ValidationException {@code KH-KEY-0422} if the key has not yet reached {@code
-   *     khatm.keys.min-retiring-age} and {@code force} is {@code false}
+   *     khatm.keys.min-retiring-age} and {@code force} is {@code false} — audited as {@link
+   *     AuditAction#KEY_RETIRE_REJECTED} (KH-2.4x, closing debt A7) before this throw, via {@link
+   *     AuditService#recordIndependently} so the row survives this method's own rollback
    */
   @Transactional
   public IssuerKeySummary retire(String kid, boolean force) {
@@ -250,6 +252,11 @@ public class KeyLifecycleService implements TenantKeyProvisioner, JwksLookup {
     Duration elapsed = Duration.between(key.getValidTo(), Instant.now());
     if (!force && elapsed.compareTo(minRetiringAge) < 0) {
       Duration remaining = minRetiringAge.minus(elapsed);
+      audit.recordIndependently(
+          AuditAction.KEY_RETIRE_REJECTED,
+          "issuer_key",
+          kid,
+          Map.of("elapsed", elapsed.toString(), "minRetiringAge", minRetiringAge.toString()));
       throw new ValidationException(
           ErrorCode.KH_KEY_0422, "key.retiring-too-young", remaining.toString());
     }

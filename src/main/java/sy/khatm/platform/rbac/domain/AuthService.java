@@ -323,7 +323,8 @@ public class AuthService {
                     u.getUsername(),
                     u.getDisplayNameI18n(),
                     u.getPreferredLang(),
-                    u.isMustChangePassword()));
+                    u.isMustChangePassword(),
+                    totpService.hasActiveTotp(u.getId())));
   }
 
   private boolean isLockedOut(String lockKey) {

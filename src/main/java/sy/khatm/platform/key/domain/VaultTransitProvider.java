@@ -47,8 +47,11 @@ import sy.khatm.platform.shared.error.IntegrityException;
  * <p>Talks to Vault over its plain HTTP API via Spring's {@link RestClient} — no Vault client SDK
  * dependency, so the app's classpath/attack surface is unaffected by this provider's presence. The
  * app token this class authenticates with must be scoped to a least-privilege policy covering only
- * {@code transit/keys/*} (create+read), {@code transit/sign/*}, and {@code transit/verify/*} —
- * never an admin/root token (see {@code docs/deploy-staging.md}'s Vault hardening section).
+ * {@code transit/keys/*} ({@code create+update+read} — {@code update} is required too, established
+ * empirically on staging 2026-08-15: Vault's ACL layer evaluates every write to {@code
+ * transit/keys/:name} as {@code update} regardless of whether the key already exists, since that
+ * path registers no existence check), {@code transit/sign/*}, and {@code transit/verify/*} — never
+ * an admin/root token (see {@code docs/deploy-staging.md}'s Vault hardening section).
  *
  * <p><b>Fail-closed, never a silent SOFT fallback (spec FS-2.3 D5/D6):</b> a connectivity failure
  * or a Vault-side error at {@link #generate}/{@link #sign} time throws {@link IntegrityException}

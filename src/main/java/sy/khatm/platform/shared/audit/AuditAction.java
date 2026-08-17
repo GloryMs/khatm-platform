@@ -56,6 +56,19 @@ public enum AuditAction {
   KEY_RETIRED,
 
   /**
+   * A retire attempt was rejected by the {@code khatm.keys.min-retiring-age} guard ({@code key}
+   * module, KH-2.4x, closing debt A7 found by GAMEDAY KH-2.3.3 / QS-A7-GITCHECK: this rejection
+   * branch used to be silent-by-construction — the {@code KH-KEY-0422} throw happened strictly
+   * before any audit write). {@code entityRef} is the kid; {@code detail} carries {@code elapsed}
+   * and {@code minRetiringAge} (both {@link java.time.Duration#toString() ISO-8601 duration
+   * strings}) — never {@code forced}, since this branch is reached only when {@code force} is
+   * {@code false}. Recorded via {@link AuditService#recordIndependently}, not {@link
+   * AuditService#record} — the enclosing {@code retire()} call is about to throw and roll back, so
+   * this row must commit in its own, separate physical transaction to survive.
+   */
+  KEY_RETIRE_REJECTED,
+
+  /**
    * The claim-code expiry sweep zeroed one or more codes (ADR-09-worker). Actor is always SYSTEM.
    */
   CLAIM_CODES_EXPIRED,

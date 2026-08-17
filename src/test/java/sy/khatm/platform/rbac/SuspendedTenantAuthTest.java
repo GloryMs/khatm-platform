@@ -201,6 +201,10 @@ class SuspendedTenantAuthTest extends RbacHttpTestSupport {
     assertThat(meBody.get("mustChangePassword").asBoolean())
         .as("a freshly-created admin logs in with its one-time temporary password")
         .isTrue();
+    // KH-2.4x: tenantSlug reflects the session's actual (non-default) tenant, not the default
+    // one — closes platform ask C8 (the console's rotate-confirm dialog needs a human-legible
+    // tenant identifier, not a signing key's opaque kid).
+    assertThat(meBody.get("tenantSlug").asText()).isEqualTo(slug);
   }
 
   @Test

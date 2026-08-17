@@ -241,7 +241,7 @@ class KeyLifecycleServiceTest extends IntegrationTestSupport {
   }
 
   @Test
-  void retire_tooYoung_withoutForce_throwsValidation() {
+  void retire_tooYoung_withoutForce_throwsValidation_andAuditsKeyRetireRejected() {
     IssuerKey activeBefore =
         repository.findByTenantIdAndState(TenantContext.current(), "ACTIVE").orElseThrow();
     String oldKid = activeBefore.getKid();
@@ -254,6 +254,18 @@ class KeyLifecycleServiceTest extends IntegrationTestSupport {
                 assertThat(((ValidationException) e).errorCode()).isEqualTo(ErrorCode.KH_KEY_0422));
 
     assertThat(repository.findByKid(oldKid).orElseThrow().getState()).isEqualTo("RETIRING");
+    // KH-2.4x, closing debt A7 (QS-A7-GITCHECK): this rejection branch used to be silent — the
+    // KH-KEY-0422 throw above rolls back retire()'s own physical transaction, so this row only
+    // survives if AuditService#recordIndependently genuinely committed it in a separate one. A
+    // plain post-call read via this test's own JdbcTemplate connection (distinct from whatever
+    // connection retire() used) is real proof of that, not an assumption.
+    Integer rejectedCount =
+        jdbcTemplate.queryForObject(
+            "SELECT count(*) FROM audit_log WHERE action = 'KEY_RETIRE_REJECTED' AND entity_ref ="
+                + " ? AND entity_type = 'issuer_key'",
+            Integer.class,
+            oldKid);
+    assertThat(rejectedCount).isEqualTo(1);
   }
 
   @Test

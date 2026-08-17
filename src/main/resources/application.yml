@@ -113,10 +113,13 @@ khatm:
       # cluster address in staging/production (see docs/deploy-staging.md's Vault hardening
       # section — production Vault is never dev-mode).
       address: ${KHATM_KEYS_VAULT_ADDRESS:}
-      # An app token scoped to a least-privilege policy covering ONLY transit/keys/* (create+read),
-      # transit/sign/*, transit/verify/* — never an admin/root token outside a local dev-mode
-      # convenience setup (docs/deploy-staging.md). No default: VaultTransitProvider fails startup
-      # on a blank token whenever it is actually enabled (see its own constructor).
+      # An app token scoped to a least-privilege policy covering ONLY transit/keys/*
+      # (create+update+read — "update" is required too, established empirically on staging
+      # 2026-08-15: Vault's ACL layer evaluates every write to transit/keys/:name as "update"
+      # regardless of whether the key already exists, since that path registers no existence
+      # check), transit/sign/*, transit/verify/* — never an admin/root token outside a local
+      # dev-mode convenience setup (docs/deploy-staging.md). No default: VaultTransitProvider
+      # fails startup on a blank token whenever it is actually enabled (see its own constructor).
       token: ${KHATM_KEYS_VAULT_TOKEN:}
       # Prefixes every transit key name this platform creates, so a shared Vault instance's
       # transit/keys/ listing is immediately recognizable as khatm-platform's own (kid already

@@ -14,6 +14,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import sy.khatm.platform.shared.TenantContext;
 
@@ -26,11 +27,14 @@ import sy.khatm.platform.shared.TenantContext;
  * that {@code USER} or {@code API_KEY}; otherwise (no session, no API key, a scheduled worker task,
  * a startup bootstrap runner) the row is attributed to {@code SYSTEM} with a {@code null actorId}.
  *
- * <p><b>Atomicity (spec FS-0.6b D8/NFR-08):</b> {@code @Transactional} with the default {@code
- * REQUIRED} propagation — a call from inside an already-{@code @Transactional} method (issuing a
- * credential, rotating a key, logging in) joins that same physical transaction, so the audit row
- * and the operation it describes commit or roll back together; there is never an event without its
- * audit row, nor an audit row for an event that never actually committed.
+ * <p><b>Atomicity (spec FS-0.6b D8/NFR-08):</b> {@link #record} uses {@code @Transactional} with
+ * the default {@code REQUIRED} propagation — a call from inside an already-{@code @Transactional}
+ * method (issuing a credential, rotating a key, logging in) joins that same physical transaction,
+ * so the audit row and the operation it describes commit or roll back together; there is never an
+ * event without its audit row, nor an audit row for an event that never actually committed. {@link
+ * #recordIndependently} is the one deliberate exception (KH-2.4x, {@code KEY_RETIRE_REJECTED}) —
+ * for recording that an operation was rejected, where the row must survive precisely because the
+ * caller's own transaction is about to roll back.
  *
  * <p>Never logs or stores claims, key material, passwords, or API key secrets — {@code detail} is
  * for non-sensitive structured context only (a count, a reason code, a key prefix — SEC §9.7).
@@ -61,6 +65,35 @@ public class AuditService {
    */
   @Transactional
   public void record(
+      AuditAction action, String entityType, String entityRef, Map<String, Object> detail) {
+    writeEntry(action, entityType, entityRef, detail);
+  }
+
+  /**
+   * Record one audit event in its own, independent physical transaction — for the rare case where
+   * the caller's own transaction is about to roll back (an operation was rejected and is throwing)
+   * but the fact that it was rejected must still be provable in {@code audit_log} afterward. Unlike
+   * {@link #record}, this row survives the caller's rollback: propagation {@code REQUIRES_NEW}
+   * suspends the caller's physical transaction, commits this row in a separate one, then resumes
+   * the caller's — {@code TenantContext}/{@code SecurityContextHolder} are plain {@code
+   * ThreadLocal}s, unaffected by transaction suspension, so actor/tenant attribution is identical
+   * to {@link #record}.
+   *
+   * <p>Reach for {@link #record} by default; use this only when the event being recorded is exactly
+   * "this operation was denied," not a normal side effect of one that succeeded.
+   *
+   * @param action the catalog event being recorded
+   * @param entityType the kind of entity this event concerns
+   * @param entityRef an opaque reference identifying the specific entity
+   * @param detail additional non-sensitive structured context
+   */
+  @Transactional(propagation = Propagation.REQUIRES_NEW)
+  public void recordIndependently(
+      AuditAction action, String entityType, String entityRef, Map<String, Object> detail) {
+    writeEntry(action, entityType, entityRef, detail);
+  }
+
+  private void writeEntry(
       AuditAction action, String entityType, String entityRef, Map<String, Object> detail) {
     Authentication auth = SecurityContextHolder.getContext().getAuthentication();
 
