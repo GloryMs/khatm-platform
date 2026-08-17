@@ -1,5 +1,6 @@
 package sy.khatm.platform.rbac.web;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 
 /**
@@ -7,4 +8,5 @@ import jakarta.validation.constraints.NotBlank;
  *
  * @param code the 6-digit code from the authenticator app
  */
-record TotpConfirmRequest(@NotBlank String code) {}
+record TotpConfirmRequest(
+    @NotBlank @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String code) {}

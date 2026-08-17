@@ -1,5 +1,6 @@
 package sy.khatm.platform.rbac.web;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 
 /**
@@ -11,4 +12,7 @@ import jakarta.validation.constraints.NotBlank;
  *     omit or leave blank for the caller's ambient default tenant, preserving every pre-existing
  *     login call's exact behavior
  */
-record LoginRequest(@NotBlank String username, @NotBlank String password, String tenantSlug) {}
+record LoginRequest(
+    @NotBlank @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String username,
+    @NotBlank @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String password,
+    String tenantSlug) {}

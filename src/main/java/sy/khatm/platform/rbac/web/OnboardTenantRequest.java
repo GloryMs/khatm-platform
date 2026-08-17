@@ -20,9 +20,12 @@ import jakarta.validation.constraints.Pattern;
  */
 @Schema(description = "Onboard a tenant, optionally with its first administrator")
 record OnboardTenantRequest(
-    @NotBlank String slug,
+    @NotBlank @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String slug,
     @NotNull @Valid DisplayNameI18nRequest nameI18n,
-    @NotBlank @Pattern(regexp = "GOVERNMENT|EDUCATION|PRIVATE|OTHER") String type,
+    @NotBlank
+        @Pattern(regexp = "GOVERNMENT|EDUCATION|PRIVATE|OTHER")
+        @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        String type,
     @Pattern(regexp = "SAAS|ONPREM|FEDERATED") String deployMode,
     @Valid InitialAdminRequest initialAdmin) {
 
@@ -34,5 +37,6 @@ record OnboardTenantRequest(
    */
   @Schema(description = "The tenant's first administrator (optional)")
   record InitialAdminRequest(
-      @NotBlank String username, @NotNull @Valid DisplayNameI18nRequest displayNameI18n) {}
+      @NotBlank @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String username,
+      @NotNull @Valid DisplayNameI18nRequest displayNameI18n) {}
 }

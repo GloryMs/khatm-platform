@@ -1,5 +1,6 @@
 package sy.khatm.platform.rbac.web;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import java.util.Set;
@@ -20,5 +21,5 @@ import sy.khatm.platform.rbac.domain.ApiKeyOwnerType;
 record CreateApiKeyRequest(
     @NotNull ApiKeyOwnerType ownerType,
     UUID ownerId,
-    @NotEmpty Set<String> scopes,
+    @NotEmpty @Schema(requiredMode = Schema.RequiredMode.REQUIRED) Set<String> scopes,
     UUID tenantId) {}

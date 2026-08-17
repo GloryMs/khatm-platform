@@ -20,4 +20,5 @@ import jakarta.validation.constraints.NotBlank;
  * @param sdJwt the SD-JWT presentation, or a bare compact JWT for a zero-disclosure presentation
  */
 @Schema(name = "VerifyRequest", description = "Request to verify an SD-JWT credential presentation")
-public record VerifyRequest(@NotBlank String sdJwt) {}
+public record VerifyRequest(
+    @NotBlank @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String sdJwt) {}

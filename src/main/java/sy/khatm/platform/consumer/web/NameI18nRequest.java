@@ -1,5 +1,6 @@
 package sy.khatm.platform.consumer.web;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import sy.khatm.platform.shared.LocalizedText;
 
@@ -11,7 +12,9 @@ import sy.khatm.platform.shared.LocalizedText;
  * @param en English display text; required, non-blank
  * @param ar Arabic display text; required, non-blank
  */
-record NameI18nRequest(@NotBlank String en, @NotBlank String ar) {
+record NameI18nRequest(
+    @NotBlank @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String en,
+    @NotBlank @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String ar) {
 
   LocalizedText toLocalizedText() {
     return new LocalizedText(en, ar);

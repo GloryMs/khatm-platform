@@ -18,4 +18,6 @@ import jakarta.validation.constraints.NotBlank;
 @Schema(
     name = "ClaimCodeMintRequest",
     description = "Request to mint a fresh wallet claim code for an already-issued credential")
-public record ClaimCodeMintRequest(@NotBlank String sdJwt, Integer ttlMinutes) {}
+public record ClaimCodeMintRequest(
+    @NotBlank @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String sdJwt,
+    Integer ttlMinutes) {}

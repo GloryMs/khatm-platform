@@ -18,4 +18,5 @@ import jakarta.validation.constraints.NotBlank;
 @Schema(
     name = "HolderStatusRequest",
     description = "Request to check a credential's lifecycle status by proof of possession")
-public record HolderStatusRequest(@NotBlank String jwt) {}
+public record HolderStatusRequest(
+    @NotBlank @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String jwt) {}

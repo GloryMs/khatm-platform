@@ -1,5 +1,6 @@
 package sy.khatm.platform.schema.api;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
@@ -27,9 +28,10 @@ import java.util.Map;
  *     attestation} object (KH-2.4, spec FS-2.4 item 1); {@code null} defaults to {@code false}
  */
 public record SchemaCreateRequest(
-    @NotBlank String code,
+    @NotBlank @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String code,
     @NotNull Map<String, String> nameI18n,
-    @NotEmpty List<@Valid ClaimFieldRequest> claimsDef,
+    @NotEmpty @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        List<@Valid ClaimFieldRequest> claimsDef,
     List<String> sdFields,
     Integer defaultMaxUses,
     String defaultValidity,

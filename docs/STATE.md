@@ -31,6 +31,104 @@ are recorded below as "not yet committed" working-tree changes; they are believe
 but this is VERIFIED, not assumed — quick session QS-A7-GITCHECK (2026-08-13) is that verification, and staging 
 images are built from merged main only after it passes.
 
+- **chore/boot-3.5-upgrade — Spring Boot 3.3.13 → 3.5.16, closes CVE-2026-41716
+  (spring-data-commons)** (session `chore/boot-3.5-upgrade`, 2026-08-17, brief
+  `docs/sessions/SESSION-CHORE-BOOT-3.5-UPGRADE.md`). Preamble: `origin/main` = `daee424` (PR #60 +
+  the CVE-investigation record), zero open PRs, baseline `mvn verify` green **441/441** before
+  branching.
+  **Phase 0 (exploitability, report-only):** per Spring's own advisory
+  (`spring.io/security/cve-2026-41716`), the vulnerable path is an unbounded negative-result cache
+  in `PropertyPath.from`, reachable only via `QuerydslPredicateArgumentResolver` (Querydsl web
+  bindings) or `@ProjectedPayload` form binding (`MapDataBinder`). Repo-wide check: no Querydsl
+  dependency anywhere in `pom.xml`, zero `@ProjectedPayload`/`MapDataBinder` usage, and every
+  repository method is a statically-named derived-query method fixed at compile time in an
+  interface — never a runtime-constructed property path from HTTP input. **Verdict: not
+  reachable**, consistent with the prior session's "hold" decision — the fix proceeded at normal
+  pace, not accelerated.
+  **New finding surfaced mid-session, flagged to Majd before touching the pom:** Spring Boot 3.5's
+  own OSS line is *already* EOL — final release `3.5.16` shipped 2026-06-25, OSS EOL 2026-06-30
+  (no 3.6 exists; the active lines now are 4.0.x/4.1.x). A 3.3→3.5.16 bump closes today's CVE but
+  lands on a line that can never receive another OSS patch — the same "EOL, no fix available"
+  problem this session exists to solve, just deferred to the next disclosure. Presented to Majd as
+  a decision (proceed as scoped on 3.5.16 vs. stop and rescope to Boot 4.x, which would cross
+  CLAUDE.md's frozen "Spring Boot 3.x" stack line and needs its own explicit contract change):
+  **Majd chose to proceed as scoped.** A Boot 4.x migration is a real, distinct follow-up — not
+  scheduled.
+  **Phase 1 (mechanical bump) — the version jump list (`mvn dependency:tree`, before → after):**
+  `spring-boot-starter-parent` 3.3.13 → 3.5.16; `spring-modulith` 1.2.4 → 1.4.1 (spring-modulith's
+  own Spring Boot compatibility matrix — 1.4.x is the line compiled against Boot 3.5); Hibernate
+  6.5.3.Final → 6.6.53.Final; `spring-data-commons`/`spring-data-jpa`/`spring-data-redis` 3.3.13 →
+  **3.5.13** (closes the CVE — above the 3.5.12 fix line); Flyway 10.10.0 → 11.7.2 (major line
+  bump, BOM-managed, all 15 migrations replayed clean in every test run); Testcontainers 1.19.8 →
+  1.21.4 (BOM-managed, not explicitly pinned in this pom, untouched). Explicitly-pinned overrides
+  (`postgresql.version`, `tomcat.version`, `netty.version`, `jackson-bom.version`,
+  `spring-security.version` — each a prior session's patch-level CVE clear) left exactly as-is per
+  V4's default (BOM-managed stays BOM-managed unless it breaks; none did) — `spring-security-core`
+  still resolves to the pinned 6.5.9 with no conflict. **springdoc bumped 2.6.0 → 2.8.6 — V4
+  required, not optional:** confirmed empirically, not assumed — 2.6.0's compiled-in
+  `ControllerAdviceBean(Object)` call no longer exists on Framework 6.2.19 (Boot 3.5.16's managed
+  Framework line); `/v3/api-docs` generation threw `NoSuchMethodError` at request time under `mvn
+  verify` before the bump. 2.8.x is springdoc's own minimum line for Boot 3.5.x.
+  **A real V3 case, handled without escalating — a second, smaller decision inside it caught and
+  corrected before it shipped:** springdoc 2.8.x's swagger-core dependency carries an acknowledged
+  upstream bug (`swagger-api/swagger-core#4862`, open, no fix version yet): starting at
+  swagger-core 2.2.29, `@NotBlank`/`@NotEmpty` stopped contributing to a schema's `required` array
+  (only `@NotNull` does) — silently downgrading ~19 genuinely-mandatory string/collection fields
+  across 16 DTOs to "optional" in the generated contract, caught by
+  `OpenApiContractTest`/`committedContractFile_matchesGeneratedApiDocs` going red. **First attempt
+  (reverted): adding `@NotNull` alongside every `@NotBlank`/`@NotEmpty`** — the issue's own
+  documented workaround. Looked clean, but `mvn verify` caught a real behavioral side effect on the
+  very first run: Bean Validation fires `@NotBlank` and `@NotNull` as two independent constraints,
+  so a null field's error envelope now carried **two** `details` entries instead of one
+  (`ErrorEnvelopeAndI18nTest#issue_missingHolderRef_returns400WithTranslatedDetails` failed on
+  exactly this — `Expected size: 1 but was: 2`). That's a real, visible change to the public error
+  envelope shape, not a documentation-only fix — self-corrected rather than accepting it or
+  weakening the test: switched to `@Schema(requiredMode = Schema.RequiredMode.REQUIRED)` instead
+  (pure OpenAPI-doc annotation, zero Bean Validation side effect) across all 19 fields in the same
+  16 files. `ErrorEnvelopeAndI18nTest` back to 9/9 green with zero test changes, contract's
+  `required` arrays restored exactly.
+  **springdoc 2.8.x's other breaking change, also handled proactively:** defaults api-docs
+  generation to OpenAPI 3.1 (was 3.0). Pinned back via `springdoc.api-docs.version: OPENAPI_3_0` in
+  `application.yml` (V2's alternate path (b) — suppress the diff at the source — chosen over
+  vendoring a 3.1 contract, since a spec-version migration is a deliberate future decision for
+  whoever owns the console/wallet contract, not a side effect of a dependency bump).
+  **Phase 2 gates:**
+  - **2a (RLS/JPA):** `CrossTenantIsolationTest`, `ConsumingPartyEnsureRaceTest`,
+    `RepositoryDefaultTransactionsTest`, `MigrationImmutabilityTest`, `ConcurrentConsumeTest`,
+    `VaultKeyLifecycleAcceptanceTest` (incl. its 10-concurrent-callers rotation race), and
+    `KeyLifecycleServiceTest` (incl. the `KEY_RETIRE_REJECTED`-audits-survive-rollback regression
+    from KH-2.4x) all green under Hibernate 6.6.53.Final/Boot 3.5.16.
+  - **2b (Redis Streams):** `RedisStreamWorkerTest` green, including
+    `dispatch_twoHandlersRegisteredForTheSameType_bothReceiveIt` (the `KeyRotated` dual-consumer
+    fan-out from KH-2.3b).
+  - **2c (Security `permitAll`):** `AuthenticatedCallerOnAnonymousEndpointsTest` and
+    `PublicEndpointsNoCredentialsTest` both green — the 2026-08-11 `runAsDefaultTenant` fix holds
+    under Boot 3.5.16's filter chain.
+  - **2d (contract):** `docs/api/openapi.json` regenerated via `OpenApiContractTest`'s own
+    mechanism. **Judged additive/cosmetic-only, vendored:** every `required`-array line is
+    unchanged from the pre-upgrade contract; the only content diff is new `minLength`/`minItems`
+    constraints appearing *alongside* still-required fields (strictly additive precision, nothing
+    removed — the `@Schema(requiredMode=REQUIRED)` fix above is exactly why nothing else moved).
+    One naming-only diff, also cosmetic: three unrelated `list()` endpoints
+    (`/admin/consuming-parties`, `/admin/tenants`, `/credentials`) had their auto-disambiguated
+    `operationId` suffixes (`list_2`/`list_3`/`list_4`) reassigned among each other — a
+    springdoc-internal scan-order artifact, same path/method/schema for all three. **Flagged for
+    the console side:** this is exactly the "expected to be cosmetic-only if it exists at all"
+    `npm run contract:update` follow-up the session brief already scoped out-of-repo — if
+    khatm-console's codegen names client functions after `operationId` literally, three function
+    names will shuffle; worth a one-line note in that session, not a platform concern.
+  **DoD:** `mvn verify` green, **441/441 tests, 0 new/removed, 0 `@Disabled`** (matches the
+  baseline exactly — a pure dependency-line session, per CLAUDE.md's session-scope discipline).
+  `docs/error-codes.md` confirmed unchanged (`git diff` empty — no new `ErrorCode` this session).
+  No new user-facing strings — the Arabic-review gate correctly did not activate.
+  **Phase 3 (live compose round) — environment prepared, execution is Majd's:**
+  `docker compose build khatm-api khatm-worker` from this branch succeeded
+  (`khatm-platform-khatm-api:latest`, `khatm-platform-khatm-worker:latest`); **not yet swapped
+  into the running local stack** — the containers currently up are still on `main`. Majd's
+  five-point walkthrough (full flow, attested-issuance audit ordering, SOFT→VAULT→inherited-VAULT
+  rotation, Vault-down fail-closed, pre-upgrade credential still verifies) is still outstanding
+  before merge — any deviation there returns to Claude Code as a investigation per the brief.
+  **PR:** not yet opened as of this entry.
 - **feat/KH-2.4x-BE-contract-closeouts — closes four accumulated contract/audit debts** (session
   `feat/KH-2.4x-BE-contract-closeouts`, 2026-08-17, brief
   `docs/sessions/SESSION-KH-2.4x-BE-contract-closeouts.md`). Preamble confirmed `origin/main`
@@ -2049,6 +2147,10 @@ quick-session edit. Same session's git part: staging-image gate **PASS** —
 - **~~Two source comments still restate the old `transit/keys/*` capability set~~ — CLOSED
   (KH-2.4x-BE, PR #60, 2026-08-17).** `application.yml` and `VaultTransitProvider`'s class Javadoc
   both now say `create, update, read`, with a pointer to the 2026-08-15 empirical finding.
+- **~~`spring-data-commons:3.3.13` — CVE-2026-41716 (HIGH, DoS via cache)~~ — CLOSED
+  (chore/boot-3.5-upgrade, 2026-08-17).** Boot 3.5.16 manages `spring-data-commons:3.5.13`
+  (≥ the 3.5.12 fixed version) — see "Current phase / task" above for the full session record.
+  History kept below for the investigation trail.
 - **`spring-data-commons:3.3.13` — CVE-2026-41716 (HIGH, DoS via cache), opened 2026-08-17,
   investigated 2026-08-17, deliberately NOT bumped — needs its own dedicated session.**
   Surfaced by Trivy on PR #60, confirmed pre-existing on `main` itself (PR #59's own post-merge CI

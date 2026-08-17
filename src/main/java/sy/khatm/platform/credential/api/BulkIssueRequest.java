@@ -31,7 +31,7 @@ import java.util.List;
     name = "BulkIssueRequest",
     description = "Request to issue a batch of credentials against one schema")
 public record BulkIssueRequest(
-    @NotBlank String schemaCode,
+    @NotBlank @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String schemaCode,
     BulkIssueDefaults defaults,
     List<BulkIssueItem> items,
     Boolean mintClaimCodes) {}

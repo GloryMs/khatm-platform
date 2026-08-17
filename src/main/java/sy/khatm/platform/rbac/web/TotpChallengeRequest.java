@@ -1,5 +1,6 @@
 package sy.khatm.platform.rbac.web;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 
 /**
@@ -13,4 +14,7 @@ import jakarta.validation.constraints.NotBlank;
  *     code instead
  * @param recoveryCode a one-time recovery code, or {@code null} if submitting a TOTP code instead
  */
-record TotpChallengeRequest(@NotBlank String challengeId, String code, String recoveryCode) {}
+record TotpChallengeRequest(
+    @NotBlank @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String challengeId,
+    String code,
+    String recoveryCode) {}
