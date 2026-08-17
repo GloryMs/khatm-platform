@@ -2049,13 +2049,26 @@ quick-session edit. Same session's git part: staging-image gate **PASS** —
 - **~~Two source comments still restate the old `transit/keys/*` capability set~~ — CLOSED
   (KH-2.4x-BE, PR #60, 2026-08-17).** `application.yml` and `VaultTransitProvider`'s class Javadoc
   both now say `create, update, read`, with a pointer to the 2026-08-15 empirical finding.
-- **`spring-data-commons:3.3.13` — CVE-2026-41716 (HIGH, DoS via cache), opened 2026-08-17.**
-  Surfaced by Trivy on PR #60 and confirmed pre-existing on `main` itself (PR #59's own post-merge
-  CI run already showed it) — not introduced by KH-2.4x-BE, no `pom.xml` touched that session.
-  Fixed upstream in `4.0.6`/`3.5.12`. Not yet bumped — needs its own small session: confirm which
-  version the current `spring-boot-starter-parent` pulls in transitively, bump (directly or via a
-  parent-BOM upgrade), re-run `mvn verify` in full (this codebase's Spring Data usage is
-  non-trivial — RLS-scoped repositories, native queries), and confirm Trivy clears.
+- **`spring-data-commons:3.3.13` — CVE-2026-41716 (HIGH, DoS via cache), opened 2026-08-17,
+  investigated 2026-08-17, deliberately NOT bumped — needs its own dedicated session.**
+  Surfaced by Trivy on PR #60, confirmed pre-existing on `main` itself (PR #59's own post-merge CI
+  run already showed it) — not introduced by KH-2.4x-BE, no `pom.xml` touched that session.
+  **Investigation finding (per Spring's own advisory, `spring.io/security/cve-2026-41716`):
+  `spring-data-commons` 3.3.x — the line `spring-boot-starter-parent:3.3.13` pins via
+  `spring-data-bom:2024.0.13` — is END-OF-LIFE for this CVE. No public OSS patch exists on 3.3.x
+  (nor 2.7.x/3.2.x/3.4.x); the only fixed OSS versions are `3.5.12` and `4.0.6`, both on release
+  trains paired with a newer Spring Boot (3.5.x / 4.x).** This is therefore not a same-line patch
+  override like every other CVE fix already in this `pom.xml` (`postgresql`/`netty`/
+  `jackson-bom`) — Spring Data's `commons`/`jpa`/`redis` modules are one version family, and this
+  project's own `spring-security.version` comment already documents that mismatching a sub-module
+  across release trains breaks at runtime (`NoClassDefFoundError`), not just at compile time; an
+  isolated `spring-data-commons`-only override would be the same unsupported-combination risk.
+  **Decision (Majd, 2026-08-17, presented with three options — isolated override / full Boot
+  upgrade / hold and document): hold.** The real fix is a Spring Boot 3.3.13 → 3.5.x upgrade
+  (still within CLAUDE.md's frozen "Spring Boot 3.x," but a real minor-version jump, not a patch)
+  — scope it as its own session: confirm Boot 3.5's own breaking-changes notes, bump the parent,
+  full `mvn verify` regression pass (this codebase's Spring Data usage is non-trivial — RLS-scoped
+  repositories, native queries), confirm Trivy clears. Not scheduled yet.
 - **`VaultKeyLifecycleAcceptanceTest`'s concurrent-rotation-race CI flake — still recurring.**
   Seen again on PR #60 (and independently on `main`'s own PR #57/#58/#59 post-merge runs) —
   the exact same test noted "stabilized once" after PR #52. Not re-investigated this session
