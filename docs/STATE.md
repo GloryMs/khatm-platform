@@ -121,14 +121,17 @@ images are built from merged main only after it passes.
   baseline exactly — a pure dependency-line session, per CLAUDE.md's session-scope discipline).
   `docs/error-codes.md` confirmed unchanged (`git diff` empty — no new `ErrorCode` this session).
   No new user-facing strings — the Arabic-review gate correctly did not activate.
-  **Phase 3 (live compose round) — environment prepared, execution is Majd's:**
-  `docker compose build khatm-api khatm-worker` from this branch succeeded
-  (`khatm-platform-khatm-api:latest`, `khatm-platform-khatm-worker:latest`); **not yet swapped
-  into the running local stack** — the containers currently up are still on `main`. Majd's
-  five-point walkthrough (full flow, attested-issuance audit ordering, SOFT→VAULT→inherited-VAULT
-  rotation, Vault-down fail-closed, pre-upgrade credential still verifies) is still outstanding
-  before merge — any deviation there returns to Claude Code as a investigation per the brief.
-  **PR:** not yet opened as of this entry.
+  **Phase 3 (live compose round) — EXECUTED & PASSED (2026-08-17, Majd).** Claude Code prepared
+  the environment (`docker compose build khatm-api khatm-worker` from this branch, then
+  `docker compose up -d khatm-api khatm-worker` + `docker restart khatm-console` — the known
+  nginx-stale-upstream gotcha from prior sessions); both new containers booted clean on Boot
+  3.5.16 (Flyway validated all 15 migrations, both seeders ran, status list publishing confirmed,
+  console proxy round-trip to the new backend verified). Majd then ran the live walkthrough
+  himself: **all green**, including the console's AR/RTL rendering — no regression from the
+  springdoc/OpenAPI-contract changes reaching the UI. No deviations reported, so no investigation
+  loop back to Claude Code was needed.
+  **PR:** `https://github.com/GloryMs/khatm-platform/pull/61`, open, all automated gates green —
+  ready for Majd to merge.
 - **feat/KH-2.4x-BE-contract-closeouts — closes four accumulated contract/audit debts** (session
   `feat/KH-2.4x-BE-contract-closeouts`, 2026-08-17, brief
   `docs/sessions/SESSION-KH-2.4x-BE-contract-closeouts.md`). Preamble confirmed `origin/main`
