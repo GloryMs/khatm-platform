@@ -101,7 +101,10 @@ class CredentialController {
         @ApiResponse(responseCode = "200", description = "Credential issued"),
         @ApiResponse(
             responseCode = "400",
-            description = "Bean Validation failed (e.g. a missing holderRef)",
+            description =
+                "Bean Validation failed (e.g. a missing holderRef); the schema requires attestation"
+                    + " and none was submitted (KH-ATT-0400); or attestation was submitted for a"
+                    + " schema that does not require it (KH-ATT-0401, spec FS-2.4 item 2)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "500",
@@ -130,7 +133,10 @@ class CredentialController {
         @ApiResponse(
             responseCode = "400",
             description =
-                "The batch itself is invalid — empty items, or more than 200 (KH-CRD-0400)",
+                "The batch itself is invalid — empty items, or more than 200 (KH-CRD-0400); or the"
+                    + " named schema requires attestation, which bulk issuance does not support"
+                    + " (KH-ATT-0402, spec FS-2.4 item 2) — rejected wholesale before any item is"
+                    + " processed",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "401",

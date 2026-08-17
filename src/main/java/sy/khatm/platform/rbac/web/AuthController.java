@@ -154,12 +154,13 @@ class AuthController {
   @Operation(
       summary = "Current session's user",
       description =
-          "Returns the authenticated user's username, display name, language, scopes, and"
-              + " mustChangePassword (spec FS-2.2 D5). This is the one endpoint exempt from the"
-              + " forced-password-change gate (rbac.security.PasswordChangeEnforcementFilter) —"
-              + " every other authenticated call returns 403 KH-USR-0403 while mustChangePassword"
-              + " is true, so a client should call this endpoint right after login to detect the"
-              + " state and route to the change screen before attempting anything else.",
+          "Returns the authenticated user's username, display name, language, scopes,"
+              + " mustChangePassword (spec FS-2.2 D5), tenantSlug, and totpEnabled (KH-2.4x). This"
+              + " is the one endpoint exempt from the forced-password-change gate"
+              + " (rbac.security.PasswordChangeEnforcementFilter) — every other authenticated call"
+              + " returns 403 KH-USR-0403 while mustChangePassword is true, so a client should call"
+              + " this endpoint right after login to detect the state and route to the change"
+              + " screen before attempting anything else.",
       responses = {
         @ApiResponse(responseCode = "200", description = "Current user"),
         @ApiResponse(
@@ -184,7 +185,9 @@ class AuthController {
             view.displayNameI18n(),
             view.preferredLang(),
             actor.scopes(),
-            view.mustChangePassword()));
+            view.mustChangePassword(),
+            TenantContext.currentSlug(),
+            view.totpEnabled()));
   }
 
   @Operation(

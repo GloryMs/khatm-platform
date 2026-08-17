@@ -16,10 +16,19 @@ import sy.khatm.platform.shared.LocalizedText;
  *     cleared on the first successful change. This endpoint is the one call exempt from {@code
  *     rbac.security.PasswordChangeEnforcementFilter}'s {@code 403 KH-USR-0403}, precisely so a
  *     client can read this flag here and route to the change screen proactively.
+ * @param tenantSlug the caller's own tenant's slug (KH-2.4x, closing platform ask C8) — lets a
+ *     client (e.g. the console's key-rotation confirm dialog) type-to-confirm against a
+ *     human-legible tenant identifier instead of a signing key's opaque {@code kid}.
+ * @param totpEnabled whether this user currently has an active (confirmed) TOTP enrollment
+ *     (KH-2.4x, closing platform ask C7c) — a status flag only; whether TOTP is actually mandatory
+ *     for this user depends on their scopes (see {@code
+ *     rbac.security.TotpEnrollmentEnforcementFilter}), not encoded as a separate field here.
  */
 record MeResponse(
     String username,
     LocalizedText displayNameI18n,
     String preferredLang,
     Set<String> scopes,
-    boolean mustChangePassword) {}
+    boolean mustChangePassword,
+    String tenantSlug,
+    boolean totpEnabled) {}

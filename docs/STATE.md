@@ -31,6 +31,74 @@ are recorded below as "not yet committed" working-tree changes; they are believe
 but this is VERIFIED, not assumed — quick session QS-A7-GITCHECK (2026-08-13) is that verification, and staging 
 images are built from merged main only after it passes.
 
+- **feat/KH-2.4x-BE-contract-closeouts — closes four accumulated contract/audit debts** (session
+  `feat/KH-2.4x-BE-contract-closeouts`, 2026-08-17, brief
+  `docs/sessions/SESSION-KH-2.4x-BE-contract-closeouts.md`). Preamble confirmed `origin/main`
+  carries PR #56 (`c7c3d1b`) and the merged Vault-record chore (`transit/keys/*` policy grants
+  `create, update, read`); zero open PRs. `mvn verify` green, **441/441 tests (0 net new files —
+  3 existing tests extended for D2, 1 for D3)**. No new `ErrorCode`, no new message keys (backend-
+  only, Arabic-review gate correctly not activated this session) — `docs/error-codes.md` confirmed
+  unchanged via `git diff`.
+    - **D1 — `KH-ATT-*` now visible in the contract:** the three codes were already wired
+      (`ErrorCode`, `CredentialService#issue`, `BulkIssuanceService#bulkIssue`) but undocumented on
+      their endpoints' `@ApiResponse`s (the C9 platform-ask gap). Folded into `/credentials/issue`'s
+      and `/credentials/bulk`'s existing single 400 entries (one entry per status code per
+      operation, the established combining pattern) rather than inventing a second 400 block.
+      `docs/error-codes.md` already had all three rows (from KH-2.4-BE) — confirmed, not
+      regenerated.
+    - **D2 — `MeResponse` gains `tenantSlug` + `totpEnabled` (closes platform asks C7c/C8):**
+      additive-only. `tenantSlug` reads `TenantContext.currentSlug()` directly in
+      `AuthController#me()` (the same idiomatic per-request source `StatusListUriBuilder`/
+      `TenantProvisioningService`/`TotpService` already use for "this request's tenant slug" — no
+      new `TenantDirectory` lookup needed). `totpEnabled` reuses
+      `TotpService#hasActiveTotp(UUID)` verbatim (the exact read
+      `rbac.security.TotpEnrollmentEnforcementFilter` already uses to decide the mandatory-2FA
+      wall) via a new `UserView.totpEnabled` field populated in `AuthService#findUserView`.
+      **Verify-against-code finding worth flagging:** the session brief's veto V1 justified
+      excluding a forced-TOTP-enrollment signal on the premise that "the platform enforces TOTP as
+      opt-in only" — that premise is stale; `TotpEnrollmentEnforcementFilter` has enforced
+      *mandatory* enrollment for `revoke`/`tenant:admin`/`platform:admin`/`key:manage` holders since
+      KH-2.2c. The veto's actual decision (status-only field, no separate "mandatory" flag) stands
+      regardless — `totpEnabled`'s Javadoc says explicitly that mandatoriness depends on the user's
+      already-exposed `scopes`, not a field here. Tests: extended
+      `TotpFlowTest#mandatoryScopeHolder_..._thenUnwalledAfterConfirm` with `totpEnabled`
+      false-then-true across the same enroll/confirm flow it already drove, and
+      `SuspendedTenantAuthTest#login_forNonDefaultTenant_..._establishesSessionScopedToThatTenant`
+      with a `tenantSlug` assertion against its already-onboarded non-default tenant.
+    - **D3 — `AuditAction.KEY_RETIRE_REJECTED` closes debt A7** (QS-A7-GITCHECK's finding: the
+      `KH-KEY-0422` rejection branch in `KeyLifecycleService#retire` was silent-by-construction,
+      throwing strictly before the method's only `audit.record` call). **The one real design
+      question (veto V2), resolved by reading the code, not assumed:** `retire()` is
+      `@Transactional`, `ValidationException` is unchecked, so Spring's default rollback rolls the
+      whole physical transaction back on that throw — an `audit.record(...)` call added right
+      before it would join that same transaction (`AuditService#record`'s documented `REQUIRED`
+      propagation) and be rolled back with it, right back to silent. No existing "audit despite
+      rollback" pattern existed in the codebase (searched). Added
+      `AuditService#recordIndependently` — same row-building logic, `@Transactional(propagation =
+      REQUIRES_NEW)`, suspends the caller's transaction and commits this row in its own; `TenantContext`/
+      `SecurityContextHolder` are plain `ThreadLocal`s, unaffected by transaction suspension, so
+      actor/tenant attribution is identical to the normal path. Wired into `retire()`'s rejection
+      branch only, with `elapsed`/`minRetiringAge` in `detail` (never `forced`, since this branch is
+      only reached when `force=false`). Regression test extends
+      `KeyLifecycleServiceTest#retire_tooYoung_withoutForce_throwsValidation` (renamed
+      `..._andAuditsKeyRetireRejected`): the persistence proof is real, not assumed — the test's own
+      `JdbcTemplate` connection reads the post-call DB state directly, and `retire()`'s real,
+      unmocked transaction genuinely does roll back on the throw, so a naive `REQUIRED`-propagation
+      implementation would have made this exact assertion fail.
+    - **D4 — two stale comments corrected:** `application.yml` and `VaultTransitProvider`'s class
+      Javadoc both still said `transit/keys/*` needs only `create+read`; both now say
+      `create+update+read` with a one-line pointer to the 2026-08-15 empirical finding (`docs/deploy-
+      staging.md`'s "Policy correction" section has the full story).
+    - **Contract:** `docs/api/openapi.json` regenerated via `OpenApiContractTest`'s own mechanism —
+      confirmed additive-only via `git diff` (two new `MeResponse` properties, description-text-only
+      changes on three existing responses; no path or schema removed).
+    - **For the khatm-console C10 session (`feat/C10-provider-switch-rotation`):**
+      `MeResponse.tenantSlug` and `MeResponse.totpEnabled` are now live on `main` once this PR
+      merges — C10's own preamble gate 2 (`MeResponse.tenantSlug` availability, unlocking its
+      optional D4) can now pass.
+    - **PR opened on `khatm-platform` (`feat/KH-2.4x-BE-contract-closeouts`), pending Majd's
+      review/merge.**
+
 - **QS-A7-GITCHECK — quick investigation session, report-only, no code changes** (2026-08-13, brief
   `docs/sessions/SESSION-QS-A7-GITCHECK.md`). Two parts, both closed.
   **Part 1 (git verification): staging-image gate = PASS.** Working tree was dirty at session start
