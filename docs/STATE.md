@@ -71,6 +71,44 @@ images are built from merged main only after it passes.
   `c6c2b8a`, `https://github.com/GloryMs/khatm-platform/pull/57`, standard merge via `gh pr merge
   --merge` on Majd's explicit instruction).
 
+- **Staging Vault deployment + SOFT→VAULT migration — executed live by Majd (2026-08-15).**
+  Vault is now real staging infrastructure, not a local-only demonstration: custom image
+  `ghcr.io/gloryms/khatm-vault:1.17-mc` (needed because MC's `no-new-privileges` flag breaks the
+  official image's privilege-drop entrypoint), file storage at `/data/vault` on the volume shared
+  with Postgres (MC caps an app at 2 volumes), initialized 5 shares/3 threshold, transit engine +
+  the `khatm-transit` policy + a least-privilege app token applied, `KHATM_KEYS_VAULT_*` env vars
+  set on both `khatm-api` and `khatm-worker`. Three accepted staging deviations, all recorded:
+  the custom image (above), `disable_mlock: true` (no `IPC_LOCK` in MC), and a non-expiring app
+  token (`ttl: 0`; production uses AppRole with a bounded period instead). Migration itself ran as
+  `POST /api/v1/admin/signing-keys/rotate {"provider":"VAULT"}` — **not** from the console, which
+  cannot send a request body (see the console gap under "Open decisions / blockers" below). Two
+  further rotations since have inherited `VAULT` with no explicit `provider`. Credentials signed
+  under both SOFT and VAULT verify correctly. **This proves Part B of GAMEDAY KH-2.3.3 (below) on a
+  live environment, not only on local hardened compose.** Fail-closed was observed live on staging
+  three times during diagnosis (explicit `VAULT` request + Vault unavailable → `503 KH-KEY-0503`,
+  no silent SOFT fallback, previous `ACTIVE` key left intact) — matches the rotation runbook's
+  checkpoint 1c. Two diagnostic SOFT rotations (`key-5`, `key-6`) were created while diagnosing;
+  recorded here so they are not later misread as unexplained activity.
+  **Operational standing item:** every pod redeploy on MC re-seals Vault — issuance then fails
+  `KH-KEY-0503` until a manual unseal (`unseal-staging-vault.sh`); public reads (verify/JWKS/status
+  list) are unaffected throughout. Check `sys/seal-status` before diagnosing any `KH-KEY-0503` on
+  staging. **Diagnostic note:** `KH-KEY-0503` conflates three distinct causes (sealed, network
+  failure, and a Vault 403 permission denial) because `VaultTransitProvider` maps all three through
+  the same `unavailable(...)` path — they are indistinguishable from the application error alone;
+  test the exact call with the app token directly against Vault to tell them apart.
+  **Policy correction, the actual reason this chore session exists:** `transit/keys/*` requires the
+  `update` capability, not just `create` + `read` — the first live migration failed with a Vault
+  403 (surfacing as `KH-KEY-0503`) on a transit key name that did not yet exist, and adding
+  `update` fixed it with no other change. Likely cause (empirical, not verified against Vault's
+  source): Vault's ACL layer only distinguishes create from update on paths whose backend
+  registers an existence check, and `transit/keys/:name` appears not to register one,  so every
+  write there evaluates as `update` regardless of whether the key already exists. `docker/vault-
+  policy/khatm-transit-app.hcl` and `docs/deploy-staging.md`'s Vault hardening section have been
+  corrected accordingly (chore session `SESSION-CHORE-VAULT-STAGING-RECORD`, 2026-08-16/17,
+  docs-and-config-only, no source change). **Any Vault instance provisioned before 2026-08-15 from
+  the old policy file needs the policy re-applied** — not done as part of this chore session, out
+  of scope (documentation-only).
+
 GAMEDAY KH-2.3.3 — EXECUTED & PASSED (executed ______ [بين 2026-08-05 و2026-08-10]، recorded 2026-08-10).
 Manual exercise, Majd + المعماري, no Claude Code (per FS-2.3 §KH-2.3.3). Scope decision:
 Option A (split) — Part A (full SOFT rotation lifecycle: rotate via console /key-management behind TOTP,
@@ -1908,6 +1946,28 @@ quick-session edit. Same session's git part: staging-image gate **PASS** —
   `disclosures_enc` row ends up `NULL` exactly once, either the moment a wallet claims it or the
   moment it expires unclaimed, never later, never both, never neither. Nothing left open under
   this blocker.
+- **Console cannot select a provider when rotating a signing key (cross-repo gap, noted
+  2026-08-16/17).** `rotateSigningKey()` (console `api.ts`) sends no request body and the UI has no
+  SOFT/VAULT selector, even though the vendored contract exposes `RotateKeyRequest.provider`. The
+  live 2026-08-15 migration above had to be made directly (DevTools, reusing the session cookie +
+  `X-XSRF-TOKEN`), not from the console. Platform-side note only — no implementation here or in
+  the console repo; a candidate item for a future `SESSION-KH-2.4x`. If built, it must be an
+  explicit, non-default operator choice with a warning that `VAULT` means issuance stops when Vault
+  is unavailable, not a default flipped silently.
+- **Console deployment to bunny is postponed — Majd's decision (2026-08-16).** Not scheduled; record
+  only. Blocking item whenever it resumes: the staging console image is not reproducible from git —
+  its `Dockerfile`/`nginx.conf` live in a scratchpad outside version control.
+- **`Dockerfile.postgres` — no longer present.** A prior session brief for this chore expected an
+  untracked `Dockerfile.postgres` in the platform working tree awaiting a keep/delete decision; as
+  of this entry it is absent from the tree entirely (not tracked, not untracked) — its disposition
+  appears to have already been resolved (or it was never actually added) before this chore session
+  ran. No action taken; noted so its earlier "awaiting disposition" status isn't carried forward
+  stale.
+- **Two source comments still restate the old `transit/keys/*` capability set** (`create+read`
+  instead of `create, update, read`): `src/main/resources/application.yml:116` and
+  `src/main/java/sy/khatm/platform/key/domain/VaultTransitProvider.java:50`. Left uncorrected on
+  purpose — this chore session is documentation/config-only and does not touch `src/**`; pick up as
+  a one-line comment fix in a future session that already has a reason to touch either file.
 
 ## Next up (ordered)
 

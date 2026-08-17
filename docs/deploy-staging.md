@@ -137,44 +137,161 @@ docker compose exec khatm-postgres psql -U khatm -d khatm -c "
 Then add the `.env`/compose changes above and redeploy as usual — Flyway's `V7` migration handles
 every other `GRANT` itself on that same run.
 
-## Vault hardening for production (KH-2.3b, spec FS-2.3 D5)
+## Vault hardening (staging and production)
 
-`docker-compose.yml`'s `khatm-vault` service is **dev mode only** — auto-unsealed, in-memory
-storage (nothing survives a restart), a fixed root token. None of that is acceptable outside a
-laptop dev loop. A real deployment needs its own, separately operated Vault (or an existing
-organizational Vault cluster) configured as follows before `khatm.keys.vault.enabled=true` is set
-on `khatm-api`/`khatm-worker`:
+Vault runs on bunny Magic Containers staging as of 2026-08-15. The checklist below is what
+was actually executed there; production repeats it with the noted differences.
 
-1. **Real storage backend.** Dev mode's in-memory storage is gone on restart — every transit key
-   created against it (and therefore every `issuer_key` row pointing at one) would become
-   permanently unsignable. Use `raft` (integrated storage, simplest to operate) or an external
-   backend (Consul, cloud KMS-backed) per Vault's own storage documentation — this is a Vault
-   operations decision, not something khatm-platform's config surface controls.
-2. **Manual unseal.** Production Vault is sealed on every start/restart and requires a quorum of
-   unseal keys (Shamir's Secret Sharing, `vault operator init`/`vault operator unseal`) or an
-   auto-unseal mechanism backed by a separate KMS (cloud KMS, another HSM) — never
-   `VAULT_DEV_ROOT_TOKEN_ID`/`VAULT_DEV_LISTEN_ADDRESS`'s auto-unseal convenience. This is exactly
-   why `VaultTransitProvider`'s fail-closed behavior (`KH-KEY-0503`, never a silent SOFT fallback)
-   matters operationally: a sealed Vault must surface as a loud, alarm-friendly platform error, not
-   be silently worked around.
-3. **Audit device.** Enable at least one audit device (`vault audit enable file file_path=...`, or
-   a syslog/socket device) before any production traffic — every transit sign/create call this
-   platform makes should be independently auditable on the Vault side, not just in `audit_log`.
-4. **Least-privilege app token — no admin token in the app, ever.** `khatm-api`/`khatm-worker`
-   authenticate with a token (or AppRole) bound to the policy in
-   `docker/vault-policy/khatm-transit-app.hcl` — `transit/keys/*` create+read, `transit/sign/*`,
-   `transit/verify/*`, nothing else. Mint it, e.g.:
-   ```sh
-   vault policy write khatm-transit-app docker/vault-policy/khatm-transit-app.hcl
-   vault token create -policy=khatm-transit-app -period=24h   # or an AppRole bound to the same policy
-   ```
-   Set the resulting token as `KHATM_KEYS_VAULT_TOKEN` in the deployment's `.env` (never the
-   cluster's root/admin token). Rotate it on the same cadence as any other production secret.
-5. **`KHATM_KEYS_VAULT_ADDRESS`** points at the real cluster's address (with TLS — `https://`, a
-   trusted cert; dev mode's plain `http://` is a local-only convenience). `KHATM_KEYS_VAULT_ENABLED`
-   stays `false` until all of the above is actually in place — flipping it on prematurely means the
-   very first tenant rotated onto `VAULT` starts depending on a Vault instance that isn't yet
-   durable/audited/least-privilege.
+### Image — custom, not `hashicorp/vault` directly
+
+MC enforces the `no-new-privileges` kernel flag. The official image's `docker-entrypoint.sh`
+drops privileges to the `vault` user via `su-exec`/`sudo`, which that flag blocks, so the
+container exits before Vault prints a single log line (silent, no error from Vault itself —
+the only clue is `sudo: The "no new privileges" flag is set` in container stderr).
+
+The workaround is a thin image that runs Vault directly as the `vault` user with no privilege
+transition at all — `khatm-deploy/vault/Dockerfile`, published as
+`ghcr.io/gloryms/khatm-vault:1.17-mc`. Security posture is unchanged (same non-root `vault`
+user); the privilege drop is baked into the image instead of performed at runtime. Startup
+Command and Container Arguments in MC must both be left at **Default** — the image's own
+ENTRYPOINT/CMD carry the config path.
+
+### Storage — shared volume, subdirectory
+
+MC caps an application at 2 persistent volumes, both already in use, so Vault shares the
+existing `data` volume with Postgres: volume `data` mounted at `/data` in the Vault container,
+with `"storage": {"file": {"path": "/data/vault"}}`. Verify the Postgres container's `PGDATA`
+is itself a subdirectory (not the volume root) so the two never overlap.
+
+Consequence to keep in mind: losing the `data` volume now loses the database **and** the Vault
+key material together.
+
+Deviations from the local hardened compose, both staging-accepted and recorded in STATE:
+`disable_mlock: true` (MC grants no `IPC_LOCK`), and `tls_disable: true` on the listener
+(all access is either loopback inside the pod or terminated at bunny's edge).
+
+### Networking
+
+All six containers (`khatm-api`, `khatm-worker`, `khatm-postgres`, `redis`, `pgadmin`,
+`khatm-vault`) run in a single MC pod and share a network namespace, so the app reaches Vault
+at `http://127.0.0.1:8200`. No service DNS, no public endpoint required for app traffic.
+
+A CDN endpoint on Vault's port 8200 is needed **only** for operator init/unseal from outside
+(bunny provides no shell; a direct network path is not a shell). Disable caching on its Pull
+Zone, restrict it by IP where possible, and remove or re-restrict it once initialization is
+done.
+
+### Initialize, unseal, transit
+
+Run from the operator's machine against the Vault CDN endpoint. Git Bash is required for the
+JSON payloads — PowerShell's quoting mangles them.
+
+```bash
+V=https://<vault-ep>.b-cdn.net
+
+# One-time init. The response carries 5 unseal keys + root token and is NEVER shown again.
+# Have a password manager open BEFORE running this.
+curl -s -X POST $V/v1/sys/init -H "Content-Type: application/json" \
+  -d '{"secret_shares":5,"secret_threshold":3}'
+
+# Unseal: 3 shares, one call each, until sealed:false
+curl -s -X PUT $V/v1/sys/unseal -d '{"key":"<key-n>"}'
+
+# Transit engine (204 No Content on success — empty output is correct)
+curl -s -X POST $V/v1/sys/mounts/transit -H "X-Vault-Token: <root>" -d '{"type":"transit"}'
+```
+
+Then apply the policy **from the committed file**, never hand-typed:
+
+```bash
+python -c "import json; print(json.dumps({'policy': open('docker/vault-policy/khatm-transit-app.hcl').read()}))" > policy.json
+curl -s -X PUT $V/v1/sys/policies/acl/khatm-transit -H "X-Vault-Token: <root>" --data-binary @policy.json
+rm policy.json
+
+# Verify what actually landed
+curl -s -H "X-Vault-Token: <root>" $V/v1/sys/policies/acl/khatm-transit
+```
+
+Mint the app token from that policy — never a root token in the application:
+
+```bash
+curl -s -X POST $V/v1/auth/token/create -H "X-Vault-Token: <root>" \
+  -d '{"policies":["khatm-transit"],"ttl":"0","renewable":true,"display_name":"khatm-api-staging"}'
+```
+
+`ttl: 0` (non-expiring) is a **staging** choice, to avoid issuance stopping unattended when a
+token lapses. Production uses AppRole with a bounded period instead.
+
+### ⚠ Policy correction — `transit/keys/*` requires `update`
+
+The first live migration attempt on staging failed with `KH-KEY-0503` even though Vault was
+unsealed, the token was valid, and the transit engine was mounted. Vault was returning 403 on
+`POST /v1/transit/keys/<new-name>` — a name that did not yet exist — because the policy granted
+only `create` and `read`.
+
+`transit/keys/*` must carry **`["create", "update", "read"]`**. Vault's ACL layer only
+distinguishes create from update on paths that register an existence check, and
+`transit/keys/:name` appears not to; every write there is evaluated as `update`.
+
+`docker/vault-policy/khatm-transit-app.hcl` has been corrected accordingly. Any Vault instance
+provisioned before 2026-08-15 from the old file needs the policy re-applied.
+
+Diagnostic worth reusing: when `KH-KEY-0503` appears with Vault demonstrably up, test the exact
+call the app makes, with the app token, before suspecting the network:
+
+```bash
+curl -s -X POST -H "X-Vault-Token: <app-token>" \
+  $V/v1/transit/keys/<prefix>-<tenant>:key-<n+1> -d '{"type":"ecdsa-p256"}'
+```
+
+A `permission denied` here is a policy problem; a connection error is a networking problem.
+`VaultTransitProvider` maps both to the same `KH-KEY-0503`, so they are indistinguishable from
+the application error alone.
+
+### Env vars on both `khatm-api` and `khatm-worker`
+
+```
+KHATM_KEYS_VAULT_ENABLED=true
+KHATM_KEYS_VAULT_ADDRESS=http://127.0.0.1:8200
+KHATM_KEYS_VAULT_TOKEN=<app token from the policy above>
+```
+
+Set them on **both** containers. With `enabled=true` and a blank token,
+`VaultTransitProvider` fails startup by design.
+
+### Migration to the Vault provider
+
+There is no migration endpoint — migration is a rotation with an explicit provider
+(spec FS-2.3 D6), per `docs/runbooks/key-rotation.md` step 1b:
+
+```
+POST /api/v1/admin/signing-keys/rotate
+{ "provider": "VAULT" }
+```
+
+Once per tenant. Afterwards, rotations with no body inherit the active key's provider, so
+routine rotation stays on Vault without any further explicit request.
+
+**The console cannot send this.** `rotateSigningKey()` posts no body and the UI has no provider
+selector, even though the vendored contract exposes `RotateKeyRequest.provider`. Until that gap
+is closed, the migration call is made directly — e.g. from DevTools on an authenticated console
+session, reusing the session cookie and `X-XSRF-TOKEN`.
+
+### Operational reality: every pod restart re-seals Vault
+
+Any container update in MC restarts the whole pod, which re-seals Vault. While sealed:
+
+- issuance fails `503 KH-KEY-0503` (fail-closed, by design — never a silent SOFT fallback);
+- verification, JWKS, and the status list keep working, because
+  `KeyLifecycleService#resolvePublicKey` reads `issuer_key.public_jwk` from Postgres and never
+  round-trips through the provider.
+
+Recovery is `unseal-staging-vault.sh` (operator-run, keys read with echo off). **Check
+`sys/seal-status` before diagnosing any `KH-KEY-0503`** — a recent redeploy is by far the most
+common cause, and this was confirmed repeatedly during the staging rollout.
+
+Do not change any MC container setting between unsealing and performing a rotation; the change
+will re-seal Vault mid-procedure.
 
 ## Staging secrets (GitHub repo → Settings → Secrets → Actions)
 
