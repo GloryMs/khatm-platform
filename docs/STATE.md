@@ -4,6 +4,30 @@
 
 ## Current phase / task
 Current phase / task
+
+## 2026-08-18 — Decisions recorded (Majd)
+
+### §7 / FS-2.5 depth constraint — RESOLVED
+- Max tree depth: **THREE levels** (e.g., ministry ← directorate ← provincial branch).
+  Decided by Majd; FYI to المعماري pending.
+- Model unchanged: generic adjacency list (`parent_tenant_id`); depth enforced in
+  service layer + DB guard at 3. Raising later = guard change only, no data migration.
+- Ripple defaults (veto-able in 2.6a/2.6b/C12):
+    - `org:admin` named operations: DIRECT children only, at each node. No grandchild ops.
+    - Aggregated reports: TRANSITIVE rollup over full subtree (counters only).
+    - Verify lineage display: FULL ancestor chain.
+- FS-2.5 amended accordingly. **SESSION-KH-2.6a scheduling gate: OPEN.**
+
+### TOTP_ENC_KEY / CLAIMS_ENC_KEY (exposed 2026-08-16) — RESOLVED (Option A)
+- Staging-only simple rotation, NO re-encryption machinery: generate new keys
+  (password manager + MC env only), wipe existing TOTP enrollments (forced
+  re-enrollment picks users up at next login), re-issue affected test credentials.
+- MANDATORY local compose rehearsal before staging: verify login → TOTP re-enrollment
+  path works post-rotation; no lockout loop. [MAJD] executes; verbal report → STATE.
+- No data migration involved ⇒ within Majd's authority; المعماري gate not triggered.
+- Phase 3 item (pre-production, المعماري decision): key-versioning per encrypted row
+    + online re-encryption — required capability before any production tenant.
+
 DECISION REVERSAL (2026-08-13) — Vault WILL be fully deployed to bunny staging, provider flip included. 
 Supersedes the "staging runs no Vault by documented decision" statement in the GAMEDAY KH-2.3.3 record below 
 (that line stays as written — it was true at recording time and is exactly why Part B ran on the local hardened
@@ -30,6 +54,51 @@ SchemaAuthoringService#createVersion max-version fix, IssueRequest.schemaId vers
 are recorded below as "not yet committed" working-tree changes; they are believed to have landed via PR #56, 
 but this is VERIFIED, not assumed — quick session QS-A7-GITCHECK (2026-08-13) is that verification, and staging 
 images are built from merged main only after it passes.
+
+- **chore/trivy-pebble-base-image — permanently removes `usr/bin/pebble` from the runtime image**
+  (session `chore/trivy-pebble-base-image`, 2026-08-18, brief
+  `docs/sessions/SESSION-CHORE-TRIVY-PEBBLE.md`). Preamble: `main` clean at `a2ad428` (PR #61 merge
+  + its post-merge CVE-flag record), zero open PRs. Dove from the exact finding PR #61's CI run
+  recorded: Trivy's `usr/bin/pebble` (gobinary) scan carrying **7 fresh HIGH findings**
+  (`CVE-2026-33818`, `CVE-2026-46600`, `CVE-2026-56853`, `CVE-2026-56858`, `CVE-2026-56859`,
+  `CVE-2026-56860`, `CVE-2026-56862`, all `golang.org/x/net`/stdlib) on top of the 5 already in
+  `.trivyignore` from the 2026-07-17 KH-0.3-closure entry (`CVE-2026-25681/27136/33814/39821/39822`)
+  — 12 total against the same binary, none ever caused by an app-code or Dockerfile change.
+  **"the code is the reference" check, run before picking a path:** pulled
+  `eclipse-temurin:21-jre` directly and inspected it (`dpkg -S /usr/bin/pebble` → no match — not a
+  dpkg package; `cat /etc/os-release` → Ubuntu 26.04 "Resolute Raccoon", the chiseled-container
+  line; `pebble version` → client v1.32.1) rather than trusting the report or the prior entry's
+  claim at face value. Two findings this produced that reshaped the path choice: (1) since pebble
+  isn't a dpkg package, a base-image **patch-level** bump was never actually going to clear these
+  CVEs — only a base-image swap or removal could, so Path B (the brief's #2 preference) was never
+  really available here despite how it reads on paper; (2) the base image's own default
+  `ENTRYPOINT` **is** `/usr/bin/pebble` — but this Dockerfile's final stage already overrides it to
+  `["java", "-jar", "app.jar"]` (confirmed via `docker inspect`), so pebble never runs as PID 1 or
+  otherwise in this container, exactly as the prior entry already established for the first 5 CVEs.
+  **Path A taken:** added `RUN rm -f /usr/bin/pebble` to the Dockerfile's final stage, right after
+  `WORKDIR /app` and before the jar `COPY` (comment explains why, for the next person who wonders
+  why a jre-only Dockerfile deletes a binary it never installed). This closes the CVE class
+  entirely rather than re-triaging each new disclosure against the same dead binary — removed all
+  12 pebble CVE IDs (5 old + 7 new) from `.trivyignore` with a superseded-by note pointing here,
+  since the file no longer ships and an allowlist entry for a nonexistent vulnerability is noise,
+  not documentation. **Verification, not assumption:** built the image locally
+  (`khatm-platform:pebble-check`), confirmed `/usr/bin/pebble` is gone (`ls` → no such file),
+  `app.jar` and `java -jar app.jar` both intact, `docker inspect` entrypoint unchanged. Then ran
+  the full local stack smoke (`scripts/smoke.sh`) end-to-end on Majd's explicit go-ahead to tear
+  down his running local dev stack (`docker compose down -v` first, since the script's own Phase 1
+  isn't actually clean against pre-existing volumes and the first attempt false-failed at
+  `/api/v1/auth/me` for exactly that reason — stale session state from before the teardown, not a
+  regression; re-ran clean and it passed both phases). Both phases green: JWKS, login → TOTP
+  enroll/confirm → issue → verify (`valid:true`), then `down -v` + re-up on the same image,
+  re-asserted identical. `mvn -B verify -Dspring.profiles.active=test` green, **441/441 tests, 0
+  new/removed** (pure Dockerfile/`.trivyignore`/docs change, no `pom.xml`/`src` touch — matches the
+  session brief's "no application code" scope exactly). No `khatm-deploy` changes needed — that
+  repo doesn't build from this Dockerfile (checked; out of scope per the brief).
+  **Not yet opened as a PR / not yet merged as of this entry** — pending Majd's review of the
+  branch. **[MAJD] once merged:** if this changes what staging's image builds from, a
+  rebuild/redeploy is needed, and per the standing Vault posture (`docs/STATE.md`'s DECISION
+  REVERSAL above), every pod redeploy re-seals Vault → **manual unseal required after**, same as
+  every prior staging image rebuild.
 
 - **chore/boot-3.5-upgrade — Spring Boot 3.3.13 → 3.5.16, closes CVE-2026-41716
   (spring-data-commons)** (session `chore/boot-3.5-upgrade`, 2026-08-17, brief
