@@ -15,6 +15,10 @@ import sy.khatm.platform.shared.LocalizedText;
  * @param deployMode {@code SAAS}, {@code ONPREM}, or {@code FEDERATED}
  * @param status {@code ACTIVE} or {@code SUSPENDED}
  * @param createdAt when the tenant was onboarded
+ * @param parentSlug the immediate parent's slug, or {@code null} for a root (spec FS-2.5 §2,
+ *     KH-2.6a) — additive
+ * @param parentNameI18n the immediate parent's bilingual display name, or {@code null} for a root —
+ *     additive
  */
 public record TenantView(
     UUID id,
@@ -23,4 +27,6 @@ public record TenantView(
     String type,
     String deployMode,
     String status,
-    Instant createdAt) {}
+    Instant createdAt,
+    String parentSlug,
+    LocalizedText parentNameI18n) {}

@@ -5,12 +5,14 @@ import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import sy.khatm.platform.shared.web.ErrorEnvelope;
@@ -144,5 +146,39 @@ class TenantAdminController {
   @PostMapping("/{id}/activate")
   TenantView activate(@PathVariable String id) {
     return admin.activate(UUID.fromString(id));
+  }
+
+  @Operation(
+      summary = "Link, re-link, or unlink a tenant's parent",
+      description =
+          "Sets the tenant's immediate parent, or clears it (parentSlug null/blank makes it a"
+              + " root again) — spec FS-2.5 §2, pure organisational metadata (§1), never a"
+              + " security or cryptographic change. Rejects a self-parent, a cycle, exceeding the"
+              + " maximum hierarchy depth (three levels, §7), or a parent that is not ACTIVE."
+              + " Requires the platform:admin scope.",
+      responses = {
+        @ApiResponse(responseCode = "200", description = "Parent linked/unlinked"),
+        @ApiResponse(
+            responseCode = "401",
+            description = "No valid session or API key",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "403",
+            description = "Missing the platform:admin scope (KH-RBC-0403)",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "404",
+            description = "The tenant or the named parent does not exist (KH-TNT-0404)",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "422",
+            description =
+                "Self-parent (KH-TNT-0422), a cycle (KH-TNT-1422), depth exceeded"
+                    + " (KH-TNT-2422), or the parent is not ACTIVE (KH-TNT-3422)",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
+      })
+  @PostMapping("/{id}/parent")
+  TenantView setParent(@PathVariable String id, @Valid @RequestBody SetParentRequest req) {
+    return admin.setParent(UUID.fromString(id), req.parentSlug());
   }
 }

@@ -279,7 +279,8 @@ class CredentialController {
         result.revoked(),
         result.statusListChecked(),
         result.statusListVersion(),
-        result.statusListUri());
+        result.statusListUri(),
+        result.issuerLineage());
   }
 
   @Operation(

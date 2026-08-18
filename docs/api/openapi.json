@@ -855,6 +855,18 @@
         },
         "type" : "object"
       },
+      "IssuerLineageEntry" : {
+        "description" : "One ancestor of the credential's issuing tenant",
+        "properties" : {
+          "nameI18n" : {
+            "$ref" : "#/components/schemas/LocalizedText"
+          },
+          "slug" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "LocalizedText" : {
         "properties" : {
           "ar" : {
@@ -1201,6 +1213,14 @@
         },
         "type" : "object"
       },
+      "SetParentRequest" : {
+        "properties" : {
+          "parentSlug" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
       "SigningKeyView" : {
         "description" : "A signing key's lifecycle status, no JWK material",
         "properties" : {
@@ -1312,6 +1332,12 @@
           "nameI18n" : {
             "$ref" : "#/components/schemas/LocalizedText"
           },
+          "parentNameI18n" : {
+            "$ref" : "#/components/schemas/LocalizedText"
+          },
+          "parentSlug" : {
+            "type" : "string"
+          },
           "slug" : {
             "type" : "string"
           },
@@ -1419,6 +1445,12 @@
               "type" : "object"
             },
             "type" : "object"
+          },
+          "issuerLineage" : {
+            "items" : {
+              "$ref" : "#/components/schemas/IssuerLineageEntry"
+            },
+            "type" : "array"
           },
           "reason" : {
             "type" : "string"
@@ -2450,6 +2482,84 @@
           }
         },
         "summary" : "Reactivate a tenant",
+        "tags" : [ "tenants-admin" ]
+      }
+    },
+    "/api/v1/admin/tenants/{id}/parent" : {
+      "post" : {
+        "description" : "Sets the tenant's immediate parent, or clears it (parentSlug null/blank makes it a root again) — spec FS-2.5 §2, pure organisational metadata (§1), never a security or cryptographic change. Rejects a self-parent, a cycle, exceeding the maximum hierarchy depth (three levels, §7), or a parent that is not ACTIVE. Requires the platform:admin scope.",
+        "operationId" : "setParent",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/SetParentRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TenantView"
+                }
+              }
+            },
+            "description" : "Parent linked/unlinked"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the platform:admin scope (KH-RBC-0403)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "The tenant or the named parent does not exist (KH-TNT-0404)"
+          },
+          "422" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Self-parent (KH-TNT-0422), a cycle (KH-TNT-1422), depth exceeded (KH-TNT-2422), or the parent is not ACTIVE (KH-TNT-3422)"
+          }
+        },
+        "summary" : "Link, re-link, or unlink a tenant's parent",
         "tags" : [ "tenants-admin" ]
       }
     },

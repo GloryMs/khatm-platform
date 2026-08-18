@@ -52,6 +52,7 @@ import sy.khatm.platform.credential.api.CredentialView;
 import sy.khatm.platform.credential.api.HolderStatusResponse;
 import sy.khatm.platform.credential.api.IssueRequest;
 import sy.khatm.platform.credential.api.IssueResponse;
+import sy.khatm.platform.credential.api.IssuerLineageEntry;
 import sy.khatm.platform.credential.api.VerifyResponse;
 import sy.khatm.platform.credential.events.CredentialIssued;
 import sy.khatm.platform.credential.persistence.ClaimCodeRepository;
@@ -466,6 +467,15 @@ public class CredentialService {
     Long statusListVersion = statusRef.map(StatusListRef::version).orElse(null);
     String statusListUri = statusRef.map(StatusListRef::uri).orElse(null);
 
+    // KH-2.6a (spec FS-2.5 §5/§7): the issuing tenant's ancestor chain, nearest first — display
+    // metadata only (§1), resolved once here alongside the other post-row fields above and
+    // threaded through every branch below exactly like statusListChecked/statusListVersion/
+    // statusListUri already are.
+    List<IssuerLineageEntry> issuerLineage =
+        tenants.ancestors(c.getTenantId()).stream()
+            .map(ancestor -> new IssuerLineageEntry(ancestor.slug(), ancestor.nameI18n()))
+            .toList();
+
     if (c.isRevoked()) {
       return result(
           false,
@@ -475,7 +485,8 @@ public class CredentialService {
           true,
           statusListChecked,
           statusListVersion,
-          statusListUri);
+          statusListUri,
+          issuerLineage);
     }
 
     // FS-1.6 D4: an exhausted (but not explicitly revoked) credential is a distinct, non-error
@@ -490,7 +501,8 @@ public class CredentialService {
           false,
           statusListChecked,
           statusListVersion,
-          statusListUri);
+          statusListUri,
+          issuerLineage);
     }
 
     // D8: _sd_alg must be sha-256.
@@ -503,7 +515,8 @@ public class CredentialService {
           false,
           statusListChecked,
           statusListVersion,
-          statusListUri);
+          statusListUri,
+          issuerLineage);
     }
     List<?> sdDigests = rawClaims.get("_sd") instanceof List<?> list ? list : List.of();
 
@@ -520,7 +533,8 @@ public class CredentialService {
             false,
             statusListChecked,
             statusListVersion,
-            statusListUri);
+            statusListUri,
+            issuerLineage);
       }
       if (disclosed.containsKey(claimName)) {
         return result(
@@ -531,7 +545,8 @@ public class CredentialService {
             false,
             statusListChecked,
             statusListVersion,
-            statusListUri);
+            statusListUri,
+            issuerLineage);
       }
       disclosed.put(claimName, d.getClaimValue());
     }
@@ -549,7 +564,8 @@ public class CredentialService {
               false,
               statusListChecked,
               statusListVersion,
-              statusListUri);
+              statusListUri,
+              issuerLineage);
         }
       }
     }
@@ -564,16 +580,17 @@ public class CredentialService {
         false,
         statusListChecked,
         statusListVersion,
-        statusListUri);
+        statusListUri,
+        issuerLineage);
   }
 
   /**
-   * Build a {@link VerifyResponse} carrying {@code reason}'s wire code. {@code reasonMessage} and
-   * the three status-list fields are left at their defaults — localizing the message needs the
-   * request locale (a web-layer concern; the controller resolves it via {@code MessageSource}, spec
-   * FS-0.6a §3), and the status fields are {@code false}/{@code null} for every early-exit branch
-   * that never reached a credential row (spec FS-1.3 D6). Post-row branches pass the resolved
-   * values explicitly.
+   * Build a {@link VerifyResponse} carrying {@code reason}'s wire code. {@code reasonMessage}, the
+   * three status-list fields, and {@code issuerLineage} are left at their defaults — localizing the
+   * message needs the request locale (a web-layer concern; the controller resolves it via {@code
+   * MessageSource}, spec FS-0.6a §3), and the status/lineage fields are {@code false}/{@code null}
+   * for every early-exit branch that never reached a credential row (spec FS-1.3 D6, FS-2.5 §5).
+   * Post-row branches pass the resolved values explicitly.
    */
   private static VerifyResponse result(
       boolean valid,
@@ -581,7 +598,7 @@ public class CredentialService {
       Map<String, Object> claims,
       Integer usesRemaining,
       boolean revoked) {
-    return result(valid, reason, claims, usesRemaining, revoked, false, null, null);
+    return result(valid, reason, claims, usesRemaining, revoked, false, null, null, null);
   }
 
   /** Full-arity builder for the post-credential-row branches that carry status-list metadata. */
@@ -593,7 +610,8 @@ public class CredentialService {
       boolean revoked,
       boolean statusListChecked,
       Long statusListVersion,
-      String statusListUri) {
+      String statusListUri,
+      List<IssuerLineageEntry> issuerLineage) {
     return new VerifyResponse(
         valid,
         reason.code(),
@@ -603,7 +621,8 @@ public class CredentialService {
         revoked,
         statusListChecked,
         statusListVersion,
-        statusListUri);
+        statusListUri,
+        issuerLineage);
   }
 
   // ── Holder status (proof-of-possession lookup) ────────────────────────────

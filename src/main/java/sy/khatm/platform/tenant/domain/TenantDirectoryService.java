@@ -1,6 +1,10 @@
 package sy.khatm.platform.tenant.domain;
 
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,7 +40,32 @@ class TenantDirectoryService implements TenantDirectory {
     return tenants.findBySlug(slug).map(TenantDirectoryService::toRef);
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public List<TenantRef> ancestors(UUID tenantId) {
+    List<TenantRef> chain = new ArrayList<>();
+    Set<UUID> visited = new HashSet<>();
+    Optional<Tenant> current = tenants.findById(tenantId);
+    if (current.isEmpty()) {
+      return chain;
+    }
+    UUID parentId = current.get().getParentTenantId();
+    // Bounded by construction (max depth three, §7) — visited guards defensively against a
+    // pre-existing data cycle that somehow bypassed both the service-layer check and the
+    // V16__tenant_hierarchy.sql trigger, rather than looping forever if one is ever found.
+    while (parentId != null && visited.add(parentId)) {
+      Optional<Tenant> parent = tenants.findById(parentId);
+      if (parent.isEmpty()) {
+        break;
+      }
+      chain.add(toRef(parent.get()));
+      parentId = parent.get().getParentTenantId();
+    }
+    return chain;
+  }
+
   private static TenantRef toRef(Tenant tenant) {
-    return new TenantRef(tenant.getId(), tenant.getSlug(), tenant.getStatus());
+    return new TenantRef(
+        tenant.getId(), tenant.getSlug(), tenant.getStatus(), tenant.getNameI18n());
   }
 }

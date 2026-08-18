@@ -4,18 +4,26 @@ Multi-tenancy management (KH-2.1, spec FS-2.1). Every business table across the 
 `tenant_id` column pointing here.
 
 **Responsibilities:** tenant onboarding (`TenantAdminService#create` — tenant row + first `ACTIVE`
-signing key + default status list, all before the call returns), suspend/activate, and read-only
-resolution by id/slug (`TenantDirectoryService`).
+signing key + default status list, all before the call returns), suspend/activate, read-only
+resolution by id/slug (`TenantDirectoryService`), and — KH-2.6a, spec FS-2.5 — an optional tenant
+hierarchy (`parent_tenant_id`, pure organisational metadata per §1, never a security or
+cryptographic boundary; every tenant still signs with its own key regardless of its position in the
+tree).
 
 **Exposed API** (`tenant.api`):
 - `TenantDirectory` — read-only lookup by id/slug. `rbac` depends on this (`rbac.security
   .TenantContextFilter`, `ApiKeyService#verify`, `AuthService#login`) to resolve a principal's
-  tenant and enforce suspension.
+  tenant and enforce suspension. `ancestors(UUID)` (KH-2.6a) resolves a tenant's full ancestor
+  chain, nearest first — `credential.domain.CredentialService#verify` is the one caller, for the
+  display-only `issuerLineage` field (spec FS-2.5 §5).
 - `TenantAdmin` — the admin plane behind `/api/v1/admin/tenants` (`platform:admin` scope
   exclusively, spec FS-2.2 D2 — the entire path has no other caller, so `TenantAdminService#create`
   keeps its own manual `TenantContext` switch rather than going through `shared.OnBehalfOfExecutor`,
   which exists for endpoints shared with a lesser-privileged self-service caller; see that class's
-  Javadoc).
+  Javadoc). `setParent(UUID, String)` (KH-2.6a, `POST /api/v1/admin/tenants/{id}/parent`) links,
+  re-links, or unlinks a tenant's parent — validated (self-parent, cycle, max depth three levels
+  §7, parent must be `ACTIVE`) before the write; `suspend` additionally refuses a tenant with any
+  `ACTIVE` direct child (no cascade, ever).
 
 **Cross-module dependencies (one-way, deliberately):** `key :: api` (`TenantKeyProvisioner`) and
 `status :: api` (`StatusListAllocator#ensureList`) for onboarding. Neither `key` nor `status`
@@ -44,4 +52,7 @@ column — `SOFT` for every newly onboarded tenant, `tenant`-module-owned even t
 module's rotation flow ever changes it, via the event above rather than a direct write).
 
 **Status:** KH-2.1 Part A (this doc) — tenant context resolution, admin/onboarding plane, per-tenant
-trust endpoints. Part B adds RLS enforcement on top of this same module's persistence layer.
+trust endpoints. Part B adds RLS enforcement on top of this same module's persistence layer. KH-2.6a
+adds the optional hierarchy (`parent_tenant_id`, `V16__tenant_hierarchy.sql`) — administrative only
+(spec FS-2.5 §1); RLS itself is untouched (`tenant` was already excluded — no `tenant_id` column of
+its own).

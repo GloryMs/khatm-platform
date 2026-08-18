@@ -3,7 +3,114 @@
 > Updated at the end of EVERY Claude Code session. This file is the session anchor.
 
 ## Current phase / task
-Current phase / task
+KH-2.6a-BE (tenant hierarchy foundation) implemented on branch
+`feat/KH-2.6a-BE-hierarchy-foundation`, `mvn verify` green (454/454), **not yet committed/PR'd —
+awaiting Majd's go-ahead**. See session entry below. KH-2.6b-BE (`org:admin` + on-behalf-of +
+aggregated reports) is next once this merges; its own scheduling gate is otherwise unblocked.
+
+## 2026-08-18 — Session: feat/KH-2.6a-BE-hierarchy-foundation (tenant hierarchy foundation)
+
+Brief `docs/sessions/SESSION-KH-2.6a-BE-hierarchy-foundation.md`, spec `FS-2.5-tenant-hierarchy.md`.
+**Preamble confirmed:** `main` clean at `df3f323` (PR #63 merge), zero open PRs, §7 depth decision
+(THREE levels) already resolved in this same file above and matches the spec. Baseline `mvn verify`
+441/441 (the one interim "failure" during branching was `MigrationImmutabilityTest` correctly
+flagging the new migration's checksum before it was registered — expected, not a real baseline
+break).
+
+**D1 — migration (`V16__tenant_hierarchy.sql`), additive-only:** `parent_tenant_id UUID NULL
+REFERENCES tenant(id)` + index + a `CHECK` against self-parent. Depth/cycle enforcement (spec §7's
+"حارس DB") is a `BEFORE INSERT OR UPDATE OF parent_tenant_id` trigger doing a bounded
+`WITH RECURSIVE` ancestor walk — rejects a cycle or a parent already at the max depth (three
+levels) via `RAISE EXCEPTION ... USING ERRCODE = '23514'` (Postgres's own check-violation class, so
+it surfaces as `DataIntegrityViolationException` like any other constraint). No `depth` column
+added — three levels is cheap enough to walk directly, so nothing to keep in sync. `tenant` itself
+is excluded from RLS already (V7's own comment: no `tenant_id` column of its own to filter by), so
+this migration touches zero RLS policy surface. Every existing row's new column is `NULL` (a root)
+— confirmed via the full migration replay in every Testcontainers test run (`Successfully applied
+16 migrations`); the live-staging-data rehearsal itself is the `[MAJD]` compose-walkthrough DoD item
+below, not yet executed.
+
+**D2 — service layer, one design decision worth flagging:** the brief's literal wording
+("`create`/edit tenant with optional parent") suggested threading `parentSlug` through
+`TenantAdmin#create` (and therefore `rbac.TenantProvisioningService#onboard` and its HTTP request
+DTO, since that's the actual onboarding entry point — `TenantAdminController` itself has no
+`create`, per KH-2.2b's earlier relocation). **Chose not to touch the `rbac`-owned onboarding path
+at all** — parent assignment is exclusively `TenantAdmin#setParent(UUID id, String parentSlug)`
+(new interface method, `POST /api/v1/admin/tenants/{id}/parent`, `tenant.web` only), callable right
+after onboarding a tenant with no parent. This is strictly smaller blast radius (no rbac-module
+touch, no change to the extensively-documented resumable-onboarding semantics) and — the concrete
+reason it's *correct*, not just smaller — it's what actually makes the cycle-rejection scenario
+(`A ← B ← A`) meaningfully testable at all: a cycle can only be attempted by re-linking an
+*already-existing* tenant, which a create-time-only `parentSlug` can never exercise. `setParent`
+validates, in order: self-parent (checked against the raw slug string, so it's reachable even
+before any lookup), parent-not-found (`KH-TNT-0404`, reused), self-parent-by-id (defensive
+redundancy), cycle (walks the proposed parent's own ancestor chain checking for the child's id —
+`KH-TNT-1422`), parent-not-`ACTIVE` (`KH-TNT-3422`), and depth-exceeded (`KH-TNT-2422` —
+accounts for the child's *own* existing descendants via a bounded `maxDescendantExtension` walk, so
+re-parenting a tenant that already has children can't silently push a grandchild past level 3).
+`suspend` gained a no-cascade guard (`KH-TNT-1409`) on the transition itself (idempotent
+already-`SUSPENDED` calls never re-evaluate it, so the existing idempotency test still holds
+unchanged); `activate` is unguarded, matching the brief (only suspend needs a child check).
+New `AuditAction.TENANT_PARENT_LINKED`/`TENANT_PARENT_UNLINKED`.
+**Numbering/tag note (V2):** the brief said error family "`KH-TEN-042x`", but every *already-shipped*
+tenant code in `ErrorCode` uses tag `TNT`, not `TEN` (`KH_TNT_0400`/`0404`/`0409`) — `docs
+/CONVENTIONS.md` §2 and `ErrorCode`'s own class Javadoc both still document `TEN`, a pre-existing
+doc/implementation drift that predates this session. Followed the actually-shipped tag (`TNT`) per
+CLAUDE.md's "never renumber" discipline — renaming three live codes to satisfy a doc comment would
+be its own, out-of-scope migration. New codes: `KH-TNT-0422` self-parent, `KH-TNT-1422` cycle,
+`KH-TNT-2422` depth exceeded, `KH-TNT-3422` parent not active (all mirroring HTTP 422, the same
+divergence-free precedent `KH-KEY-0422` set), `KH-TNT-1409` no-cascade suspend conflict (mirrors
+409 like its `KH-TNT-0409` sibling). **Arabic gate (mandatory, exercised this session):** all five
+new `messageKey`s added to `messages_en.properties`/`messages_ar.properties` in the same commit;
+`MessageBundleParityTest` green.
+
+**D3 — contract, additive-only (confirmed via `git diff --stat`: openapi.json +110/-0,
+error-codes.md +5/-0):** `TenantView` gains `parentSlug`/`parentNameI18n` (nullable); `TenantRef`
+gains `nameI18n` (needed for lineage display, one call site to update); new `TenantDirectory
+#ancestors(UUID)` returns the full ancestor chain nearest-first (bounded by the max depth — never
+more than two entries), the mechanism behind `VerifyResponse`'s new `issuerLineage` field
+(`List<IssuerLineageEntry>` — `null` only on the early-exit branches that never reached a credential
+row, matching how `statusListChecked` already behaves; empty list, not null, for a root issuer).
+Threaded through every branch of `CredentialService#verify` and both `result(...)` builder
+overloads. Purely display metadata (spec §1) — never consulted by verification's own trust decision,
+JWKS resolution, or status-list lookup, all still scoped exactly to the credential's own issuing
+tenant. `docs/api/openapi.json` and `docs/error-codes.md` regenerated via their own tests
+(`OpenApiContractTest`/`ErrorCodesDocGenerationTest`), not hand-edited.
+
+**D4 — tests, 454/454 green (441 baseline + 13 new, 0 removed/disabled):**
+`TenantAdminServiceTest` +8 (`setParent` link/unlink/self-parent/cycle/depth-exceeded/suspended-
+parent/unknown-parent, and the suspend-with-active-child guard incl. the "succeeds once child is no
+longer active" follow-through); new `db.TenantHierarchyDbTriggerTest` (3 tests) proves the V16
+trigger itself — not the service — rejects a direct-SQL depth-exceeded insert, a direct-SQL cycle
+update, and self-parent, bypassing `TenantAdminService` entirely; new `credential.domain
+.TenantHierarchyLineageVerifyTest` (2 tests) proves a three-level real credential's `/verify` lineage
+(nearest-first, names match) and a root's clean empty list — **had to wrap `verify()` in
+`SystemAccessExecutor#runAsSystem`, mirroring `CredentialController#verify`'s own wrapping exactly**,
+since `issuer_key` is RLS-protected and the test issues under a genuinely different (non-default)
+tenant; first attempt without it failed `unknown_kid`, a useful confirmation that RLS is still doing
+its job across an arbitrary tenant boundary. **Security-invariant proof (explicit grep, per the
+brief's V5):** `git diff --name-only main | grep -i "rls\|policy"` → zero hits;
+`CrossTenantIsolationTest.java` byte-identical to `main` (confirmed via `git diff --stat`, empty);
+it and `SystemAccessCallerAllowlistTest`/`ModulithBoundariesTest` all green, unmodified.
+
+**DoD status:**
+- `mvn verify` green (454/454) — done.
+- **Arabic gate — done** (all 5 new message keys, both bundles, same commit).
+- **[MAJD] compose walkthrough — DEFERRED, explicit decision (2026-08-18):** Majd chose to postpone
+  the live compose rehearsal (onboard `moi` + two children, link via the new
+  `POST /api/v1/admin/tenants/{id}/parent`, issue from a child, confirm `/verify`'s `issuerLineage`,
+  confirm a cycle attempt is rejected) until **after KH-2.6b-BE** is also implemented, to run both
+  sessions' walkthroughs together rather than twice. Noted to Majd: since the console has no UI for
+  parent-linking yet (that's C12, which is gated behind 2.6b per FS-2.5 §8's session order), the
+  walkthrough will need Swagger UI (`/swagger-ui/index.html`, CSRF pre-wired to reuse a console
+  session cookie per `application.yml`'s `springdoc.swagger-ui.csrf` comment) or plain `curl` for
+  that one step regardless of when it's run. The automated `TenantHierarchyDbTriggerTest`/
+  `setParent_cycle_isRejected` tests already mechanically prove the cycle-rejection behavior this
+  step would exercise.
+- Branch is **not committed** and **no PR opened** — held for Majd's explicit go-ahead per this
+  session's operating rules (commits/PRs are visible/hard-to-reverse actions).
+- **2.6b scheduling gate:** not blocked by anything found this session — clear to start once this
+  branch merges to `main`.
 
 ## 2026-08-18 — Decisions recorded (Majd)
 

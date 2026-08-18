@@ -3,11 +3,14 @@
  *
  * <p><b>Responsibilities (KH-2.1, spec FS-2.1):</b> tenant lifecycle (onboard, suspend, activate —
  * {@code tenant.domain.TenantAdminService}), tenant resolution by id/slug ({@code
- * tenant.domain.TenantDirectoryService}). Per-request tenant context propagation itself still lives
- * in {@link sy.khatm.platform.shared.TenantContext} (a {@code ThreadLocal}, populated by {@code
- * rbac.security.TenantContextFilter}), not this module — {@code shared} is the one place every
- * module can reach without a cross-module dependency. Per-tenant quotas/feature flags remain out of
- * scope (a later KH-2.x).
+ * tenant.domain.TenantDirectoryService}), and — KH-2.6a, spec FS-2.5 — an optional tenant hierarchy
+ * ({@code parent_tenant_id}, max depth three levels per §7): pure organisational metadata (§1),
+ * never a security or cryptographic boundary; every tenant, parent or child, still signs with its
+ * own key, publishes its own JWKS, and owns its own status list. Per-request tenant context
+ * propagation itself still lives in {@link sy.khatm.platform.shared.TenantContext} (a {@code
+ * ThreadLocal}, populated by {@code rbac.security.TenantContextFilter}), not this module — {@code
+ * shared} is the one place every module can reach without a cross-module dependency. Per-tenant
+ * quotas/feature flags remain out of scope (a later KH-2.x).
  *
  * <p><b>Exposed API</b> ({@code tenant.api}): {@link sy.khatm.platform.tenant.api.TenantDirectory}
  * (read-only lookup by id/slug — the {@code rbac} module's runtime cross-module dependency) and

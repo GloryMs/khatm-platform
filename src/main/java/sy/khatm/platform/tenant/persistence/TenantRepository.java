@@ -28,6 +28,26 @@ public interface TenantRepository extends JpaRepository<Tenant, UUID> {
   List<Tenant> findAllByOrderByCreatedAtDesc();
 
   /**
+   * A tenant's direct children (spec FS-2.5 §7 — {@code org:admin} operations and the {@code
+   * setParent} depth/cycle guards both only ever need one level at a time, never a recursive
+   * fetch).
+   *
+   * @param parentTenantId the parent tenant's id
+   * @return every tenant whose {@code parent_tenant_id} is this one
+   */
+  List<Tenant> findAllByParentTenantId(UUID parentTenantId);
+
+  /**
+   * Whether a tenant has at least one direct child currently {@code ACTIVE} (KH-2.6a, spec FS-2.5
+   * §2) — backs the no-cascade guard on {@code TenantAdminService#flipStatus}'s suspend path.
+   *
+   * @param parentTenantId the tenant to check
+   * @param status the child status to match, e.g. {@code "ACTIVE"}
+   * @return {@code true} if at least one such child exists
+   */
+  boolean existsByParentTenantIdAndStatus(UUID parentTenantId, String status);
+
+  /**
    * Update {@code key_provider} for a single tenant (spec FS-2.3 D5/D6, veto V3) — a bulk {@code
    * UPDATE} rather than a load-mutate-save round trip since {@code tenant
    * .domain.TenantKeyProviderSyncHandler} runs on a worker thread reacting to {@link

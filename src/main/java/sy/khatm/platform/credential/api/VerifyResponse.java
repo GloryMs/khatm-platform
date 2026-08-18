@@ -1,6 +1,7 @@
 package sy.khatm.platform.credential.api;
 
 import io.swagger.v3.oas.annotations.media.Schema;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -38,6 +39,11 @@ import java.util.Map;
  * @param statusListUri the fully-qualified public status-list URL (spec FS-1.3 D6/D7) an offline
  *     verifier fetches to re-check revocation itself, or {@code null} when the list could not be
  *     resolved.
+ * @param issuerLineage the issuing tenant's ancestor chain, nearest first (KH-2.6a, spec FS-2.5
+ *     §5/§7) — {@code null} when the credential's ref was unresolvable (the same early-exit
+ *     branches that leave {@link #statusListChecked} {@code false}), empty when the issuing tenant
+ *     is a root. Display-only (spec FS-2.5 §1): never consulted by verification's own trust
+ *     decision.
  */
 @Schema(
     name = "VerifyResponse",
@@ -51,4 +57,5 @@ public record VerifyResponse(
     boolean revoked,
     boolean statusListChecked,
     Long statusListVersion,
-    String statusListUri) {}
+    String statusListUri,
+    List<IssuerLineageEntry> issuerLineage) {}
