@@ -225,17 +225,29 @@ class VaultKeyLifecycleAcceptanceTest {
    * as {@code key.domain.ConcurrentRotationTest} (SOFT). On a genuinely brand-new, keyless tenant
    * {@code retireActive()} is a no-op for every racing caller — there is no row to lock — so the
    * only thing arbitrating the race is the tail-end unique-index {@code INSERT}, which requires all
-   * callers' critical sections to genuinely overlap in time. {@code VaultTransitProvider
-   * #generate}'s real HTTP round-trip to Vault is slow/variable enough (far more than SOFT's
-   * in-memory generation) that on a loaded CI runner one caller's whole transaction can commit
-   * before a straggler even starts — the straggler then legitimately finds a fresh {@code ACTIVE}
-   * key to retire and completes its own valid, sequential rotation: a genuine second success, not a
-   * broken invariant (only one {@code ACTIVE} key per tenant held throughout). Provisioning one key
-   * before racing makes {@code retireActive()}'s row lock the actual serializer, which — unlike the
-   * tail-end insert race — blocks regardless of how long {@code generate()} takes.
+   * callers' critical sections to genuinely overlap in time. Provisioning one key before racing
+   * makes {@code retireActive()}'s row lock the serializer for whichever callers are still
+   * contending for it — but it cannot force true simultaneity.
+   *
+   * <p><b>2026-08-18 (chore/trivy-pebble-base-image's own CI run) — the flake this comment already
+   * predicted actually landed: {@code successes} observed as 2, not 1.</b> {@code
+   * VaultTransitProvider#generate}'s real HTTP round-trip is slow/variable enough (far more than
+   * SOFT's in-memory generation) that on a CPU-constrained CI runner (2 vCPUs racing 10 threads),
+   * one caller's whole transaction — including its own slow {@code generate()} call — can commit
+   * before a straggler even starts its {@code retireActive()} UPDATE. That straggler then finds a
+   * genuinely {@code ACTIVE} key (the first winner's new one, not the pre-provisioned original) and
+   * completes its own perfectly valid, sequential rotation: two real successes, not a broken
+   * invariant — this was already spelled out above as expected behavior, but the assertion below it
+   * contradicted its own reasoning by demanding exactly one success anyway. Fixed here by asserting
+   * what actually must hold — {@code successes + failures == concurrentCallers} and, the real
+   * atomicity invariant, exactly one {@code ACTIVE} key for the tenant once every caller has
+   * finished — instead of a specific success count that Vault's network latency can legitimately
+   * violate. Mirrors {@code ConcurrentRotationTest} (SOFT)'s own end-of-test {@code hasSize(1)}
+   * assertion, which is what makes that sibling test flake-free despite testing the identical
+   * invariant: it never asserted a fixed success count in the first place.
    */
   @Test
-  void rotateOntoVault_tenConcurrentCallers_exactlyOneSucceeds() throws Exception {
+  void rotateOntoVault_tenConcurrentCallers_exactlyOneRemainsActive() throws Exception {
     withFreshTenant(
         (tenantId, tenantSlug) -> {
           lifecycle.rotate(tenantId, tenantSlug, "VAULT");
@@ -275,11 +287,24 @@ class VaultKeyLifecycleAcceptanceTest {
             pool.shutdown();
           }
 
+          assertThat(successes.get() + failures.get())
+              .as("every caller must have either succeeded or failed outright, none lost")
+              .isEqualTo(concurrentCallers);
           assertThat(successes.get())
-              .as("exactly one concurrent rotation must succeed")
+              .as("at least one rotation must succeed")
+              .isGreaterThanOrEqualTo(1);
+          assertThat(countActive(tenantId))
+              .as(
+                  "exactly one ACTIVE key must remain for the tenant, however many callers"
+                      + " sequentially succeeded")
               .isEqualTo(1);
-          assertThat(failures.get()).isEqualTo(concurrentCallers - 1);
         });
+  }
+
+  private static long countActive(UUID tenantId) {
+    return lifecycle.listAllStatuses(tenantId).stream()
+        .filter(k -> "ACTIVE".equals(k.state()))
+        .count();
   }
 
   private static IssuerKeySummary requireActive(UUID tenantId) {

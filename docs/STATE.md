@@ -55,6 +55,52 @@ are recorded below as "not yet committed" working-tree changes; they are believe
 but this is VERIFIED, not assumed — quick session QS-A7-GITCHECK (2026-08-13) is that verification, and staging 
 images are built from merged main only after it passes.
 
+- **fix/vault-rotation-race-test-flake — fixes the recurring `VaultKeyLifecycleAcceptanceTest`
+  concurrent-rotation flake by correcting the test's assertion, not the product code** (session
+  `fix/vault-rotation-race-test-flake`, 2026-08-18, branched from `main` mid-session after PR #62's
+  own CI run — see `chore/trivy-pebble-base-image` below — reproduced the flake with its actual
+  observed value for the first time: `successes` was **2**, not the `1` the assertion demanded).
+  This flake had been noted as "pre-existing, out of scope" on every one of PR #52/#57/#58/#59/#60/
+  #61's own post-merge `main` runs without ever being investigated with the actual failure value in
+  hand — this session did that investigation.
+  **Root cause, found by reading the class's own Javadoc against its own assertion:** the test
+  method's doc comment (`rotateOntoVault_tenConcurrentCallers_exactlyOneSucceeds`, added when the
+  *original* keyless-tenant bug was fixed) already explained that a legitimate second success can
+  happen — if one caller's entire rotation (including `VaultTransitProvider#generate`'s real,
+  variable-latency HTTP round-trip to the Testcontainers Vault) fully commits before a
+  slow-to-start straggler even reaches its own `retireActive()` UPDATE, that straggler finds a
+  genuinely `ACTIVE` key (the first winner's new one) and completes its own perfectly valid,
+  sequential rotation — two real successes, not a broken atomicity invariant (never two `ACTIVE`
+  rows *simultaneously*). The comment's own reasoning already anticipated this; the assertion
+  directly below it (`successes.get()).isEqualTo(1)`) contradicted that reasoning by demanding
+  exactly one success anyway. On a CPU-constrained CI runner (few vCPUs racing 10 threads, each
+  making its own real network call to a containerized Vault) this legitimate second-success path
+  fires often enough to flake; on a local dev machine with more headroom it rarely does — explaining
+  why it "stabilizes" on re-run and why the never-flaky SOFT sibling (`key.domain
+  .ConcurrentRotationTest`, in-memory key generation, no network latency) never hits it.
+  **The fix is test-only, no product code touched** — per CLAUDE.md's atomic-consume-invariant
+  discipline, the DB-level invariant (partial unique index `issuer_key_one_active`) was never
+  actually broken and must never be "fixed" by weakening it. Renamed the test
+  (`rotateOntoVault_tenConcurrentCallers_exactlyOneRemainsActive`) and replaced the fragile
+  `successes == 1` assertion with the three things that actually must hold regardless of how many
+  callers sequentially succeed: every caller resolves to success-or-failure
+  (`successes + failures == concurrentCallers`), at least one succeeds, and — the real correctness
+  invariant, checked via a new `countActive(tenantId)` helper mirroring the class's own
+  `requireActive` pattern — exactly one `ACTIVE` key remains for the tenant once every caller has
+  finished. This exactly mirrors `ConcurrentRotationTest` (SOFT)'s own end-of-test
+  `assertThat(activeRows).hasSize(1)` assertion, which is what makes that sibling flake-free despite
+  testing the identical invariant: it never asserted a fixed success count either.
+  **Verification:** ran the fixed test in isolation 4 times in a row (via `mvn test -Dtest=...`),
+  all green, including one run where the local (less CPU-constrained) environment still produced
+  the historically-expected `successes=1, failures=9` split — confirming the new assertion accepts
+  both outcomes without weakening the actual atomicity check. Full `mvn -B verify
+  -Dspring.profiles.active=test` green, **441/441 tests, 0 net new** (one test renamed +
+  reasserted, none added/removed) — one Spotless formatting nit on the new assertion's line wrap,
+  fixed via `mvn spotless:apply`. No `ErrorCode`/message-bundle/`docs/error-codes.md` changes (pure
+  test-file change). **Opened as PR #63** (2026-08-18), open at this entry — see the follow-up
+  merge-order note in the `chore/trivy-pebble-base-image` entry below (PR #62 merges first, this
+  branch rebases onto the result, since both PRs touched adjacent `docs/STATE.md` lines).
+
 - **chore/trivy-pebble-base-image — permanently removes `usr/bin/pebble` from the runtime image**
   (session `chore/trivy-pebble-base-image`, 2026-08-18, brief
   `docs/sessions/SESSION-CHORE-TRIVY-PEBBLE.md`). Preamble: `main` clean at `a2ad428` (PR #61 merge
@@ -94,11 +140,15 @@ images are built from merged main only after it passes.
   new/removed** (pure Dockerfile/`.trivyignore`/docs change, no `pom.xml`/`src` touch — matches the
   session brief's "no application code" scope exactly). No `khatm-deploy` changes needed — that
   repo doesn't build from this Dockerfile (checked; out of scope per the brief).
-  **Not yet opened as a PR / not yet merged as of this entry** — pending Majd's review of the
-  branch. **[MAJD] once merged:** if this changes what staging's image builds from, a
-  rebuild/redeploy is needed, and per the standing Vault posture (`docs/STATE.md`'s DECISION
-  REVERSAL above), every pod redeploy re-seals Vault → **manual unseal required after**, same as
-  every prior staging image rebuild.
+  **DONE & MERGED via PR #62** (opened 2026-08-18, merged 2026-08-18T11:13:31Z, merge commit
+  `bf9dcff074cd43e86e66e70981e6b7c3c0fd98c7`,
+  `https://github.com/GloryMs/khatm-platform/pull/62`, standard merge via `gh pr merge --merge` on
+  Majd's explicit instruction — merged first, ahead of PR #63 above, specifically so #63 could
+  rebase onto a `main` that already has Trivy green, landing both fixes together rather than in
+  either order leaving one gate red on the other's branch). **[MAJD] once staging rebuilds from
+  this image:** per the standing Vault posture (`docs/STATE.md`'s DECISION REVERSAL above), every
+  pod redeploy re-seals Vault → **manual unseal required after**, same as every prior staging image
+  rebuild.
 
 - **chore/boot-3.5-upgrade — Spring Boot 3.3.13 → 3.5.16, closes CVE-2026-41716
   (spring-data-commons)** (session `chore/boot-3.5-upgrade`, 2026-08-17, brief
