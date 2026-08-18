@@ -16,6 +16,15 @@ RUN mvn -q -DskipTests package
 
 FROM eclipse-temurin:21-jre
 WORKDIR /app
+# chore/trivy-pebble-base-image: eclipse-temurin:21-jre (Ubuntu 26.04 chiseled base) bakes in
+# /usr/bin/pebble, Canonical's container init/service-manager tool, as its own default
+# ENTRYPOINT/PID 1. This image's ENTRYPOINT below replaces that entirely with a direct `java -jar`
+# invocation, so pebble never runs here — confirmed via `docker inspect`. It is not a dpkg package
+# (no patch-level base-image bump ever clears its CVEs), so Trivy's `usr/bin/pebble` (gobinary)
+# findings are a recurring, permanent noise source against dead weight. Deleting it removes the
+# whole CVE category instead of re-triaging each new one; see .trivyignore for the CVE IDs this
+# closed.
+RUN rm -f /usr/bin/pebble
 COPY --from=build /app/target/*.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java", "-jar", "app.jar"]

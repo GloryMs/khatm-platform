@@ -51,20 +51,13 @@ CVE-2026-54513
 # grepped, neither is used anywhere. Fix needs 6.2.11+ (minor bump).
 CVE-2025-41249
 
-# 2026-07-17 KH-0.3-closure — `trivy image` findings, /usr/bin/pebble (gobinary), all 5 HIGH, all
-# golang.org/x/net (bundled inside that binary): CVE-2026-25681, CVE-2026-27136, CVE-2026-33814,
-# CVE-2026-39821, CVE-2026-39822 (stdlib). `pebble` is Canonical's container init/service-manager
-# tool baked into the official `eclipse-temurin:*-jre` base image — not something this Dockerfile
-# or app introduces. Unreachable: verified `docker inspect khatm-platform:scan` shows this image's
-# ENTRYPOINT is exactly `["java", "-jar", "app.jar"]`; `pebble` never runs as PID 1 or otherwise in
-# this container. No app/base-image change available at patch-level (base-image tag swap is
-# outside KH-0.3's no-app-code scope) — genuinely unfixable from this repo alone; would need
-# Canonical to update the base image or a base-image swap, neither in scope this session.
-CVE-2026-25681
-CVE-2026-27136
-CVE-2026-33814
-CVE-2026-39821
-CVE-2026-39822
+# SUPERSEDED 2026-08-18 (chore/trivy-pebble-base-image) — the 5 pebble CVEs formerly allowlisted
+# here (CVE-2026-25681/27136/33814/39821/39822), plus 7 fresh ones the same `usr/bin/pebble`
+# binary picked up by the time of PR #61's merge (CVE-2026-33818, CVE-2026-46600, CVE-2026-56853,
+# CVE-2026-56858/56859/56860/56862), are gone: the Dockerfile's final stage now `rm -f
+# /usr/bin/pebble` outright. It was never a dpkg package (confirmed via `dpkg -S`, no match) — a
+# patch-level base-image bump was never going to clear these; only removal does. Nothing needed
+# here anymore for this binary — no entries, since the vulnerable file no longer ships.
 
 # Triage log (PR #52, 2026-08-04): first `trivy fs` run that ever completed without hitting
 # Maven Central's rate limit (see .github/workflows/ci.yml's warmup-step fix, same PR) — these 3
