@@ -1,5 +1,6 @@
 package sy.khatm.platform.schema.api;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
@@ -17,7 +18,8 @@ import java.util.Map;
  */
 public record SchemaAuthoringRequest(
     @NotNull Map<String, String> nameI18n,
-    @NotEmpty List<@Valid ClaimFieldRequest> claimsDef,
+    @NotEmpty @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        List<@Valid ClaimFieldRequest> claimsDef,
     List<String> sdFields,
     Integer defaultMaxUses,
     String defaultValidity,

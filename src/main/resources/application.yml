@@ -211,6 +211,11 @@ project:
   version: "@project.version@"
 
 springdoc:
+  # chore/boot-3.5-upgrade: springdoc 2.8.x (required for Boot 3.5.x, see pom.xml) defaults
+  # api-docs generation to OpenAPI 3.1. Pinned back to 3.0 to keep this session's contract diff
+  # cosmetic-only (Phase 2d gate) — see the springdoc-openapi-starter-webmvc-ui pom.xml comment.
+  api-docs:
+    version: OPENAPI_3_0
   swagger-ui:
     # Swagger UI's own "Try it out" reads the XSRF-TOKEN cookie and sends it back as
     # X-XSRF-TOKEN automatically, so a POST through the UI survives sessionSecurityFilterChain's

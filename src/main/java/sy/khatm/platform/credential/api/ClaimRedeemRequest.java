@@ -12,4 +12,5 @@ import jakarta.validation.constraints.NotBlank;
  * @param code the raw one-time claim code, exactly as shown at issuance time
  */
 @Schema(name = "ClaimRedeemRequest", description = "Request to redeem a one-time wallet claim code")
-public record ClaimRedeemRequest(@NotBlank String code) {}
+public record ClaimRedeemRequest(
+    @NotBlank @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String code) {}

@@ -47,7 +47,7 @@ import java.util.UUID;
 @Schema(name = "IssueRequest", description = "Request to issue a new SD-JWT verifiable credential")
 public record IssueRequest(
     String schemaCode,
-    @NotBlank String holderRef,
+    @NotBlank @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String holderRef,
     Integer maxUses,
     Integer validMinutes,
     Map<String, Object> claims,

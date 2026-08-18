@@ -7,10 +7,12 @@
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
-    <!-- KH-0.3.2: patch-level bump 3.3.4 -> 3.3.13 (still the frozen 3.x line, CLAUDE.md "Stack")
-         to clear the CRITICAL/HIGH CVEs the Trivy fs gate found in this BOM's managed versions
-         of spring-security-web, spring-core, spring-webmvc et al. See docs/STATE.md for the list. -->
-    <version>3.3.13</version>
+    <!-- chore/boot-3.5-upgrade: minor-line bump 3.3.13 -> 3.5.16 (still the frozen 3.x line,
+         CLAUDE.md "Stack"; 3.5.16 is the final OSS release of the 3.5 line, OSS EOL 2026-06-30,
+         no Boot 3.6 exists, next is the 4.x major, out of this session's scope). Real fix for
+         CVE-2026-41716 (spring-data-commons, HIGH): the 3.3.x line is itself EOL for this CVE, no
+         patch exists on 3.3.x/3.4.x, only 3.5.12+/4.0.6+. See docs/STATE.md for the full record. -->
+    <version>3.5.16</version>
     <relativePath/>
   </parent>
 
@@ -23,7 +25,9 @@
   <properties>
     <java.version>21</java.version>
     <maven.compiler.release>21</maven.compiler.release>
-    <spring-modulith.version>1.2.4</spring-modulith.version>
+    <!-- chore/boot-3.5-upgrade: 1.2.4 -> 1.4.1, the spring-modulith line compiled against Boot 3.5
+         per its own Spring Boot compatibility matrix (docs.spring.io/spring-modulith/reference). -->
+    <spring-modulith.version>1.4.1</spring-modulith.version>
     <spotless.version>2.43.0</spotless.version>
     <google-java-format.version>1.22.0</google-java-format.version>
     <checkstyle.version>3.3.1</checkstyle.version>
@@ -204,20 +208,21 @@
       (see rbac.security.SecurityConfig); the JSON contract (/v3/api-docs) is always generated,
       unauthenticated exposure is what's gated.
 
-      Version pinned to 2.6.0, NOT 2.8.x (the previously-used "-api" version): confirmed
-      empirically, not from the compatibility table alone — 2.7.0+ eagerly references Spring
-      Framework 6.2's org.springframework.web.servlet.resource.LiteWebJarsResourceResolver from
-      its UI auto-configuration (NoClassDefFoundError at context startup), which does not exist
-      on Spring Boot 3.3.13's Framework 6.1 line (CLAUDE.md's frozen "Spring Boot 3.x", this
-      pom's actual pin). The previous "-api"-only artifact never hit this code path (it serves no
-      UI static resources), so the same latent 2.8.x/Boot-3.3.x mismatch was silently harmless
-      until this session's UI swap actually exercised it. 2.6.0 is the last springdoc-openapi
-      release still targeting Spring Boot 3.0.x-3.3.x per springdoc's own compatibility matrix.
+      Version pinned to 2.6.0 for Boot 3.3.13's Framework 6.1 line (see git history for the full
+      empirical story). chore/boot-3.5-upgrade: bumped to 2.8.6 (V4 — required, not optional:
+      2.6.0's compiled-in ControllerAdviceBean(Object) call no longer exists on Framework 6.2.19,
+      which Boot 3.5.16 manages — /v3/api-docs generation threw NoSuchMethodError at request time
+      under mvn verify, confirmed empirically). 2.8.x is springdoc's own minimum line for Boot
+      3.5.x per its compatibility matrix. Its own breaking change, also confirmed empirically:
+      2.8.0+ defaults api-docs generation to OpenAPI 3.1 instead of 3.0 — pinned back to 3.0 via
+      springdoc.api-docs.version below (application.yml) purely to keep this session's contract
+      diff cosmetic (Phase 2d gate, veto V2); a real 3.1 migration is a deliberate future decision
+      for whoever owns the console/wallet contract, not a side effect of a dependency bump.
     -->
     <dependency>
       <groupId>org.springdoc</groupId>
       <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
-      <version>2.6.0</version>
+      <version>2.8.6</version>
     </dependency>
 
     <!--

@@ -1,5 +1,6 @@
 package sy.khatm.platform.schema.api;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import java.util.Map;
@@ -22,7 +23,7 @@ import java.util.Map;
  *     per the session brief).
  */
 public record ClaimFieldRequest(
-    @NotBlank String name,
-    @NotBlank String type,
+    @NotBlank @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String name,
+    @NotBlank @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String type,
     @NotNull Map<String, String> labelI18n,
     String pattern) {}

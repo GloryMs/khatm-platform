@@ -1,5 +1,6 @@
 package sy.khatm.platform.rbac.web;
 
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
@@ -11,4 +12,6 @@ import jakarta.validation.constraints.Size;
  * @param newPassword the new password (8–128 characters)
  */
 record ChangePasswordRequest(
-    @NotBlank String currentPassword, @NotBlank @Size(min = 8, max = 128) String newPassword) {}
+    @NotBlank @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String currentPassword,
+    @NotBlank @Size(min = 8, max = 128) @Schema(requiredMode = Schema.RequiredMode.REQUIRED)
+        String newPassword) {}

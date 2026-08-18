@@ -198,6 +198,7 @@
             "type" : "boolean"
           },
           "schemaCode" : {
+            "minLength" : 1,
             "type" : "string"
           }
         },
@@ -231,6 +232,7 @@
       "ChangePasswordRequest" : {
         "properties" : {
           "currentPassword" : {
+            "minLength" : 1,
             "type" : "string"
           },
           "newPassword" : {
@@ -246,6 +248,7 @@
         "description" : "Request to mint a fresh wallet claim code for an already-issued credential",
         "properties" : {
           "sdJwt" : {
+            "minLength" : 1,
             "type" : "string"
           },
           "ttlMinutes" : {
@@ -278,12 +281,14 @@
             "type" : "object"
           },
           "name" : {
+            "minLength" : 1,
             "type" : "string"
           },
           "pattern" : {
             "type" : "string"
           },
           "type" : {
+            "minLength" : 1,
             "type" : "string"
           }
         },
@@ -294,6 +299,7 @@
         "description" : "Request to redeem a one-time wallet claim code",
         "properties" : {
           "code" : {
+            "minLength" : 1,
             "type" : "string"
           }
         },
@@ -467,6 +473,7 @@
             "items" : {
               "type" : "string"
             },
+            "minItems" : 1,
             "type" : "array",
             "uniqueItems" : true
           },
@@ -518,6 +525,7 @@
             "uniqueItems" : true
           },
           "username" : {
+            "minLength" : 1,
             "type" : "string"
           }
         },
@@ -679,9 +687,11 @@
       "DisplayNameI18nRequest" : {
         "properties" : {
           "ar" : {
+            "minLength" : 1,
             "type" : "string"
           },
           "en" : {
+            "minLength" : 1,
             "type" : "string"
           }
         },
@@ -735,6 +745,7 @@
         "description" : "Request to check a credential's lifecycle status by proof of possession",
         "properties" : {
           "jwt" : {
+            "minLength" : 1,
             "type" : "string"
           }
         },
@@ -769,6 +780,7 @@
             "$ref" : "#/components/schemas/DisplayNameI18nRequest"
           },
           "username" : {
+            "minLength" : 1,
             "type" : "string"
           }
         },
@@ -800,6 +812,7 @@
             "type" : "object"
           },
           "holderRef" : {
+            "minLength" : 1,
             "type" : "string"
           },
           "maxUses" : {
@@ -867,12 +880,14 @@
       "LoginRequest" : {
         "properties" : {
           "password" : {
+            "minLength" : 1,
             "type" : "string"
           },
           "tenantSlug" : {
             "type" : "string"
           },
           "username" : {
+            "minLength" : 1,
             "type" : "string"
           }
         },
@@ -912,9 +927,11 @@
       "NameI18nRequest" : {
         "properties" : {
           "ar" : {
+            "minLength" : 1,
             "type" : "string"
           },
           "en" : {
+            "minLength" : 1,
             "type" : "string"
           }
         },
@@ -935,9 +952,11 @@
             "$ref" : "#/components/schemas/DisplayNameI18nRequest"
           },
           "slug" : {
+            "minLength" : 1,
             "type" : "string"
           },
           "type" : {
+            "minLength" : 1,
             "pattern" : "GOVERNMENT|EDUCATION|PRIVATE|OTHER",
             "type" : "string"
           }
@@ -1048,6 +1067,7 @@
             "items" : {
               "$ref" : "#/components/schemas/ClaimFieldRequest"
             },
+            "minItems" : 1,
             "type" : "array"
           },
           "defaultMaxUses" : {
@@ -1082,9 +1102,11 @@
             "items" : {
               "$ref" : "#/components/schemas/ClaimFieldRequest"
             },
+            "minItems" : 1,
             "type" : "array"
           },
           "code" : {
+            "minLength" : 1,
             "type" : "string"
           },
           "defaultMaxUses" : {
@@ -1305,6 +1327,7 @@
       "TotpChallengeRequest" : {
         "properties" : {
           "challengeId" : {
+            "minLength" : 1,
             "type" : "string"
           },
           "code" : {
@@ -1320,6 +1343,7 @@
       "TotpConfirmRequest" : {
         "properties" : {
           "code" : {
+            "minLength" : 1,
             "type" : "string"
           }
         },
@@ -1380,6 +1404,7 @@
         "description" : "Request to verify an SD-JWT credential presentation",
         "properties" : {
           "sdJwt" : {
+            "minLength" : 1,
             "type" : "string"
           }
         },
@@ -1607,7 +1632,7 @@
     "/api/v1/admin/consuming-parties" : {
       "get" : {
         "description" : "Every consuming party registered for the tenant (newest first), each with its status and resolved schema allowlist. Requires the consumer:manage scope.",
-        "operationId" : "list_4",
+        "operationId" : "list_3",
         "responses" : {
           "200" : {
             "content" : {
@@ -2204,7 +2229,7 @@
     "/api/v1/admin/tenants" : {
       "get" : {
         "description" : "Every tenant registered on the platform (newest first). Requires the admin scope.",
-        "operationId" : "list_3",
+        "operationId" : "list_2",
         "responses" : {
           "200" : {
             "content" : {
@@ -2924,7 +2949,7 @@
     "/api/v1/credentials" : {
       "get" : {
         "description" : "Console-facing search over this tenant's credentials (KH-1.1.4) — proof/status metadata rows only, never claim content (P1 rule). Every filter is optional and AND-combined: ref (exact), pseudoRef (exact, resolved against the holder who was issued the credential), schemaId (exact), revoked (exact), status (repeatable — ACTIVE/EXHAUSTED/REVOKED/SUSPENDED/EXPIRED; multiple status values OR together, e.g. ?status=EXHAUSTED&status=REVOKED). status is the same explicit lifecycle value each row's own status field carries (spec FS-1.6 D1/D5) — filtered server-side against that identical derivation, so a row can never appear in a status filter's results while displaying a different status itself. Sorted by issuedAt descending; page/size are zero-based/1-100, defaulting to 0/20. Requires a console session — no API key of any kind works here (see rbac.security.SecurityConfig's Javadoc).",
-        "operationId" : "list_2",
+        "operationId" : "list_4",
         "parameters" : [ {
           "in" : "query",
           "name" : "ref",
