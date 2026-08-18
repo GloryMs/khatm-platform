@@ -130,8 +130,25 @@ images are built from merged main only after it passes.
   himself: **all green**, including the console's AR/RTL rendering — no regression from the
   springdoc/OpenAPI-contract changes reaching the UI. No deviations reported, so no investigation
   loop back to Claude Code was needed.
-  **PR:** `https://github.com/GloryMs/khatm-platform/pull/61`, open, all automated gates green —
-  ready for Majd to merge.
+  **DONE & MERGED via PR #61** (opened 2026-08-17, merged 2026-08-18T07:08:25Z, merge commit
+  `39fd52f511bf45be9ad07b374634f6fa5259d081`, `https://github.com/GloryMs/khatm-platform/pull/61`,
+  standard merge via `gh pr merge --merge` on Majd's explicit instruction, after confirming the
+  live walkthrough above).
+  **CI status at merge — two failures, both confirmed pre-existing/unrelated, neither caused by
+  this PR:**
+    1. `VaultKeyLifecycleAcceptanceTest.rotateOntoVault_tenConcurrentCallers_exactlyOneSucceeds` —
+       the same recurring concurrent-rotation-race flake noted on PR #52/#57/#58/#59/#60's own
+       `main` runs; this session touched no code on that path.
+    2. **New this session, worth Majd's attention:** Trivy's `usr/bin/pebble` (gobinary) scan now
+       flags **7 fresh HIGH findings** (`CVE-2026-33818`, `CVE-2026-46600`, `CVE-2026-56853`,
+       `CVE-2026-56858`, `CVE-2026-56859`, `CVE-2026-56860`, `CVE-2026-56862` — Go stdlib/`x/net`,
+       none yet in `.trivyignore`), on top of the five already-ignored `pebble` CVEs from the
+       2026-07-17 KH-0.3-closure entry. This PR touches no `Dockerfile`/base-image reference at
+       all — confirmed unrelated, a pure function of Trivy's vulnerability DB catching up with the
+       same pinned base image since the last green `main` run, not something this bump introduced.
+       Not fixed this session (out of scope — the base-image/`pebble` pin is a separate small
+       maintenance item); flagged here as a real, unresolved finding distinct from the flaky-test
+       line above.
 - **feat/KH-2.4x-BE-contract-closeouts — closes four accumulated contract/audit debts** (session
   `feat/KH-2.4x-BE-contract-closeouts`, 2026-08-17, brief
   `docs/sessions/SESSION-KH-2.4x-BE-contract-closeouts.md`). Preamble confirmed `origin/main`
