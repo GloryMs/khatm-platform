@@ -3,10 +3,15 @@
 > Updated at the end of EVERY Claude Code session. This file is the session anchor.
 
 ## Current phase / task
-KH-2.6a-BE (tenant hierarchy foundation) implemented on branch
-`feat/KH-2.6a-BE-hierarchy-foundation`, `mvn verify` green (454/454), **not yet committed/PR'd —
-awaiting Majd's go-ahead**. See session entry below. KH-2.6b-BE (`org:admin` + on-behalf-of +
-aggregated reports) is next once this merges; its own scheduling gate is otherwise unblocked.
+**KH-2.6a-BE DONE & MERGED via PR #64** (opened 2026-08-18, merged 2026-08-18T13:17:18Z, merge
+commit `f8390600496a170a88f62e57cdaff18f67642044`,
+`https://github.com/GloryMs/khatm-platform/pull/64`, standard merge via `gh pr merge --merge` on
+Majd's explicit instruction). All four CI checks green before merge: Build and verify, Trivy vuln
+scan, compose-smoke (restore-from-zero), gitleaks. `main` is now at `f839060`, zero open PRs.
+**[MAJD] compose walkthrough still deferred** — see the KH-2.6a session entry below; Majd chose to
+run it together with KH-2.6b-BE's own walkthrough rather than twice. **KH-2.6b-BE (`org:admin` +
+on-behalf-of + aggregated reports) scheduling gate is now open** — its own preamble ("KH-2.6a merged
+on `main`") is satisfied.
 
 ## 2026-08-18 — Session: feat/KH-2.6a-BE-hierarchy-foundation (tenant hierarchy foundation)
 
@@ -107,10 +112,10 @@ it and `SystemAccessCallerAllowlistTest`/`ModulithBoundariesTest` all green, unm
   that one step regardless of when it's run. The automated `TenantHierarchyDbTriggerTest`/
   `setParent_cycle_isRejected` tests already mechanically prove the cycle-rejection behavior this
   step would exercise.
-- Branch is **not committed** and **no PR opened** — held for Majd's explicit go-ahead per this
-  session's operating rules (commits/PRs are visible/hard-to-reverse actions).
-- **2.6b scheduling gate:** not blocked by anything found this session — clear to start once this
-  branch merges to `main`.
+- **DONE & MERGED via PR #64** (see "Current phase / task" above for the full merge record) —
+  committed/pushed/PR'd only after Majd's explicit go-ahead, per this session's operating rules
+  (commits/PRs are visible/hard-to-reverse actions).
+- **2.6b scheduling gate: now open** — nothing found this session blocks it.
 
 ## 2026-08-18 — Decisions recorded (Majd)
 
