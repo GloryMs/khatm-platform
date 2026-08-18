@@ -59,6 +59,18 @@ public class Tenant {
   @Column(nullable = false)
   private String status;
 
+  /**
+   * The tenant's immediate parent, or {@code null} for a root (spec FS-2.5 §1/§2, KH-2.6a) — pure
+   * organisational metadata, never a security or cryptographic boundary: a child tenant still signs
+   * with its own key, publishes its own JWKS, and owns its own status list regardless of this
+   * column. Every existing row predating this column is {@code null} (a root). Validated
+   * (self-parent, cycle, max depth three levels per §7, parent must be {@code ACTIVE}) in {@code
+   * TenantAdminService#setParent} before being written here; {@code V16__tenant_hierarchy.sql}'s
+   * trigger is the DB-level backstop for the same invariant.
+   */
+  @Column(name = "parent_tenant_id")
+  private UUID parentTenantId;
+
   @Column(name = "created_at", nullable = false)
   private Instant createdAt;
 
@@ -127,6 +139,14 @@ public class Tenant {
 
   public void setStatus(String status) {
     this.status = status;
+  }
+
+  public UUID getParentTenantId() {
+    return parentTenantId;
+  }
+
+  public void setParentTenantId(UUID parentTenantId) {
+    this.parentTenantId = parentTenantId;
   }
 
   public Instant getCreatedAt() {

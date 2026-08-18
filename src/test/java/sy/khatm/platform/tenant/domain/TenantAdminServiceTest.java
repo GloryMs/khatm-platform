@@ -198,6 +198,154 @@ class TenantAdminServiceTest extends IntegrationTestSupport {
     assertThat(slugs.indexOf(newer)).isLessThan(slugs.indexOf(older));
   }
 
+  // ── KH-2.6a hierarchy (spec FS-2.5 §2/§7) ──────────────────────────────
+
+  @Test
+  void setParent_links_reflectedInView_andAuditRow() {
+    String parentSlug = uniqueSlug("hier-parent");
+    TenantView parent =
+        admin.create(parentSlug, new LocalizedText("Parent", "الأب"), "OTHER", null);
+    String childSlug = uniqueSlug("hier-child");
+    TenantView child = admin.create(childSlug, new LocalizedText("Child", "الابن"), "OTHER", null);
+
+    TenantView linked = admin.setParent(child.id(), parentSlug);
+
+    assertThat(linked.parentSlug()).isEqualTo(parentSlug);
+    assertThat(linked.parentNameI18n().en()).isEqualTo("Parent");
+    assertThat(admin.get(child.id()).parentSlug()).isEqualTo(parentSlug);
+    assertThat(auditCount("TENANT_PARENT_LINKED", childSlug)).isEqualTo(1);
+    assertThat(parent.parentSlug()).isNull();
+  }
+
+  @Test
+  void setParent_nullSlug_unlinksExistingParent_withAuditRow() {
+    String parentSlug = uniqueSlug("hier-unlink-parent");
+    admin.create(parentSlug, new LocalizedText("Parent", "الأب"), "OTHER", null);
+    UUID childId =
+        admin
+            .create(
+                uniqueSlug("hier-unlink-child"), new LocalizedText("Child", "الابن"), "OTHER", null)
+            .id();
+    admin.setParent(childId, parentSlug);
+
+    TenantView unlinked = admin.setParent(childId, null);
+
+    assertThat(unlinked.parentSlug()).isNull();
+    assertThat(unlinked.parentNameI18n()).isNull();
+    assertThat(auditCount("TENANT_PARENT_UNLINKED", admin.get(childId).slug())).isEqualTo(1);
+  }
+
+  @Test
+  void setParent_selfBySlug_isRejected() {
+    String slug = uniqueSlug("hier-self");
+    UUID id = admin.create(slug, new LocalizedText("Self", "ذات"), "OTHER", null).id();
+
+    assertThatThrownBy(() -> admin.setParent(id, slug))
+        .isInstanceOf(ValidationException.class)
+        .extracting(e -> ((KhatmException) e).errorCode())
+        .isEqualTo(ErrorCode.KH_TNT_0422);
+  }
+
+  @Test
+  void setParent_cycle_isRejected() {
+    String aSlug = uniqueSlug("hier-cycle-a");
+    UUID aId = admin.create(aSlug, new LocalizedText("A", "أ"), "OTHER", null).id();
+    String bSlug = uniqueSlug("hier-cycle-b");
+    UUID bId = admin.create(bSlug, new LocalizedText("B", "ب"), "OTHER", null).id();
+    admin.setParent(bId, aSlug); // B's parent is A
+
+    // A ← B ← A: linking A under B would create a cycle.
+    assertThatThrownBy(() -> admin.setParent(aId, bSlug))
+        .isInstanceOf(ValidationException.class)
+        .extracting(e -> ((KhatmException) e).errorCode())
+        .isEqualTo(ErrorCode.KH_TNT_1422);
+  }
+
+  @Test
+  void setParent_depthExceeded_isRejected() {
+    String rootSlug = uniqueSlug("hier-depth-root");
+    UUID rootId = admin.create(rootSlug, new LocalizedText("Root", "جذر"), "OTHER", null).id();
+    String midSlug = uniqueSlug("hier-depth-mid");
+    UUID midId = admin.create(midSlug, new LocalizedText("Mid", "وسط"), "OTHER", null).id();
+    admin.setParent(midId, rootSlug); // depth 2
+    String leafSlug = uniqueSlug("hier-depth-leaf");
+    UUID leafId = admin.create(leafSlug, new LocalizedText("Leaf", "ورقة"), "OTHER", null).id();
+    admin.setParent(leafId, midSlug); // depth 3 — the maximum (spec §7)
+
+    String tooDeepSlug = uniqueSlug("hier-depth-toodeep");
+    UUID tooDeepId =
+        admin.create(tooDeepSlug, new LocalizedText("TooDeep", "أعمق"), "OTHER", null).id();
+
+    assertThatThrownBy(() -> admin.setParent(tooDeepId, leafSlug))
+        .isInstanceOf(ValidationException.class)
+        .extracting(e -> ((KhatmException) e).errorCode())
+        .isEqualTo(ErrorCode.KH_TNT_2422);
+  }
+
+  @Test
+  void setParent_suspendedParent_isRejected() {
+    String parentSlug = uniqueSlug("hier-suspended-parent");
+    UUID parentId =
+        admin.create(parentSlug, new LocalizedText("Parent", "الأب"), "OTHER", null).id();
+    admin.suspend(parentId);
+    UUID childId =
+        admin
+            .create(
+                uniqueSlug("hier-suspended-child"),
+                new LocalizedText("Child", "الابن"),
+                "OTHER",
+                null)
+            .id();
+
+    assertThatThrownBy(() -> admin.setParent(childId, parentSlug))
+        .isInstanceOf(ValidationException.class)
+        .extracting(e -> ((KhatmException) e).errorCode())
+        .isEqualTo(ErrorCode.KH_TNT_3422);
+  }
+
+  @Test
+  void setParent_unknownParentSlug_is404() {
+    UUID childId =
+        admin
+            .create(
+                uniqueSlug("hier-unknown-parent"),
+                new LocalizedText("Child", "الابن"),
+                "OTHER",
+                null)
+            .id();
+
+    assertThatThrownBy(() -> admin.setParent(childId, "no-such-tenant-" + UUID.randomUUID()))
+        .isInstanceOf(NotFoundException.class)
+        .extracting(e -> ((KhatmException) e).errorCode())
+        .isEqualTo(ErrorCode.KH_TNT_0404);
+  }
+
+  @Test
+  void suspend_parentWithActiveChild_isRejected_thenSucceedsOnceChildIsNotActive() {
+    String parentSlug = uniqueSlug("hier-suspend-guard-parent");
+    UUID parentId =
+        admin.create(parentSlug, new LocalizedText("Parent", "الأب"), "OTHER", null).id();
+    UUID childId =
+        admin
+            .create(
+                uniqueSlug("hier-suspend-guard-child"),
+                new LocalizedText("Child", "الابن"),
+                "OTHER",
+                null)
+            .id();
+    admin.setParent(childId, parentSlug);
+
+    assertThatThrownBy(() -> admin.suspend(parentId))
+        .isInstanceOf(ConflictException.class)
+        .extracting(e -> ((KhatmException) e).errorCode())
+        .isEqualTo(ErrorCode.KH_TNT_1409);
+    assertThat(admin.get(parentId).status()).isEqualTo("ACTIVE");
+
+    admin.suspend(childId);
+    TenantView suspendedParent = admin.suspend(parentId);
+    assertThat(suspendedParent.status()).isEqualTo("SUSPENDED");
+  }
+
   @Test
   void ensureList_calledTwice_createsOnlyOneRow() {
     String slug = uniqueSlug("adminsvc-ensurelist");

@@ -70,4 +70,25 @@ public interface TenantAdmin {
    *     exists
    */
   TenantView activate(UUID id);
+
+  /**
+   * Link, re-link, or unlink a tenant's parent (KH-2.6a, spec FS-2.5 §2/§7) — pure organisational
+   * metadata (spec §1), never a security or cryptographic boundary. Validated before the write:
+   * self-parent, a cycle (the proposed parent is a descendant of {@code id}, or {@code id} itself),
+   * the resulting depth exceeding the maximum (three levels, §7 — accounting for {@code id}'s own
+   * existing descendants when it already has children), and the proposed parent not being {@code
+   * ACTIVE}. {@code V16__tenant_hierarchy.sql}'s trigger is the DB-level backstop for the same
+   * invariant.
+   *
+   * @param id the tenant to link (or unlink)
+   * @param parentSlug the new parent's slug, or {@code null}/blank to unlink (making {@code id} a
+   *     root)
+   * @return the updated view
+   * @throws sy.khatm.platform.shared.error.NotFoundException {@code KH-TNT-0404} if {@code id} or
+   *     the named parent does not exist
+   * @throws sy.khatm.platform.shared.error.ValidationException {@code KH-TNT-0422} self-parent,
+   *     {@code KH-TNT-1422} cycle, {@code KH-TNT-2422} depth exceeded, or {@code KH-TNT-3422} the
+   *     parent is not {@code ACTIVE}
+   */
+  TenantView setParent(UUID id, String parentSlug);
 }

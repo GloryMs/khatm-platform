@@ -96,6 +96,19 @@ import org.springframework.http.HttpStatus;
  * {@code KH-ATT-0402} is the bulk-issuance path's wholesale rejection of an attested schema (FS-2.4
  * scope: the portal is a single-document, human-attested flow by definition).
  *
+ * <p><b>{@code TNT} batch, second wave</b> (KH-2.6a, spec FS-2.5 §2/§7): tenant hierarchy linking
+ * introduces four new structural-validation codes ({@link #KH_TNT_0422} self-parent, {@link
+ * #KH_TNT_1422} cycle, {@link #KH_TNT_2422} depth exceeded, {@link #KH_TNT_3422} parent not {@code
+ * ACTIVE}) and one new conflict ({@link #KH_TNT_1409}, the no-cascade suspend guard). Numbered per
+ * this enum's own class Javadoc rule (module tag {@code TNT} — the tag actually used by every
+ * existing tenant code in this enum, {@code KH_TNT_0400}/{@code 0404}/{@code 0409}; {@code
+ * docs/CONVENTIONS.md} §2 and this Javadoc's own "Module tags" line above both still say {@code
+ * TEN}, a pre-existing doc/implementation drift that predates this session and is out of scope to
+ * correct here — renumbering three already-shipped codes would violate the "never renumbered" rule
+ * two paragraphs up for a cosmetic doc fix). {@code 042x} mirrors HTTP 422 (Unprocessable Entity,
+ * the same divergence-free precedent {@link #KH_KEY_0422} already set) for the four structural
+ * checks; {@link #KH_TNT_1409} mirrors 409 like its {@link #KH_TNT_0409} sibling.
+ *
  * <p>{@code docs/error-codes.md} is generated from this enum by a test ({@code
  * ErrorCodesDocGenerationTest}) — never hand-edited (CLAUDE.md work rule 1).
  */
@@ -308,6 +321,45 @@ public enum ErrorCode {
    * conflicting — see {@code tenant.api.TenantAdmin#create}'s Javadoc.
    */
   KH_TNT_0409(HttpStatus.CONFLICT, "tenant.duplicate-slug"),
+
+  /**
+   * {@code POST /api/v1/admin/tenants/{id}/parent} (KH-2.6a, spec FS-2.5 §2/§7) named a parent
+   * whose slug is the same tenant's own slug — a tenant cannot be its own parent. Checked against
+   * the request's raw {@code parentSlug} string before any lookup, so it is reachable even though
+   * the tenant being linked cannot otherwise resolve a self-reference by id.
+   */
+  KH_TNT_0422(HttpStatus.UNPROCESSABLE_ENTITY, "tenant.parent-self"),
+
+  /**
+   * {@code POST /api/v1/admin/tenants/{id}/parent} (KH-2.6a, spec FS-2.5 §2/§7) named a parent that
+   * is a descendant of the tenant being linked (the tenant being linked appears in the proposed
+   * parent's own ancestor chain) — linking would create a cycle in the adjacency list.
+   */
+  KH_TNT_1422(HttpStatus.UNPROCESSABLE_ENTITY, "tenant.parent-cycle"),
+
+  /**
+   * {@code POST /api/v1/admin/tenants/{id}/parent} (KH-2.6a, spec FS-2.5 §7, resolved 2026-08-18:
+   * max tree depth THREE levels) would place the tenant being linked — or, when it already has
+   * descendants of its own, one of those descendants — past the maximum depth. Raising the limit
+   * later is a guard change only (this code's condition), never a data migration.
+   */
+  KH_TNT_2422(HttpStatus.UNPROCESSABLE_ENTITY, "tenant.parent-depth-exceeded"),
+
+  /**
+   * {@code POST /api/v1/admin/tenants/{id}/parent} (KH-2.6a, spec FS-2.5 §2) named a parent that is
+   * not {@code ACTIVE} — linking to a {@code SUSPENDED} parent is rejected outright rather than
+   * silently allowed, since {@code org:admin} operations FS-2.5 §3 grants on the parent would
+   * otherwise apply to a child with no reachable administering tenant.
+   */
+  KH_TNT_3422(HttpStatus.UNPROCESSABLE_ENTITY, "tenant.parent-not-active"),
+
+  /**
+   * {@code POST /api/v1/admin/tenants/{id}/suspend} (KH-2.6a, spec FS-2.5 §2) was called on a
+   * tenant with at least one direct child currently {@code ACTIVE} — no cascade, ever (FS-2.5 §2's
+   * explicit stance): the caller must suspend or unlink every active child first. A second {@code
+   * CONFLICT} in {@code TNT}, after {@link #KH_TNT_0409}.
+   */
+  KH_TNT_1409(HttpStatus.CONFLICT, "tenant.parent-has-active-children"),
 
   /**
    * A tenant user-management request (KH-2.2b, spec FS-2.2 D5, {@code

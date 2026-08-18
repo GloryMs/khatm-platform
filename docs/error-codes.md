@@ -35,6 +35,11 @@
 | `KH-TNT-0400` | 400 | `tenant.invalid-slug` |
 | `KH-TNT-0404` | 404 | `tenant.not-found` |
 | `KH-TNT-0409` | 409 | `tenant.duplicate-slug` |
+| `KH-TNT-0422` | 422 | `tenant.parent-self` |
+| `KH-TNT-1422` | 422 | `tenant.parent-cycle` |
+| `KH-TNT-2422` | 422 | `tenant.parent-depth-exceeded` |
+| `KH-TNT-3422` | 422 | `tenant.parent-not-active` |
+| `KH-TNT-1409` | 409 | `tenant.parent-has-active-children` |
 | `KH-USR-0400` | 400 | `user.validation-failed` |
 | `KH-USR-0403` | 403 | `user.must-change-password` |
 | `KH-USR-0404` | 404 | `user.not-found` |

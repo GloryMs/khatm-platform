@@ -327,5 +327,21 @@ public enum AuditAction {
    * transaction as, and ordered strictly before, the {@link #CREDENTIAL_ISSUED} row for the same
    * credential.
    */
-  SCAN_ATTESTED
+  SCAN_ATTESTED,
+
+  /**
+   * A tenant was linked to a parent tenant, or re-linked to a different one (KH-2.6a, {@code
+   * tenant} module, spec FS-2.5 §2, {@code POST /api/v1/admin/tenants/{id}/parent}). {@code
+   * entityRef} is the child tenant's slug; {@code detail.parentSlug} carries the new parent's slug
+   * — administrative metadata only (spec FS-2.5 §1), never a security-relevant change.
+   */
+  TENANT_PARENT_LINKED,
+
+  /**
+   * A tenant's parent link was cleared, making it a root again (KH-2.6a, {@code tenant} module,
+   * spec FS-2.5 §2, {@code POST /api/v1/admin/tenants/{id}/parent} with a {@code null} {@code
+   * parentSlug}). {@code entityRef} is the tenant's slug; {@code detail.previousParentSlug} carries
+   * the parent it was unlinked from.
+   */
+  TENANT_PARENT_UNLINKED
 }
