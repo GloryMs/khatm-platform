@@ -3,8 +3,11 @@
 > Updated at the end of EVERY Claude Code session. This file is the session anchor.
 
 ## Current phase / task
-**KH-2.6b-BE (`org:admin` + on-behalf-of + aggregated reports) — implementation complete on branch
-`feat/KH-2.6b-BE-org-admin-reports`, NOT YET committed/PR'd** (session brief
+**KH-2.6b-BE (`org:admin` + on-behalf-of + aggregated reports) — OPENED as PR #65**
+(`https://github.com/GloryMs/khatm-platform/pull/65`, branch
+`feat/KH-2.6b-BE-org-admin-reports`, commit `096eb30`, opened 2026-08-19 on Majd's explicit
+"commit this and open the PR" instruction). Not yet merged — both gates below are still open.
+(session brief
 `docs/sessions/SESSION-KH-2.6b-BE-org-admin-reports.md`, spec `FS-2.5-tenant-hierarchy.md` §3/§4).
 `mvn verify` green **465/465** (454 baseline + 11 new). See the full session entry immediately
 below for the complete record. **Two gates still open before this can merge:**
@@ -156,8 +159,11 @@ work rule 1.
   `TenantView.parentSlug`/`parentNameI18n` from KH-2.6a, `issuerLineage` from KH-2.6a). Per FS-2.5
   §8's session order (2.6a ← 2.6b ← C12), C12 may now be scheduled once this session's two open
   gates above close and it merges.
-- **Not yet committed/pushed/PR'd** — pending Majd's explicit go-ahead per this session's operating
-  rules (commits/PRs are visible/hard-to-reverse actions).
+- **DONE, OPENED as PR #65** (2026-08-19, branch `feat/KH-2.6b-BE-org-admin-reports`, commit
+  `096eb30`, `https://github.com/GloryMs/khatm-platform/pull/65`) — committed/pushed/PR'd only
+  after Majd's explicit "commit this and open the PR" instruction. Not yet merged: the Arabic and
+  compose-walkthrough gates above are still open, and CI has not yet been confirmed green on the
+  PR itself.
 
 ## 2026-08-18 — Session: feat/KH-2.6a-BE-hierarchy-foundation (tenant hierarchy foundation)
 
