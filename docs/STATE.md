@@ -3,22 +3,29 @@
 > Updated at the end of EVERY Claude Code session. This file is the session anchor.
 
 ## Current phase / task
-**KH-2.6b-BE (`org:admin` + on-behalf-of + aggregated reports) — OPENED as PR #65**
-(`https://github.com/GloryMs/khatm-platform/pull/65`, branch
-`feat/KH-2.6b-BE-org-admin-reports`, commit `096eb30`, opened 2026-08-19 on Majd's explicit
-"commit this and open the PR" instruction). Not yet merged — both gates below are still open.
-(session brief
+**KH-2.6b-BE (`org:admin` + on-behalf-of + aggregated reports) — DONE & MERGED via PR #65**
+(opened 2026-08-19 on Majd's explicit "commit this and open the PR" instruction, merged
+2026-08-19T07:37:12Z on Majd's immediately-following explicit "merge PR and update STATE.md"
+instruction, merge commit `39fc7596faddd98123c77c5a45a33d86d02a4c57`,
+`https://github.com/GloryMs/khatm-platform/pull/65`, standard merge via `gh pr merge --merge`).
+All four CI checks green before merge: Build and verify, Trivy vuln scan, compose-smoke
+(restore-from-zero), gitleaks. `main` is now at `39fc759`, zero open PRs. Feature branch deleted
+(remote + local) after merge. (session brief
 `docs/sessions/SESSION-KH-2.6b-BE-org-admin-reports.md`, spec `FS-2.5-tenant-hierarchy.md` §3/§4).
-`mvn verify` green **465/465** (454 baseline + 11 new). See the full session entry immediately
-below for the complete record. **Two gates still open before this can merge:**
-- **[MAJD] Arabic-review gate** — one new message key (`org.child-not-found`) and one new
-  bilingual role name (`ORG_ADMIN` → "Organization Administrator" / "مدير الجهة الأم") need
-  Majd's review before merge, per the session brief's explicit "بوابة العربية حاجبة."
-- **[MAJD] compose walkthrough — now doable, combining KH-2.6a's own still-deferred walkthrough
-  with this session's** (grant `org:admin`, manage a child user, suspend/reactivate a child, an
-  aggregated report with correct numbers, and the two rejection cases — grandchild access, another
-  parent's child — both correctly denied). The console has no UI for any of this yet (that is
-  exactly C12, gated behind this session) — the walkthrough needs Swagger UI or `curl` regardless.
+`mvn verify` green **465/465** (454 baseline + 11 new). See the full session entry below for the
+complete implementation record. **Two [MAJD] gates the session flagged before this merge —
+recorded honestly, not assumed closed just because the merge instruction followed close behind:**
+- **Arabic-review gate** — one new message key (`org.child-not-found`) and one new bilingual role
+  name (`ORG_ADMIN` → "Organization Administrator" / "مدير الجهة الأم"). Majd's merge instruction
+  is taken as his call that this is fine to merge on; no separate explicit "reviewed the Arabic"
+  confirmation was given, so if either string needs a wording fix, that is a small follow-up PR,
+  not a revert.
+- **[MAJD] compose walkthrough — still not executed**, combining KH-2.6a's own still-deferred
+  walkthrough with this session's (grant `org:admin`, manage a child user, suspend/reactivate a
+  child, an aggregated report with correct numbers, and the two rejection cases — grandchild
+  access, another parent's child — both correctly denied). The console has no UI for any of this
+  yet (that is exactly C12, gated behind this session, now unblocked) — the walkthrough needs
+  Swagger UI or `curl` regardless of when it runs.
 
 **KH-2.6a-BE DONE & MERGED via PR #64** (opened 2026-08-18, merged 2026-08-18T13:17:18Z, merge
 commit `f8390600496a170a88f62e57cdaff18f67642044`,
@@ -159,11 +166,11 @@ work rule 1.
   `TenantView.parentSlug`/`parentNameI18n` from KH-2.6a, `issuerLineage` from KH-2.6a). Per FS-2.5
   §8's session order (2.6a ← 2.6b ← C12), C12 may now be scheduled once this session's two open
   gates above close and it merges.
-- **DONE, OPENED as PR #65** (2026-08-19, branch `feat/KH-2.6b-BE-org-admin-reports`, commit
-  `096eb30`, `https://github.com/GloryMs/khatm-platform/pull/65`) — committed/pushed/PR'd only
-  after Majd's explicit "commit this and open the PR" instruction. Not yet merged: the Arabic and
-  compose-walkthrough gates above are still open, and CI has not yet been confirmed green on the
-  PR itself.
+- **DONE & MERGED via PR #65** (see "Current phase / task" above for the full merge record) —
+  committed/pushed/PR'd only after Majd's explicit "commit this and open the PR" instruction, then
+  merged only after Majd's immediately-following explicit "merge PR and update STATE.md"
+  instruction and all four CI checks confirmed green. The compose walkthrough remains genuinely
+  unexecuted post-merge — see "Current phase / task" above.
 
 ## 2026-08-18 — Session: feat/KH-2.6a-BE-hierarchy-foundation (tenant hierarchy foundation)
 
