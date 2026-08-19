@@ -27,6 +27,11 @@ lands here in KH-0.6b), `api_key` (new, `V2__auth_api_keys.sql`), `user_totp_rec
   - `TenantProvisioningService` — the `platform:admin` cross-tenant provisioning orchestration:
     tenant onboarding's rbac-side half (role catalog + optional first `TENANT_ADMIN`), and adding/
     listing users of a tenant other than the caller's own, both via `shared.OnBehalfOfExecutor`.
+  - `OrgAdminService` (KH-2.6b, spec FS-2.5 §3/§4) — the `org:admin` on-behalf-of plane: the four
+    named operations a parent tenant's `org:admin` holder may perform on its *direct* children
+    only (list/user-management/schema-view/suspend-activate, each via `shared.OnBehalfOfExecutor
+    #runAsChildOrg`), plus the aggregated proofs-not-content report over the full descendant
+    subtree (via `shared.SystemAccessExecutor#runAsSystem`, never a `TenantContext` switch).
   - `ApiKeyService` — create/revoke/verify. Key shape `khk_<env>_<prefix>.<secret>` (D2); SHA-256
     of the secret (D4 — a fast hash is safe here because the secret's own entropy is the real
     defense, unlike a human password).
@@ -54,15 +59,20 @@ lands here in KH-0.6b), `api_key` (new, `V2__auth_api_keys.sql`), `user_totp_rec
     shape `shared.web.GlobalExceptionHandler` produces, independently, because both run *before*
     `DispatcherServlet` and so `GlobalExceptionHandler` (an `@RestControllerAdvice`) never sees
     these denials.
-  - `TotpEnrollmentEnforcementFilter` (KH-2.2c) — the exact `PasswordChangeEnforcementFilter`
-    shape, wired right after it: walls off every endpoint except enroll/confirm/`/me`/logout for a
-    session holding a mandatory-2FA scope with no active TOTP.
+  - `TotpEnrollmentEnforcementFilter` (KH-2.2c; `org:admin` added to its mandatory-scope set
+    KH-2.6b) — the exact `PasswordChangeEnforcementFilter` shape, wired right after it: walls off
+    every endpoint except enroll/confirm/`/me`/logout for a session holding a mandatory-2FA scope
+    with no active TOTP.
 - `web/` — `AuthController`: `POST /api/v1/auth/login` · `POST /api/v1/auth/logout` · `GET
   /api/v1/auth/me` · `POST /api/v1/auth/totp` (KH-2.2c, completes a login challenge) · `POST
   /api/v1/admin/api-keys` · `POST /api/v1/admin/api-keys/{id}/revoke`. `UserAdminController` also
   gains `POST /users/me/totp/enroll`/`/confirm` (self-service) and `POST /users/{id}/totp/reset`
   (KH-2.2c); `TenantProvisioningController` gains the on-behalf-of `POST
-  /admin/tenants/{id}/users/{userId}/totp/reset`.
+  /admin/tenants/{id}/users/{userId}/totp/reset`. `OrgAdminController` (KH-2.6b) — the `org:admin`
+  plane under `/api/v1/org/**` (deliberately not `/api/v1/admin/**`, spec V2): `GET
+  /org/children`, `GET`/`POST /org/children/{id}/users`, `POST
+  /org/children/{id}/users/{userId}/disable`/`/reset-password`, `GET /org/children/{id}/schemas`,
+  `POST /org/children/{id}/suspend`/`/activate`, `GET /org/reports`.
 - `seed/` — `DemoApiKeySeeder` (`local`/`dev` only, `@Order(2)`): a demo `CONSUMING_PARTY` API key,
   logged once in full so a developer can exercise `/consume` without a real onboarding flow.
   KH-1.4.3: also allowlists the demo party for `credential.seed.DemoSeeder`'s demo schema
@@ -71,15 +81,24 @@ lands here in KH-0.6b), `api_key` (new, `V2__auth_api_keys.sql`), `user_totp_rec
   admin itself needs no separate demo seeder — `AdminBootstrap` already provisions one in every
   profile, `local` included.
 
-**Scope catalog (KH-2.2a, spec FS-2.2 D1 — replaces the coarse `admin` scope, clean cut, spec V3):**
-`issue`, `verify`, `consume`, `revoke`, `schema:manage`, `consumer:manage`, `key:manage`,
-`tenant:admin`, `platform:admin` — see `security/ScopeRegistry`. Deny-by-default: an endpoint
-without a declared scope fails `security/AdminPathScopeCoverageTest`.
+**Scope catalog (KH-2.2a, spec FS-2.2 D1 — replaces the coarse `admin` scope, clean cut, spec V3;
+extended KH-2.6b):** `issue`, `verify`, `consume`, `revoke`, `schema:manage`, `consumer:manage`,
+`key:manage`, `tenant:admin`, `platform:admin`, `org:admin` — see `security/ScopeRegistry`.
+Deny-by-default: an endpoint without a declared scope fails `security/AdminPathScopeCoverageTest`
+(the `/api/v1/admin/**` families) or is caught by `OrgAdminGateTest`'s HTTP-level gate assertions
+(the separate `/api/v1/org/**` prefix, spec V2 — deliberately outside that coverage test's scope).
+
+**Role catalog (spec FS-2.2 D5, extended KH-2.6b spec FS-2.5 §3 — `security/RoleCatalog`):**
+`PLATFORM_ADMIN`, `TENANT_ADMIN`, `ISSUER_OPERATOR`, `ORG_ADMIN` (the newest, carrying only
+`org:admin`) — every tenant is seeded with all four (`RoleCatalogSeeder`, `V12`/`V17` migrations
+backfill pre-existing tenants).
 
 **Status:** KH-0.6b completed Phase 0's session/API-key auth. KH-2.2a replaced the `admin` scope
 stand-in with the granular registry above and re-gated every `/api/v1/admin/**` endpoint
-accordingly. KH-2.2b added tenant user management + onboarding completion. KH-2.2c (this session)
-added TOTP 2FA — mandatory for `revoke`/`tenant:admin`/`platform:admin`/`key:manage` holders (spec
-FS-2.2 V1). `consuming_party_schema` enforcement building on the `CONSUMING_PARTY` API-key
-principal is done (KH-1.4.3, lives in `credential.domain.CredentialService#consume` + `consumer ::
-api`).
+accordingly. KH-2.2b added tenant user management + onboarding completion. KH-2.2c added TOTP 2FA —
+mandatory for `revoke`/`tenant:admin`/`platform:admin`/`key:manage` holders (spec FS-2.2 V1).
+`consuming_party_schema` enforcement building on the `CONSUMING_PARTY` API-key principal is done
+(KH-1.4.3, lives in `credential.domain.CredentialService#consume` + `consumer :: api`). KH-2.6b
+(this session) added the `org:admin` on-behalf-of plane over a parent tenant's direct children
+(spec FS-2.5 §3), the aggregated proofs-not-content report over the full descendant subtree (§4),
+and added `org:admin` to the mandatory-TOTP set.

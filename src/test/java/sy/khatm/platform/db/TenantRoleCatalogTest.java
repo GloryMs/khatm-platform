@@ -16,8 +16,8 @@ import sy.khatm.platform.shared.Uuidv7;
 import sy.khatm.platform.support.IntegrationTestSupport;
 
 /**
- * Spec FS-2.2 D5/D6 — every tenant must have the fixed three-role catalog with the exact granular
- * scope sets, and never the retired {@code admin} scope:
+ * Spec FS-2.2 D5/D6 (extended KH-2.6b, spec FS-2.5 §3) — every tenant must have the fixed role
+ * catalog with the exact granular scope sets, and never the retired {@code admin} scope:
  *
  * <ul>
  *   <li>{@code V12__seed_tenant_role_catalogs.sql}'s own backfill statement is idempotent and heals
@@ -26,9 +26,12 @@ import sy.khatm.platform.support.IntegrationTestSupport;
  *       whole shared-context suite (several other test classes, e.g. {@code
  *       tenant.domain.TenantAdminServiceTest}, deliberately call {@code TenantAdmin#create}
  *       directly, service-level, bypassing the rbac onboarding orchestration entirely — those
- *       tenants having no catalog is expected, not a defect V12 needs to catch).
+ *       tenants having no catalog is expected, not a defect V12 needs to catch). V12 predates
+ *       {@code ORG_ADMIN} (added {@code V17__seed_org_admin_role.sql}, KH-2.6b) — this test's own
+ *       literal copy of V12's statement is deliberately left at three roles, exactly as V12 itself
+ *       shipped; it is not a test of the current full catalog.
  *   <li>{@link RoleCatalogSeeder#ensureCatalog}, the onboarding-time mirror for new tenants,
- *       produces the identical scope sets.
+ *       produces the identical scope sets, now including {@code ORG_ADMIN}.
  * </ul>
  */
 class TenantRoleCatalogTest extends IntegrationTestSupport {
@@ -138,6 +141,7 @@ class TenantRoleCatalogTest extends IntegrationTestSupport {
               "tenant:admin");
       assertThat(scopesOf(tenantId, "ISSUER_OPERATOR"))
           .containsExactlyInAnyOrder("issue", "verify", "revoke");
+      assertThat(scopesOf(tenantId, "ORG_ADMIN")).containsExactlyInAnyOrder("org:admin");
     } finally {
       TenantContext.clear();
     }
@@ -161,7 +165,7 @@ class TenantRoleCatalogTest extends IntegrationTestSupport {
       Integer roleCount =
           jdbc.queryForObject(
               "SELECT COUNT(*) FROM role WHERE tenant_id = ?", Integer.class, tenantId);
-      assertThat(roleCount).isEqualTo(3);
+      assertThat(roleCount).isEqualTo(4);
     } finally {
       TenantContext.clear();
     }

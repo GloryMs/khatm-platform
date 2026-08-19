@@ -96,6 +96,17 @@ import org.springframework.http.HttpStatus;
  * {@code KH-ATT-0402} is the bulk-issuance path's wholesale rejection of an attested schema (FS-2.4
  * scope: the portal is a single-document, human-attested flow by definition).
  *
+ * <p><b>{@code ORG} batch</b> (KH-2.6b, spec FS-2.5 §3): a new module tag for the {@code org:admin}
+ * on-behalf-of plane under {@code /api/v1/org/**} — a bounded concern living inside the {@code
+ * rbac} module (no new Modulith module for one plane), the same "bounded concern, not
+ * owning-module" separation {@code CLM}/{@code USR}/{@code ATT} already established. {@link
+ * #KH_ORG_0404} deliberately collapses two situations into one anti-enumeration outcome (the same
+ * D5 judgment call {@link #KH_CLM_0404} makes): a path-{@code id} naming a tenant that does not
+ * exist at all, and one that exists but is not a <em>direct</em> child of the calling {@code
+ * org:admin}'s own tenant (a grandchild, a sibling subtree, an unrelated tenant) — an org:admin
+ * caller must not be able to distinguish "no such tenant" from "that tenant exists but isn't mine
+ * to administer" by the response shape alone.
+ *
  * <p><b>{@code TNT} batch, second wave</b> (KH-2.6a, spec FS-2.5 §2/§7): tenant hierarchy linking
  * introduces four new structural-validation codes ({@link #KH_TNT_0422} self-parent, {@link
  * #KH_TNT_1422} cycle, {@link #KH_TNT_2422} depth exceeded, {@link #KH_TNT_3422} parent not {@code
@@ -442,7 +453,15 @@ public enum ErrorCode {
    * requires_attestation=true} — attested schemas are out of scope for bulk issuance entirely (the
    * portal is a single-document, human-attested flow by definition).
    */
-  KH_ATT_0402(HttpStatus.BAD_REQUEST, "attestation.bulk-not-supported");
+  KH_ATT_0402(HttpStatus.BAD_REQUEST, "attestation.bulk-not-supported"),
+
+  /**
+   * Every {@code org:admin}-gated endpoint under {@code /api/v1/org/children/{id}/**} (KH-2.6b,
+   * spec FS-2.5 §3) named an {@code id} that either does not exist, or exists but is not a direct
+   * child of the calling {@code org:admin}'s own tenant — deliberately one code for both (see this
+   * enum's own class Javadoc, {@code ORG} batch).
+   */
+  KH_ORG_0404(HttpStatus.NOT_FOUND, "org.child-not-found");
 
   private final HttpStatus httpStatus;
   private final String messageKey;

@@ -50,3 +50,4 @@
 | `KH-ATT-0400` | 400 | `attestation.required` |
 | `KH-ATT-0401` | 400 | `attestation.not-applicable` |
 | `KH-ATT-0402` | 400 | `attestation.bulk-not-supported` |
+| `KH-ORG-0404` | 404 | `org.child-not-found` |

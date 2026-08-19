@@ -3,15 +3,167 @@
 > Updated at the end of EVERY Claude Code session. This file is the session anchor.
 
 ## Current phase / task
+**KH-2.6b-BE (`org:admin` + on-behalf-of + aggregated reports) — OPENED as PR #65**
+(`https://github.com/GloryMs/khatm-platform/pull/65`, branch
+`feat/KH-2.6b-BE-org-admin-reports`, commit `096eb30`, opened 2026-08-19 on Majd's explicit
+"commit this and open the PR" instruction). Not yet merged — both gates below are still open.
+(session brief
+`docs/sessions/SESSION-KH-2.6b-BE-org-admin-reports.md`, spec `FS-2.5-tenant-hierarchy.md` §3/§4).
+`mvn verify` green **465/465** (454 baseline + 11 new). See the full session entry immediately
+below for the complete record. **Two gates still open before this can merge:**
+- **[MAJD] Arabic-review gate** — one new message key (`org.child-not-found`) and one new
+  bilingual role name (`ORG_ADMIN` → "Organization Administrator" / "مدير الجهة الأم") need
+  Majd's review before merge, per the session brief's explicit "بوابة العربية حاجبة."
+- **[MAJD] compose walkthrough — now doable, combining KH-2.6a's own still-deferred walkthrough
+  with this session's** (grant `org:admin`, manage a child user, suspend/reactivate a child, an
+  aggregated report with correct numbers, and the two rejection cases — grandchild access, another
+  parent's child — both correctly denied). The console has no UI for any of this yet (that is
+  exactly C12, gated behind this session) — the walkthrough needs Swagger UI or `curl` regardless.
+
 **KH-2.6a-BE DONE & MERGED via PR #64** (opened 2026-08-18, merged 2026-08-18T13:17:18Z, merge
 commit `f8390600496a170a88f62e57cdaff18f67642044`,
 `https://github.com/GloryMs/khatm-platform/pull/64`, standard merge via `gh pr merge --merge` on
 Majd's explicit instruction). All four CI checks green before merge: Build and verify, Trivy vuln
 scan, compose-smoke (restore-from-zero), gitleaks. `main` is now at `f839060`, zero open PRs.
-**[MAJD] compose walkthrough still deferred** — see the KH-2.6a session entry below; Majd chose to
-run it together with KH-2.6b-BE's own walkthrough rather than twice. **KH-2.6b-BE (`org:admin` +
-on-behalf-of + aggregated reports) scheduling gate is now open** — its own preamble ("KH-2.6a merged
-on `main`") is satisfied.
+
+## 2026-08-18 — Session: feat/KH-2.6b-BE-org-admin-reports (org:admin + on-behalf-of + aggregated reports)
+
+Brief `docs/sessions/SESSION-KH-2.6b-BE-org-admin-reports.md`, spec `FS-2.5-tenant-hierarchy.md`
+§3/§4. **Preamble confirmed:** KH-2.6a merged via PR #64 (`main` at `f839060`), zero open PRs.
+Read `shared.OnBehalfOfExecutor`/`shared.SystemAccessExecutor` before writing anything new, per the
+brief's explicit instruction — both existing patterns turned out structurally sufficient once
+extended literally (no SELF-STOP needed): `OnBehalfOfExecutor` gained a second method
+(`runAsChildOrg`) rather than a parallel mechanism, and `SystemAccessExecutor` needed no change at
+all, just a new caller and a new explicit-tenant `AuditService` overload.
+
+**D1 — the `org:admin` scope, the fixed catalog's fourth role:** `ScopeRegistry.ORG_ADMIN =
+"org:admin"`, added to `ALL`. `RoleCatalog` gains a fourth `Definition` — `ORG_ADMIN`, carrying
+*only* `org:admin` (least privilege; the org-plane's own on-behalf-of mechanism is where direct-
+child validation happens, not a bundle of extra scopes on this role). `V17__seed_org_admin_role.sql`
+backfills every pre-existing tenant with the new role (idempotent insert-where-absent, exact mirror
+of `V12`'s own shape); `RoleCatalogSeeder#ensureCatalog` already picks it up for every tenant
+onboarded from here on, no code change needed there. `TotpEnrollmentEnforcementFilter`'s
+`MANDATORY_SCOPES` gained `org:admin` (spec's explicit ask — same mandatory-2FA policy as every
+other privileged scope). **Deliberately did NOT add `org:admin` to `PLATFORM_ADMIN`'s own scope
+set** — `platform:admin` already dominates any org:admin capability via `runAsTenant` (full
+cross-tenant reach vs. org:admin's direct-children-only), so it would be pure redundancy;
+confirmed unchanged by `AuthLoginCycleTest`'s own nine-scope assertion for the bootstrap admin.
+
+**D2 — the four named on-behalf-of operations (spec §3, V1's literal enumeration, nothing added):**
+new `rbac.domain.OrgAdminService` (mirrors `TenantProvisioningService`'s shape exactly — same
+Modulith-cycle reason, `rbac`'s existing `tenant :: api`/`schema :: api` dependencies cover
+everything needed, zero new module edges), new `rbac.web.OrgAdminController` under
+`/api/v1/org/**` (deliberately not `/api/v1/admin/**` — spec V2's default, kept: `org:admin` is a
+materially narrower plane than anything else gated under that wildcard). Every child-targeted
+method routes through a single `requireDirectChild` gate (resolves against
+`TenantDirectory#directChildren` of the caller's own ambient tenant; anything else — grandchild,
+sibling subtree, unrelated tenant, genuinely nonexistent id — collapses to the same `KH-ORG-0404`,
+anti-enumeration, mirroring `KH-CLM-0404`'s established D5-style judgment call) before ever calling
+`shared.OnBehalfOfExecutor#runAsChildOrg` (new method: same shape as `runAsTenant`, gated on
+`org:admin` instead of `platform:admin`, records a new `AuditAction.ORG_ON_BEHALF_OF` — kept
+distinct from the existing `ON_BEHALF_OF` precisely so the narrower org-plane reach is
+distinguishable in the audit trail from the platform-wide one).
+- **List children + statuses** (op 1) — the one op with no single target, so no executor at all:
+  a plain read of the non-RLS `tenant` table via a new `TenantDirectory#directChildren(UUID)`.
+- **Child user management** (op 2) — exactly `list`/`create`/`disable`/`reset` (the literal
+  wording), reusing `UserAdminService`'s existing methods unchanged inside the switched context —
+  no additional privilege by construction, since it is literally the same code path a local
+  `tenant:admin` already has. **Verify-against-code finding, not fixed (pre-existing, out of
+  scope):** `UserAdminService#create`/`#replaceRoles` apply zero privilege-escalation guard on
+  role codes today — a plain `tenant:admin` can already grant `PLATFORM_ADMIN`/`ORG_ADMIN` to a
+  user in their own tenant via the existing `/api/v1/users` endpoint. The brief's "cannot grant
+  platform:admin" line is satisfied as-is (whatever constraints exist today carry over unchanged
+  into the org-mediated path, per the brief's own wording) — actually adding an escalation guard
+  would be a separate hardening task touching the *local* `tenant:admin` flow too, not scoped here.
+- **Child schema view, read-only** (op 3) — `SchemaCatalog#listAll` under the switched context;
+  parent-side `ORG_ON_BEHALF_OF` marker only, no child-side row (matches the platform-wide
+  convention that reads are never separately audited — `GET /api/v1/schemas`/`GET /api/v1/users`
+  aren't either).
+- **Child suspend/reactivate** (op 4) — `TenantAdmin#suspend`/`#activate` unchanged, called inside
+  the switched context specifically so their own existing `audit.record(TENANT_SUSPENDED/
+  ACTIVATED, ...)` call lands under the *child's* trail rather than the caller's ambient one (the
+  `tenant` table itself needs no context switch, being RLS-excluded — the switch here exists
+  purely to route the audit write correctly).
+**Dual audit — turned out to be structurally free, not a new mechanism (contra the brief's
+hypothesis that it might need explicit new plumbing):** `runAsChildOrg` writes the parent-side
+marker *before* switching context (exactly like `runAsTenant` already does), then the wrapped
+action's own pre-existing audit call fires *after* the switch, naturally landing under the child's
+ambient tenant — the identical mechanism that already made `TenantProvisioningService
+#resetTotpInTenant` (platform:admin plane) dual-sided today, just never previously named as such.
+
+**D3 — the aggregated report (spec §4/§7 — transitive over the *full* subtree, deliberately wider
+than every op above):** new `TenantDirectory#descendants(UUID)` (bounded recursive walk, trivial at
+max depth 3). `OrgAdminService#report` reads one `AuditService#countActionsInWindow(UUID, Instant,
+Instant)` (new explicit-tenant overload — the existing one only ever reads `TenantContext
+.current()`) per descendant, each wrapped in `SystemAccessExecutor#runAsSystem` — the brief's
+explicit mandate, and empirically necessary: without it, RLS's `tenant_isolation` policy ANDs
+`tenant_id = current_setting('app.tenant_id')` onto the query's own explicit `tenantId` filter, so
+a `tenantId` other than whatever is ambient would silently return zero rows, not an error.
+`TenantContext` itself is never switched for this (system access only lifts the RLS predicate for
+the query's own transaction), so `report()` needs none of the context-switch machinery D2 needs,
+and records `AuditAction.ORG_REPORT_VIEWED` directly under the caller's own already-ambient
+(parent) tenant. **Design decision on shape (not explicitly pinned by the spec's own wording,
+resolved by reading §7 literally):** one report entry *per descendant, any depth* (its own counters
+only, never cumulative) plus one `rollup` field summing the entire subtree — satisfies both "لكل
+ابن" (per-child numbers) and §7's "rollup للشجرة كاملة" (whole-tree rollup) without the double-
+counting complexity a per-child-subtree-rollup design would have needed. Four counter categories
+named by the spec (issue/verify/consume/revoke), verify split ok/failed for parity with the
+existing `shared.web.StatsCounters` shape.
+
+**Contract, additive-only (confirmed via `git diff --stat` after regenerating both generated
+files):** new `KH-ORG-0404` (`org.child-not-found`, both bundles — collapses "doesn't exist" and
+"exists but isn't my direct child" into one anti-enumeration outcome, same D5 judgment call
+`KH-CLM-0404` already made). `docs/api/openapi.json` regenerated via `OpenApiContractTest`'s own
+mechanism — the diff shows a large block of `/api/v1/schemas/**` lines as removed+re-added
+identical, which is cosmetic path-reordering noise (alphabetical path sorting shifts once
+`/api/v1/org/**` sorts in before `/api/v1/schemas/**`), the exact same kind of diff-noise the
+KH-2.4x session's own record already flagged for `operationId` reassignment — not a real change.
+`docs/error-codes.md` regenerated via its own test. New `V17__seed_org_admin_role.sql` registered
+in `db/migration-checksums.lock` (`MigrationImmutabilityTest`).
+
+**D4 — tests, 465/465 green (454 baseline + 11 new, 0 removed/disabled):** new
+`shared.OrgOnBehalfOfCallerAllowlistTest` (mirrors the two existing allowlist tests exactly, pins
+`OrgAdminService` as the sole `runAsChildOrg` caller); `shared.SystemAccessCallerAllowlistTest`
+extended with `OrgAdminService` as the new `runAsSystem` caller; `db.SeededRoleScopesTest` +1
+(`ORG_ADMIN` has exactly `org:admin`); `db.TenantRoleCatalogTest` updated (3→4 roles throughout
+`ensureCatalog`'s own assertions; its literal copy of the *historical* `V12` statement is
+deliberately left at 3 — that one tests V12 itself, not the current catalog);
+`rbac.domain.TenantProvisioningServiceTest`'s three role-count assertions bumped 3→4 (onboarding
+now seeds four roles). New `rbac.OrgAdminGateTest` (9 tests, full HTTP-level): deny-by-default
+(plain `tenant:admin` → 403; a grandchild → 404; another parent's child → 404), privilege ceiling
+(`org:admin` alone can't reach `key:manage`'s `GET /api/v1/admin/signing-keys` → 403; a child's
+credential is unreachable even by direct id → 404, RLS-enforced), dual audit (suspend and
+create-user each produce both the parent's `ORG_ON_BEHALF_OF` row and the child's own specific
+action row), report numbers (two children issue 3 and 2 credentials respectively; the report's
+per-child counters and rollup match exactly, and the call itself is audited), and the mandatory-
+TOTP wall (an `org:admin` session with the password-change gate cleared but TOTP left unconfirmed
+gets `KH-USR-1403`, not through to the endpoint). **Security-invariant proof (explicit grep, same
+V5 discipline KH-2.6a's own session established):** `git diff --name-only main -- '*rls*'
+'*policy*'` → zero hits; `CrossTenantIsolationTest.java` byte-identical to `main`; it and
+`SystemAccessCallerAllowlistTest`/`ModulithBoundariesTest` all green, unmodified in substance
+(only the allowlist test's own enumeration Set gained the new entry, per its own documented
+purpose).
+
+**Docs:** `rbac`/`tenant` package-info.java and README.md both updated (new scope/role, new
+`TenantDirectory` methods, the new `OrgAdminService`/`OrgAdminController` surface) — CLAUDE.md
+work rule 1.
+
+**DoD status:**
+- `mvn verify` green (465/465), contract additive-only — done.
+- **Arabic gate — OPEN, blocking merge**, per the brief's explicit "بوابة العربية حاجبة": one new
+  message key + one new bilingual role name need Majd's review.
+- **[MAJD] compose walkthrough — not yet executed**, combining KH-2.6a's own deferred walkthrough
+  with this session's (see "Current phase / task" above for the exact scope).
+- **C12 (console: hierarchy management + org panel + on-behalf-of UI + lineage display) is now
+  UNBLOCKED** — the backend contract carries everything it needs (`/api/v1/org/**`'s full surface,
+  `TenantView.parentSlug`/`parentNameI18n` from KH-2.6a, `issuerLineage` from KH-2.6a). Per FS-2.5
+  §8's session order (2.6a ← 2.6b ← C12), C12 may now be scheduled once this session's two open
+  gates above close and it merges.
+- **DONE, OPENED as PR #65** (2026-08-19, branch `feat/KH-2.6b-BE-org-admin-reports`, commit
+  `096eb30`, `https://github.com/GloryMs/khatm-platform/pull/65`) — committed/pushed/PR'd only
+  after Majd's explicit "commit this and open the PR" instruction. Not yet merged: the Arabic and
+  compose-walkthrough gates above are still open, and CI has not yet been confirmed green on the
+  PR itself.
 
 ## 2026-08-18 — Session: feat/KH-2.6a-BE-hierarchy-foundation (tenant hierarchy foundation)
 

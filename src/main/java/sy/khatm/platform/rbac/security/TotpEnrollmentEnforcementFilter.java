@@ -19,12 +19,13 @@ import sy.khatm.platform.rbac.persistence.AppUserRepository;
 import sy.khatm.platform.shared.error.ErrorCode;
 
 /**
- * Enforces mandatory TOTP enrollment (spec FS-2.2 V1): a console user holding any of {@code
- * revoke}/{@code tenant:admin}/{@code platform:admin}/{@code key:manage} but with no active
- * (confirmed) TOTP enrollment may call only the enroll/confirm endpoints, {@code GET
- * /api/v1/auth/me}, logout, and the platform's genuinely-public paths — every other authenticated
- * call is rejected with {@code 403 KH-USR-1403} so the console can route to the enrollment screen
- * on that distinct code rather than a generic missing-scope 403.
+ * Enforces mandatory TOTP enrollment (spec FS-2.2 V1; {@code org:admin} added KH-2.6b, spec FS-2.5
+ * §3, same policy already applied to every other privileged scope): a console user holding any of
+ * {@code revoke}/{@code tenant:admin}/{@code platform:admin}/{@code key:manage}/{@code org:admin}
+ * but with no active (confirmed) TOTP enrollment may call only the enroll/confirm endpoints, {@code
+ * GET /api/v1/auth/me}, logout, and the platform's genuinely-public paths — every other
+ * authenticated call is rejected with {@code 403 KH-USR-1403} so the console can route to the
+ * enrollment screen on that distinct code rather than a generic missing-scope 403.
  *
  * <p>Mirrors {@code PasswordChangeEnforcementFilter}'s exact shape (per the session brief — forced
  * enrollment reuses this pattern, not a sibling invented from scratch): same live-per-request-read
@@ -45,7 +46,7 @@ import sy.khatm.platform.shared.error.ErrorCode;
 class TotpEnrollmentEnforcementFilter extends OncePerRequestFilter {
 
   private static final Set<String> MANDATORY_SCOPES =
-      Set.of("revoke", "tenant:admin", "platform:admin", "key:manage");
+      Set.of("revoke", "tenant:admin", "platform:admin", "key:manage", "org:admin");
 
   private final AppUserRepository users;
   private final SecurityEnvelopeWriter envelopeWriter;

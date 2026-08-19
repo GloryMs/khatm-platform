@@ -138,6 +138,36 @@ public class AuditService {
   }
 
   /**
+   * Count {@code audit_log} rows per {@link AuditAction#name()} for an explicit tenant within
+   * {@code [from, to)} (KH-2.6b, spec FS-2.5 §4) — the org-plane aggregated-report counterpart of
+   * {@link #countActionsInWindow(Instant, Instant)}, which always reads {@link
+   * TenantContext#current()}. Only meaningful when called under {@code
+   * shared.SystemAccessExecutor#runAsSystem}: {@code tenant_isolation}'s RLS predicate ANDs {@code
+   * tenant_id = current_setting('app.tenant_id')} onto this query's own {@code tenantId} filter
+   * regardless, so without the {@code system_access} permissive policy also granted, a {@code
+   * tenantId} other than whatever is ambient would silently return zero rows rather than the
+   * caller's intended tenant's real counts — the exact scatter-gather-across-tenants shape spec §4
+   * asks for, reached through this one audited path rather than any RLS policy change ({@code
+   * rbac.domain.OrgAdminService} is the sole caller — {@code shared
+   * .SystemAccessCallerAllowlistTest} enumerates it).
+   *
+   * @param tenantId the tenant to count for
+   * @param from inclusive start of the window
+   * @param to exclusive end of the window
+   * @return a map from the raw {@code action} string to its count within the window for {@code
+   *     tenantId}; an action with zero occurrences is simply absent, never a zero entry
+   */
+  @Transactional(readOnly = true)
+  public Map<String, Long> countActionsInWindow(UUID tenantId, Instant from, Instant to) {
+    List<Object[]> rows = repository.countByActionInWindow(tenantId, from, to);
+    Map<String, Long> counts = new LinkedHashMap<>();
+    for (Object[] row : rows) {
+      counts.put((String) row[0], ((Number) row[1]).longValue());
+    }
+    return counts;
+  }
+
+  /**
    * Count {@code audit_log} rows per UTC day per {@link AuditAction#name()} within {@code [from,
    * to)} (spec FS-1.5.4 #1, {@code GET /api/v1/stats/daily}) — the per-day breakdown behind the
    * console's lifecycle chart, same aggregation as {@link #countActionsInWindow} bucketed by day.

@@ -21,8 +21,15 @@ import java.util.Set;
  * status view; KH-2.3's rotation endpoint will reuse it); {@link #TENANT_ADMIN} gates a tenant's
  * own operational API-key management (spec V4 — deliberately distinct from {@link #KEY_MANAGE},
  * which is signing keys only); {@link #PLATFORM_ADMIN} gates the cross-tenant {@code
- * /api/v1/admin/tenants/**} plane exclusively (spec D2) and is the sole scope {@code
- * shared.OnBehalfOfExecutor} accepts.
+ * /api/v1/admin/tenants/**} plane exclusively (spec D2) and is one of the two scopes {@code
+ * shared.OnBehalfOfExecutor} accepts. {@link #ORG_ADMIN} (KH-2.6b, spec FS-2.5 §3) is the tenth
+ * scope, added to the fixed catalog for the tenant-hierarchy epic — granted to a user on a
+ * <em>parent</em> tenant, it authorizes exactly the four named operations on that tenant's
+ * <em>direct</em> children only (never grandchildren), each reached via {@code
+ * shared.OnBehalfOfExecutor}'s org-plane {@code runAsChildOrg}, gated under {@code /api/v1/org/**}.
+ * It carries no privilege over the caller's own tenant beyond what {@link #TENANT_ADMIN} already
+ * grants there, and no visibility into a child's credentials/proofs/detailed audit trail or its
+ * signing keys — entity management, not content (spec §3).
  */
 final class ScopeRegistry {
 
@@ -37,6 +44,7 @@ final class ScopeRegistry {
   static final String KEY_MANAGE = "key:manage";
   static final String TENANT_ADMIN = "tenant:admin";
   static final String PLATFORM_ADMIN = "platform:admin";
+  static final String ORG_ADMIN = "org:admin";
 
   /** The complete registry (spec D1) — every legal scope value, nothing else. */
   static final Set<String> ALL =
@@ -49,7 +57,8 @@ final class ScopeRegistry {
           CONSUMER_MANAGE,
           KEY_MANAGE,
           TENANT_ADMIN,
-          PLATFORM_ADMIN);
+          PLATFORM_ADMIN,
+          ORG_ADMIN);
 
   /** The four action scopes schema READ endpoints accept in addition to {@link #SCHEMA_MANAGE}. */
   static final Set<String> SCHEMA_READ_SCOPES =
