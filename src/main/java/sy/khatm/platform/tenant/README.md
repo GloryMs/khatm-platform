@@ -15,7 +15,10 @@ tree).
   .TenantContextFilter`, `ApiKeyService#verify`, `AuthService#login`) to resolve a principal's
   tenant and enforce suspension. `ancestors(UUID)` (KH-2.6a) resolves a tenant's full ancestor
   chain, nearest first — `credential.domain.CredentialService#verify` is the one caller, for the
-  display-only `issuerLineage` field (spec FS-2.5 §5).
+  display-only `issuerLineage` field (spec FS-2.5 §5). `directChildren(UUID)`/`descendants(UUID)`
+  (KH-2.6b, spec FS-2.5 §3/§4/§7) resolve, respectively, one level of children (the `org:admin`
+  plane's direct-children-only administrative operations) and the full transitive subtree (the
+  aggregated report's rollup) — `rbac.domain.OrgAdminService` is the one caller of both.
 - `TenantAdmin` — the admin plane behind `/api/v1/admin/tenants` (`platform:admin` scope
   exclusively, spec FS-2.2 D2 — the entire path has no other caller, so `TenantAdminService#create`
   keeps its own manual `TenantContext` switch rather than going through `shared.OnBehalfOfExecutor`,

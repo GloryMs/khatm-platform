@@ -56,6 +56,11 @@ class SeededRoleScopesTest extends IntegrationTestSupport {
   }
 
   @Test
+  void orgAdmin_hasOnlyOrgAdmin() {
+    assertThat(scopesOf("ORG_ADMIN")).containsExactlyInAnyOrder("org:admin");
+  }
+
+  @Test
   void noRoleAnywhere_stillCarriesTheRetiredAdminScope() {
     List<String> codes =
         jdbc.query(

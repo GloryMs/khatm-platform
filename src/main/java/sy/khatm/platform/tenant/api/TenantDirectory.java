@@ -46,4 +46,31 @@ public interface TenantDirectory {
    *     tenantId} is itself a root or does not exist
    */
   List<TenantRef> ancestors(UUID tenantId);
+
+  /**
+   * A tenant's direct children only, in no particular order (KH-2.6b, spec FS-2.5 §3/§7: {@code
+   * org:admin}'s four named operations act only on direct children, never grandchildren). The
+   * runtime cross-module counterpart of {@code tenant.persistence.TenantRepository
+   * #findAllByParentTenantId} — {@code rbac.domain.OrgAdminService} both renders this directly
+   * (spec §3's "list children and their statuses") and uses it to validate that a path {@code id}
+   * genuinely names a direct child before reaching for {@code shared.OnBehalfOfExecutor
+   * #runAsChildOrg}.
+   *
+   * @param tenantId the parent tenant
+   * @return every tenant whose immediate parent is {@code tenantId}; empty if it has none or does
+   *     not exist
+   */
+  List<TenantRef> directChildren(UUID tenantId);
+
+  /**
+   * A tenant's full descendant subtree, transitively (KH-2.6b, spec FS-2.5 §4/§7: the aggregated
+   * report rolls up "children and grandchildren"). Bounded by the max hierarchy depth (three
+   * levels, §7), so the recursive walk this performs is trivially shallow — never more than two
+   * levels below {@code tenantId}.
+   *
+   * @param tenantId the tenant whose descendant subtree to resolve
+   * @return every descendant at any depth below {@code tenantId}, in no particular order; empty if
+   *     it has none or does not exist
+   */
+  List<TenantRef> descendants(UUID tenantId);
 }

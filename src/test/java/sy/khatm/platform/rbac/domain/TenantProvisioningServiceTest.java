@@ -103,7 +103,7 @@ class TenantProvisioningServiceTest extends IntegrationTestSupport {
                   "SELECT COUNT(*) FROM role WHERE tenant_id = ?",
                   Integer.class,
                   result.tenant().id());
-          assertThat(roleCount).as("the full 3-role catalog must exist").isEqualTo(3);
+          assertThat(roleCount).as("the full 4-role catalog must exist").isEqualTo(4);
 
           Integer userCount =
               jdbc.queryForObject(
@@ -146,7 +146,7 @@ class TenantProvisioningServiceTest extends IntegrationTestSupport {
                   "SELECT COUNT(*) FROM role WHERE tenant_id = ?",
                   Integer.class,
                   result.tenant().id());
-          assertThat(roleCount).isEqualTo(3);
+          assertThat(roleCount).isEqualTo(4);
           return null;
         });
   }
@@ -197,7 +197,7 @@ class TenantProvisioningServiceTest extends IntegrationTestSupport {
           Integer roleCount =
               jdbc.queryForObject(
                   "SELECT COUNT(*) FROM role WHERE tenant_id = ?", Integer.class, firstTenant.id());
-          assertThat(roleCount).isEqualTo(3);
+          assertThat(roleCount).isEqualTo(4);
           return null;
         });
 

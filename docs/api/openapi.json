@@ -1008,6 +1008,66 @@
         },
         "type" : "object"
       },
+      "OrgReportCounters" : {
+        "properties" : {
+          "consumed" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "issued" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "revoked" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "verifyFailed" : {
+            "format" : "int64",
+            "type" : "integer"
+          },
+          "verifyOk" : {
+            "format" : "int64",
+            "type" : "integer"
+          }
+        },
+        "type" : "object"
+      },
+      "OrgReportEntry" : {
+        "properties" : {
+          "counters" : {
+            "$ref" : "#/components/schemas/OrgReportCounters"
+          },
+          "nameI18n" : {
+            "$ref" : "#/components/schemas/LocalizedText"
+          },
+          "tenantId" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "tenantSlug" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "OrgReportView" : {
+        "properties" : {
+          "children" : {
+            "items" : {
+              "$ref" : "#/components/schemas/OrgReportEntry"
+            },
+            "type" : "array"
+          },
+          "rollup" : {
+            "$ref" : "#/components/schemas/OrgReportCounters"
+          },
+          "window" : {
+            "$ref" : "#/components/schemas/StatsWindow"
+          }
+        },
+        "type" : "object"
+      },
       "ReplaceRolesRequest" : {
         "properties" : {
           "roles" : {
@@ -1311,6 +1371,27 @@
           },
           "to" : {
             "format" : "date-time",
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "TenantRef" : {
+        "properties" : {
+          "active" : {
+            "type" : "boolean"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "nameI18n" : {
+            "$ref" : "#/components/schemas/LocalizedText"
+          },
+          "slug" : {
+            "type" : "string"
+          },
+          "status" : {
             "type" : "string"
           }
         },
@@ -3598,6 +3679,604 @@
         "tags" : [ "credential" ]
       }
     },
+    "/api/v1/org/children" : {
+      "get" : {
+        "description" : "Every direct child of the caller's own tenant and its status — never grandchildren (spec §7). Requires the org:admin scope.",
+        "operationId" : "listChildren",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/TenantRef"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "The caller's direct children"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the org:admin scope (KH-RBC-0403)"
+          }
+        },
+        "summary" : "List the caller's direct children",
+        "tags" : [ "org-admin" ]
+      }
+    },
+    "/api/v1/org/children/{id}/activate" : {
+      "post" : {
+        "description" : "Flips a SUSPENDED direct child back to ACTIVE. Audited ORG_ON_BEHALF_OF (parent) + TENANT_ACTIVATED (child). Requires the org:admin scope.",
+        "operationId" : "activateChild",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TenantView"
+                }
+              }
+            },
+            "description" : "Child activated"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the org:admin scope (KH-RBC-0403)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "id is not a direct child of the caller's own tenant (KH-ORG-0404)"
+          }
+        },
+        "summary" : "Reactivate a direct child tenant",
+        "tags" : [ "org-admin" ]
+      }
+    },
+    "/api/v1/org/children/{id}/schemas" : {
+      "get" : {
+        "description" : "Read-only — org:admin never manages a child's schemas, only views them (spec §3). Audited ORG_ON_BEHALF_OF (parent) only, matching the platform-wide convention that reads are not separately audited. Requires the org:admin scope.",
+        "operationId" : "listChildSchemas",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "status",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/SchemaSummary"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "The child's schemas"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the org:admin scope (KH-RBC-0403)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "id is not a direct child of the caller's own tenant (KH-ORG-0404)"
+          }
+        },
+        "summary" : "List a direct child's schemas (read-only)",
+        "tags" : [ "org-admin" ]
+      }
+    },
+    "/api/v1/org/children/{id}/suspend" : {
+      "post" : {
+        "description" : "Flips a direct child to SUSPENDED — tenant:admin degree, never a delete (spec §3). Reuses TenantAdmin#suspend's existing no-cascade guard unchanged. Audited ORG_ON_BEHALF_OF (parent) + TENANT_SUSPENDED (child). Requires the org:admin scope.",
+        "operationId" : "suspendChild",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/TenantView"
+                }
+              }
+            },
+            "description" : "Child suspended"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the org:admin scope (KH-RBC-0403)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "id is not a direct child of the caller's own tenant (KH-ORG-0404)"
+          },
+          "409" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "The child itself has an active child of its own (KH-TNT-1409)"
+          }
+        },
+        "summary" : "Suspend a direct child tenant",
+        "tags" : [ "org-admin" ]
+      }
+    },
+    "/api/v1/org/children/{id}/users" : {
+      "get" : {
+        "description" : "The same row shape GET /api/v1/users returns for a tenant admin's own tenant, run on behalf of a direct child (audited ORG_ON_BEHALF_OF). Requires the org:admin scope.",
+        "operationId" : "listChildUsers",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/UserSummary"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "The child's users"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the org:admin scope (KH-RBC-0403)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "id is not a direct child of the caller's own tenant (KH-ORG-0404)"
+          }
+        },
+        "summary" : "List a direct child's users",
+        "tags" : [ "org-admin" ]
+      },
+      "post" : {
+        "description" : "Creates a user in a direct child with a generated temporary password (shown once) — the same creation shape and constraints as a local tenant:admin's own-tenant create, no additional privilege (spec §3). Audited ORG_ON_BEHALF_OF (parent) + USER_CREATED (child). Requires the org:admin scope.",
+        "operationId" : "createChildUser",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CreateUserRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CreateUserResponse"
+                }
+              }
+            },
+            "description" : "User created; temporary password returned once"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Invalid username or role code (KH-USR-0400)"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the org:admin scope (KH-RBC-0403)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "id is not a direct child of the caller's own tenant (KH-ORG-0404)"
+          },
+          "409" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Username already exists in that child (KH-USR-0409)"
+          }
+        },
+        "summary" : "Create a user in a direct child",
+        "tags" : [ "org-admin" ]
+      }
+    },
+    "/api/v1/org/children/{id}/users/{userId}/disable" : {
+      "post" : {
+        "description" : "Sets the child's user DISABLED — audited ORG_ON_BEHALF_OF (parent) + USER_DISABLED (child). Requires the org:admin scope. Refused with 409 (KH-USR-0423) if this is the child's last active administrator.",
+        "operationId" : "disableChildUser",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "userId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/UserSummary"
+                }
+              }
+            },
+            "description" : "User disabled"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the org:admin scope (KH-RBC-0403)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "id is not a direct child of the caller's own tenant (KH-ORG-0404), or the user does not exist in it (KH-USR-0404)"
+          },
+          "409" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Would remove the child's last active administrator (KH-USR-0423)"
+          }
+        },
+        "summary" : "Disable a user in a direct child",
+        "tags" : [ "org-admin" ]
+      }
+    },
+    "/api/v1/org/children/{id}/users/{userId}/reset-password" : {
+      "post" : {
+        "description" : "Generates a new temporary password (shown once) for a user in a direct child — audited ORG_ON_BEHALF_OF (parent) + USER_PASSWORD_RESET (child). Requires the org:admin scope.",
+        "operationId" : "resetChildUserPassword",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "userId",
+          "required" : true,
+          "schema" : {
+            "format" : "uuid",
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CreateUserResponse"
+                }
+              }
+            },
+            "description" : "Password reset; temporary password returned once"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the org:admin scope (KH-RBC-0403)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "id is not a direct child of the caller's own tenant (KH-ORG-0404), or the user does not exist in it (KH-USR-0404)"
+          }
+        },
+        "summary" : "Reset a user's password in a direct child",
+        "tags" : [ "org-admin" ]
+      }
+    },
+    "/api/v1/org/reports" : {
+      "get" : {
+        "description" : "Issue/verify/consume/revoke counters per descendant tenant (any depth, transitive over the full subtree — spec §7) plus a whole-subtree rollup, for the requested window. Numbers only — never a row, a claim, or any other content (P1). Defaults to the last 30 days when from/to are omitted. Audited ORG_REPORT_VIEWED. Requires the org:admin scope.",
+        "operationId" : "reports",
+        "parameters" : [ {
+          "in" : "query",
+          "name" : "from",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "query",
+          "name" : "to",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/OrgReportView"
+                }
+              }
+            },
+            "description" : "The aggregated report"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "from/to was present but not a valid ISO-8601 instant"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid session or API key"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the org:admin scope (KH-RBC-0403)"
+          }
+        },
+        "summary" : "Fetch the aggregated proofs-not-content report",
+        "tags" : [ "org-admin" ]
+      }
+    },
     "/api/v1/schemas" : {
       "get" : {
         "description" : "Read-only tenant metadata (id, display name, version, status) — every authenticated actor kind may call this, no specific scope required (a deliberate, documented decision: see rbac.security.SecurityConfig's Javadoc). The optional status filter (KH-1.1.1) lets the console's schema management view show DRAFT rows too; the issue-form picker keeps filtering to PUBLISHED client-side, as before.",
@@ -4993,5 +5672,8 @@
   }, {
     "description" : "Wallet claim-code delivery",
     "name" : "claim"
+  }, {
+    "description" : "org:admin on-behalf-of plane — direct children only (spec FS-2.5 §3/§4)",
+    "name" : "org-admin"
   } ]
 }

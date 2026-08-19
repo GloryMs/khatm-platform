@@ -50,11 +50,24 @@ import sy.khatm.platform.shared.error.ErrorCode;
  * <p>The audit row is written <em>before</em> the context switch — under the calling admin's own
  * ambient tenant (their own audit trail), with {@code entityRef} identifying which tenant was acted
  * upon, per spec D4's own wording. See {@link AuditAction#ON_BEHALF_OF}.
+ *
+ * <p><b>{@link #runAsChildOrg} (KH-2.6b, spec FS-2.5 §3)</b> — the org-plane sibling of {@link
+ * #runAsTenant}, same shape, extended literally rather than a new parallel mechanism (per this
+ * session's own preamble): re-verifies {@code org:admin} instead of {@code platform:admin}, and
+ * records {@link AuditAction#ORG_ON_BEHALF_OF} instead of {@link AuditAction#ON_BEHALF_OF} so the
+ * materially narrower org-plane reach (direct children only, entity management not content) is
+ * distinguishable in the audit trail from the platform-wide one. Just like {@link #runAsTenant},
+ * this class has no dependency on the {@code tenant} module — the caller ({@code
+ * rbac.domain.OrgAdminService}) must already have resolved the target as a genuine <em>direct</em>
+ * child of the caller's own tenant before invoking this; a scope check alone cannot express that
+ * relationship. {@code shared.OrgOnBehalfOfCallerAllowlistTest} pins the call-site enumeration, the
+ * same discipline {@code shared.OnBehalfOfCallerAllowlistTest} applies to {@link #runAsTenant}.
  */
 @Component
 public class OnBehalfOfExecutor {
 
   private static final String PLATFORM_ADMIN_AUTHORITY = "SCOPE_platform:admin";
+  private static final String ORG_ADMIN_AUTHORITY = "SCOPE_org:admin";
 
   private final AuditService audit;
 
@@ -86,12 +99,45 @@ public class OnBehalfOfExecutor {
     }
   }
 
+  /**
+   * Run {@code action} on behalf of {@code targetTenantId}/{@code targetTenantSlug} under the
+   * {@code org:admin} plane (KH-2.6b, spec FS-2.5 §3) — the caller must already have resolved and
+   * validated that the target is a genuine <em>direct</em> child of the caller's own tenant; this
+   * class has no dependency on the {@code tenant} module to check that itself.
+   *
+   * @param targetTenantId the target (child) tenant's id
+   * @param targetTenantSlug the target (child) tenant's slug
+   * @param action the work to perform under the target tenant's context
+   * @param <T> the action's result type
+   * @return the action's result
+   * @throws AuthorizationException {@code KH-RBC-0403} if the current caller does not hold {@code
+   *     org:admin}
+   */
+  public <T> T runAsChildOrg(UUID targetTenantId, String targetTenantSlug, Supplier<T> action) {
+    requireOrgAdmin();
+    audit.record(AuditAction.ORG_ON_BEHALF_OF, "tenant", targetTenantSlug, null);
+    TenantContext.set(targetTenantId, targetTenantSlug);
+    try {
+      return action.get();
+    } finally {
+      TenantContext.clear();
+    }
+  }
+
   private static void requirePlatformAdmin() {
+    requireAuthority(PLATFORM_ADMIN_AUTHORITY);
+  }
+
+  private static void requireOrgAdmin() {
+    requireAuthority(ORG_ADMIN_AUTHORITY);
+  }
+
+  private static void requireAuthority(String requiredAuthority) {
     Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
     boolean granted =
         authentication != null
             && authentication.getAuthorities().stream()
-                .anyMatch(authority -> PLATFORM_ADMIN_AUTHORITY.equals(authority.getAuthority()));
+                .anyMatch(authority -> requiredAuthority.equals(authority.getAuthority()));
     if (!granted) {
       throw new AuthorizationException(ErrorCode.KH_RBC_0403, "error.rbc.forbidden");
     }

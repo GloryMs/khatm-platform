@@ -71,6 +71,19 @@
  * gap this closes: before this session, any caller holding the endpoint's baseline scope could name
  * an arbitrary foreign {@code tenantId} with no cross-tenant check at all.
  *
+ * <p><b>KH-2.6b — org:admin on-behalf-of plane (spec FS-2.5 §3/§4):</b> {@link
+ * sy.khatm.platform.rbac.domain.OrgAdminService}, under {@code /api/v1/org/**} ({@code
+ * rbac.web.OrgAdminController}) — the fourth scope's home, alongside the fixed role catalog's
+ * fourth entry ({@code ORG_ADMIN}, carrying only {@code org:admin}). Lives here for the identical
+ * Modulith-cycle reason {@link sy.khatm.platform.rbac.domain.TenantProvisioningService} already
+ * does: child user management touches this module's own {@code app_user}/{@code role} tables.
+ * Reuses {@code schema :: api}'s {@code SchemaCatalog#listAll} (child schema view, read-only) and
+ * {@code tenant :: api}'s {@code TenantAdmin#suspend}/{@code #activate} (child suspend/reactivate)
+ * unchanged — no new cross-module edges beyond the ones this module already declared. {@code
+ * shared.OnBehalfOfExecutor#runAsChildOrg} is the org-plane sibling of {@code #runAsTenant}, same
+ * shape, gated on {@code org:admin} instead of {@code platform:admin}; {@code
+ * TotpEnrollmentEnforcementFilter}'s mandatory-scope set now includes {@code org:admin} too.
+ *
  * <p><b>KH-2.2c — TOTP second factor (spec FS-2.2 V1):</b> self-service enrollment ({@code POST
  * /users/me/totp/enroll}/{@code /confirm}, {@link sy.khatm.platform.rbac.domain.TotpService}),
  * AES-256-GCM secret encryption at rest ({@link

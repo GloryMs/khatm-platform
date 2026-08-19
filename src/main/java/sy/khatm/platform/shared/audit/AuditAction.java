@@ -343,5 +343,31 @@ public enum AuditAction {
    * parentSlug}). {@code entityRef} is the tenant's slug; {@code detail.previousParentSlug} carries
    * the parent it was unlinked from.
    */
-  TENANT_PARENT_UNLINKED
+  TENANT_PARENT_UNLINKED,
+
+  /**
+   * An {@code org:admin} caller acted on one of their tenant's <em>direct</em> children ({@code
+   * shared.OnBehalfOfExecutor#runAsChildOrg}, KH-2.6b, spec FS-2.5 §3) — e.g. creating a user in
+   * that child, or suspending it. Recorded under the <em>caller's own</em> ambient (parent) tenant,
+   * before {@code TenantContext} is switched to the child — the exact {@link #ON_BEHALF_OF} shape,
+   * kept as a distinct action so the materially narrower org-plane (direct children only, entity
+   * management not content) is distinguishable in the audit trail from {@link #ON_BEHALF_OF}'s
+   * platform-wide reach. {@code entityRef} is the target child's slug. The matching row in the
+   * child's own audit trail (spec §3's "dual audit") is whatever specific action the org-mediated
+   * call itself performs there (e.g. {@link #USER_CREATED}, {@link #TENANT_SUSPENDED}) — those
+   * actions already self-audit under whichever tenant is ambient when they run, so no separate
+   * child-side marker action is needed for a mutating call; a read-only org call (listing a child's
+   * users, viewing its schemas) has no child-side row, matching the platform-wide convention that
+   * reads are not audited.
+   */
+  ORG_ON_BEHALF_OF,
+
+  /**
+   * An {@code org:admin} caller fetched the aggregated proofs-not-content report over their
+   * tenant's full descendant subtree ({@code rbac.web.OrgAdminController}, KH-2.6b, spec FS-2.5
+   * §4). {@code entityRef} is {@code null} (the report spans the whole subtree, not one entity);
+   * {@code detail} carries {@code descendantCount}, {@code from}, and {@code to} — counters and a
+   * window, never any row-level detail (P1).
+   */
+  ORG_REPORT_VIEWED
 }

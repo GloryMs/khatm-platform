@@ -64,6 +64,30 @@ class TenantDirectoryService implements TenantDirectory {
     return chain;
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public List<TenantRef> directChildren(UUID tenantId) {
+    return tenants.findAllByParentTenantId(tenantId).stream()
+        .map(TenantDirectoryService::toRef)
+        .toList();
+  }
+
+  @Override
+  @Transactional(readOnly = true)
+  public List<TenantRef> descendants(UUID tenantId) {
+    List<TenantRef> subtree = new ArrayList<>();
+    collectDescendants(tenantId, subtree);
+    return subtree;
+  }
+
+  /** Bounded by construction (max depth three, §7) — one call per level below {@code tenantId}. */
+  private void collectDescendants(UUID tenantId, List<TenantRef> accumulator) {
+    for (Tenant child : tenants.findAllByParentTenantId(tenantId)) {
+      accumulator.add(toRef(child));
+      collectDescendants(child.getId(), accumulator);
+    }
+  }
+
   private static TenantRef toRef(Tenant tenant) {
     return new TenantRef(
         tenant.getId(), tenant.getSlug(), tenant.getStatus(), tenant.getNameI18n());

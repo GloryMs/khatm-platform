@@ -13,15 +13,19 @@
  * quotas/feature flags remain out of scope (a later KH-2.x).
  *
  * <p><b>Exposed API</b> ({@code tenant.api}): {@link sy.khatm.platform.tenant.api.TenantDirectory}
- * (read-only lookup by id/slug — the {@code rbac} module's runtime cross-module dependency) and
- * {@link sy.khatm.platform.tenant.api.TenantAdmin} (the admin plane behind {@code
- * /api/v1/admin/tenants}). This module depends one-way on {@code key :: api} ({@code
- * TenantKeyProvisioner}) and {@code status :: api} ({@code StatusListAllocator#ensureList}) for
- * onboarding — deliberately one-way, so {@code key}/{@code status} never depend back on {@code
- * tenant :: api}, which would be a Modulith cycle. The two public, slug-keyed HTTP endpoints that
- * would otherwise need such a reverse dependency ({@code GET /t/{tenantSlug}/.well-known/jwks.json}
- * and {@code GET /sl/{tenantSlug}/{listCode}}, relocated from {@code status.web}) live in {@code
- * tenant.web} instead, for the same reason.
+ * (read-only lookup by id/slug — the {@code rbac} module's runtime cross-module dependency; {@code
+ * directChildren}/{@code descendants}, KH-2.6b spec FS-2.5 §3/§4, back the {@code org:admin}
+ * plane's direct-children administrative operations and its full-subtree aggregated report,
+ * respectively) and {@link sy.khatm.platform.tenant.api.TenantAdmin} (the admin plane behind {@code
+ * /api/v1/admin/tenants}; its {@code suspend}/{@code activate} are also reached, unchanged, from
+ * {@code rbac.domain.OrgAdminService} once it has independently validated a direct-child
+ * relationship). This module depends one-way on {@code key :: api} ({@code TenantKeyProvisioner})
+ * and {@code status :: api} ({@code StatusListAllocator#ensureList}) for onboarding — deliberately
+ * one-way, so {@code key}/{@code status} never depend back on {@code tenant :: api}, which would be
+ * a Modulith cycle. The two public, slug-keyed HTTP endpoints that would otherwise need such a
+ * reverse dependency ({@code GET /t/{tenantSlug}/.well-known/jwks.json} and {@code GET
+ * /sl/{tenantSlug}/{listCode}}, relocated from {@code status.web}) live in {@code tenant.web}
+ * instead, for the same reason.
  *
  * <p><b>Published events:</b> (none yet)
  *

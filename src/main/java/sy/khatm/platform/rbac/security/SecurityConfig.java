@@ -166,6 +166,13 @@ import sy.khatm.platform.shared.audit.AuditService;
  *       caller's own ambient tenant, no cross-tenant path exists.
  * </ul>
  *
+ * <p><b>org:admin on-behalf-of plane (KH-2.6b, spec FS-2.5 §3/§4):</b> {@code ORG_PATH} ({@code
+ * /api/v1/org/**}) gates every route on {@code org:admin}, console-session-only (same actor-kind
+ * stance as {@code USERS_PATH}) — deliberately its own prefix rather than a fifth {@code
+ * /api/v1/admin/**} family (spec V2's default), since {@code org:admin} is materially narrower than
+ * every scope gating that wildcard (direct children of the caller's own tenant only, never
+ * platform-wide). {@code rbac.web.OrgAdminController}'s own Javadoc has the endpoint list.
+ *
  * <p><b>TOTP second factor (KH-2.2c, spec FS-2.2 V1):</b> {@code POST /api/v1/auth/totp} completes
  * a login flagged {@code totpRequired} — public, like login itself, since no session exists yet at
  * that point (the challenge is tracked server-side by an opaque id, not by any session state).
@@ -241,6 +248,10 @@ class SecurityConfig {
   private static final String USER_TOTP_ENROLL_PATH = "/api/v1/users/me/totp/enroll";
   private static final String USER_TOTP_CONFIRM_PATH = "/api/v1/users/me/totp/confirm";
   private static final String AUTH_TOTP_PATH = "/api/v1/auth/totp";
+  // KH-2.6b (spec FS-2.5 §3/§4): the org:admin on-behalf-of plane. Deliberately its own prefix,
+  // not under /api/v1/admin/** (spec V2's default) — org:admin is not platform:admin, and this
+  // plane only ever touches the caller's own direct children, never the whole platform.
+  private static final String ORG_PATH = "/api/v1/org/**";
   private static final String[] SWAGGER_PATHS = {
     "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html"
   };
@@ -382,6 +393,11 @@ class SecurityConfig {
         .access(ScopeGuard.requireUserSession())
         .requestMatchers(USERS_PATH)
         .access(ScopeGuard.requireScopeAndUserSession(ScopeRegistry.TENANT_ADMIN))
+        // KH-2.6b (spec FS-2.5 §3/§4): org:admin plane, console-session-only like the tenant
+        // user-management family above (an API key has no notion of "the caller's own tenant's
+        // direct children" the way a console session's ambient tenant does).
+        .requestMatchers(ORG_PATH)
+        .access(ScopeGuard.requireScopeAndUserSession(ScopeRegistry.ORG_ADMIN))
         .anyRequest()
         .authenticated();
   }

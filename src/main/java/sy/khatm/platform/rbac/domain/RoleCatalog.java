@@ -5,14 +5,17 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
- * The fixed, three-role catalog every tenant is provisioned with (spec FS-2.2 D5 — "custom roles
- * out of scope"). The single Java source of truth for a tenant's role definitions; {@code
- * V12__seed_tenant_role_catalogs.sql} is its migration-time mirror for tenants that already exist
- * (the two must stay in lockstep — the role-catalog regression test pins the post-onboarding result
- * against these exact values, and {@code db.SeededRoleScopesTest} pins the default tenant's).
+ * The fixed role catalog every tenant is provisioned with (spec FS-2.2 D5 — "custom roles out of
+ * scope"; extended to four roles KH-2.6b, spec FS-2.5 §3 — {@code ORG_ADMIN}, still a fixed catalog
+ * entry, not a custom role). The single Java source of truth for a tenant's role definitions;
+ * {@code V12__seed_tenant_role_catalogs.sql} and {@code V17__seed_org_admin_role.sql} are its
+ * migration-time mirrors for tenants that already exist (the three must stay in lockstep — the
+ * role-catalog regression test pins the post-onboarding result against these exact values, and
+ * {@code db.SeededRoleScopesTest} pins the default tenant's).
  *
- * <p>Scope sets are the granular {@code V10__scope_registry_rescope.sql} values — the retired
- * {@code admin} scope never appears here (clean cut, spec FS-2.2 V3).
+ * <p>Scope sets are the granular {@code V10__scope_registry_rescope.sql} values plus {@code
+ * org:admin} (KH-2.6b) — the retired {@code admin} scope never appears here (clean cut, spec FS-2.2
+ * V3).
  */
 final class RoleCatalog {
 
@@ -54,7 +57,9 @@ final class RoleCatalog {
               "ISSUER_OPERATOR",
               "Issuer Operator",
               "مشغّل الإصدار",
-              List.of("issue", "verify", "revoke")));
+              List.of("issue", "verify", "revoke")),
+          new Definition(
+              "ORG_ADMIN", "Organization Administrator", "مدير الجهة الأم", List.of("org:admin")));
 
   /** The catalog's role codes — the only legal values for a user's {@code roles[]} request. */
   static Set<String> codes() {
