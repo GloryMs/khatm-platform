@@ -13,9 +13,11 @@ Build and verify, Trivy vuln scan, compose-smoke (restore-from-zero), gitleaks. 
 `8ebb68b`, zero open PRs; the feature branch was not deleted (still `feat/KH-2.7-BE-jwks-discovery`
 locally and on `origin` — delete on request). `mvn verify` was green 473/473 pre-merge, zero
 RLS/contract drift.
-**[MAJD] next:** rebuild/redeploy staging (manual Vault unseal after), then issue a fresh
-credential from `moi-immigration` — SESSION-W5-jwks-discovery (wallet) is unblocked and waiting on
-exactly that.
+**[MAJD] live staging verification — DONE (2026-08-20):** staging rebuilt/redeployed, Vault
+manually unsealed, a fresh credential issued from `moi-immigration` — `jwks_uri` confirmed present
+on the issued credential. **SESSION-W5-jwks-discovery (wallet) is now fully unblocked**, with a
+live credential already in hand to test against; see the OPEN DECISION section below for the full
+note.
 
 **fix/verify-audit-tenant-attribution — DONE & MERGED via PR #66** (bug fix, not a WBS item;
 reported live from khatm-console testing 2026-08-19 while exercising KH-2.6b's own org:admin
@@ -83,11 +85,16 @@ scan, compose-smoke (restore-from-zero), gitleaks. `main` is now at `f839060`, z
   discovery belongs to FS-2.7 / Phase 3 trust hierarchy; jwks_uri is the compatible bridge.
 - Execution: SESSION-KH-2.7-BE-jwks-discovery (platform, commits A1 into the spec first)
   → SESSION-W5-jwks-discovery (wallet, resumes the paused session). Scheduling gates open.
-- **Platform half (SESSION-KH-2.7-BE-jwks-discovery) — DONE, PR open** (see the session entry
-  below for the full record). `jwks_uri` now baked into every newly issued credential.
-  **SESSION-W5-jwks-discovery (wallet) is now unblocked** — a fresh credential from
-  `moi-immigration` for live W5 testing needs a staging rebuild/redeploy first (manual Vault
-  unseal after), flagged to Majd below.
+- **Platform half (SESSION-KH-2.7-BE-jwks-discovery) — DONE & MERGED via PR #67** (see the
+  session entry below for the full record). `jwks_uri` now baked into every newly issued
+  credential.
+- **[MAJD] live staging verification (2026-08-20):** staging rebuilt/redeployed from `main` at
+  `8ebb68b`, Vault manually unsealed, then a fresh credential issued from `moi-immigration` —
+  `jwks_uri` confirmed present on the issued credential, matching this session's `mvn verify`
+  coverage against real staging infra, not just the test suite. **SESSION-W5-jwks-discovery
+  (wallet) is now fully unblocked**, with a live non-default-tenant credential already in hand to
+  test wallet-side `jwks_uri` resolution and the same-origin/path-shape trust-anchor guard
+  against — no further platform-side prerequisite remains.
 
 ### KH-2.6a/2.6b deferred compose walkthrough — CLOSED
 - Satisfied by C12's full live ministry-scenario walkthrough (2026-08-19/20, recorded in
