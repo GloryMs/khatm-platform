@@ -3,6 +3,14 @@
 > Updated at the end of EVERY Claude Code session. This file is the session anchor.
 
 ## Current phase / task
+**feat/KH-2.7-BE-jwks-discovery — DONE, PR #67 open, not yet merged**
+(`https://github.com/GloryMs/khatm-platform/pull/67`, opened 2026-08-20 — platform half of the
+wallet "Signed by unrecognized key" fix, Amendment A1's `jwks_uri` claim; see the session entry
+below for the full implementation record). `mvn verify` green 473/473, zero RLS/contract drift.
+**[MAJD] after merge:** rebuild/redeploy staging (manual Vault unseal after), then issue a fresh
+credential from `moi-immigration` — SESSION-W5-jwks-discovery (wallet) is unblocked and waiting on
+exactly that.
+
 **fix/verify-audit-tenant-attribution — DONE & MERGED via PR #66** (bug fix, not a WBS item;
 reported live from khatm-console testing 2026-08-19 while exercising KH-2.6b's own org:admin
 aggregated report; opened 2026-08-20 and merged the same day, both on Majd's explicit instruction,
