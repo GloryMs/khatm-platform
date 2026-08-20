@@ -3,6 +3,19 @@
 > Updated at the end of EVERY Claude Code session. This file is the session anchor.
 
 ## Current phase / task
+**fix/role-grant-ceiling — IMPLEMENTATION DONE, not yet committed/pushed/PR'd** (bug fix, not a
+WBS item — the pre-existing escalation gap KH-2.6b flagged out of scope; brief
+`docs/sessions/SESSION-CHORE-ROLE-GRANT-CEILING.md`; see the session entry below for the full
+implementation record). `mvn verify` green 478/478 (473 baseline + 5 new), zero RLS touch,
+contract additive-only. **Two [MAJD] gates open before this can merge, per the brief's own explicit
+DoD — not assumed closed:**
+- **Arabic-review gate (blocking) — one new message key:** `user.role-grant-exceeds-ceiling` =
+  "لا يمكنك منح الدور {0} — فهو يتجاوز نطاق صلاحياتك الإدارية."
+- **Retroactive audit runbook — not yet executed:** query supplied in the session entry below (for
+  the eventual PR body); expected result is empty (every admin today is Majd).
+- **Live compose check — not yet executed:** the two rejected attempts (local tenant:admin →
+  PLATFORM_ADMIN, org:admin-mediated → ORG_ADMIN) via console/Swagger.
+
 **feat/KH-2.7-BE-jwks-discovery — DONE & MERGED via PR #67** (opened 2026-08-20, merged
 2026-08-20T11:42:13Z on Majd's explicit "merge the PR" instruction, merge commit
 `8ebb68b531c6a1d44fc427d5227cd889c920edea`,
@@ -101,11 +114,116 @@ scan, compose-smoke (restore-from-zero), gitleaks. `main` is now at `f839060`, z
   khatm-console STATE) plus Majd's own live container test during PR #66. No separate
   Swagger/curl walkthrough needed anymore.
 
-### Pre-existing role-grant escalation gap (flagged in KH-2.6b) — SCHEDULED
-- tenant:admin can today grant PLATFORM_ADMIN/ORG_ADMIN via /api/v1/users (no ceiling).
-  Hardening scoped as SESSION-CHORE-ROLE-GRANT-CEILING (subset-of-grantor rule at the
-  UserAdminService chokepoint, evaluated against the real invoking principal). To run
-  after KH-2.7-BE, before any real-world tenant onboarding.
+### Pre-existing role-grant escalation gap (flagged in KH-2.6b) — CLOSED
+- tenant:admin could grant PLATFORM_ADMIN/ORG_ADMIN via /api/v1/users (no ceiling). Fixed by
+  chore/role-grant-ceiling (see the session entry below for the full record) — see that entry's
+  two still-open [MAJD] gates (Arabic review, live compose check) before merge.
+
+## 2026-08-20 — Session: fix/role-grant-ceiling (role-grant ceiling — deny-by-default escalation guard)
+
+Brief `docs/sessions/SESSION-CHORE-ROLE-GRANT-CEILING.md` — not a WBS item, the pre-existing gap
+KH-2.6b's own session flagged and explicitly scoped out: `UserAdminService#create`/`#replaceRoles`
+had no ceiling at all, so a plain `tenant:admin` could grant `PLATFORM_ADMIN`/`ORG_ADMIN` to a user
+in its own tenant via `/api/v1/users`, and by inheritance so could an `org:admin` acting on a
+direct child via `OrgAdminService#createChildUser`. **Preamble confirmed:** `main` clean at
+`7a21954` (post-KH-2.7-BE), zero open PRs, baseline `mvn verify` green 473/473.
+
+**D1 — the rule, one chokepoint:** `UserAdminService#create`/`#replaceRoles` now refuse any role
+grant whose scope set is not entirely within a fixed ceiling, unless the real, authenticated
+calling principal holds `platform:admin` (read via `SecurityContextHolder`, mirroring `shared
+.OnBehalfOfExecutor`'s own established pattern for the identical Modulith-boundary reason — no new
+context-access mechanism invented, so no SELF-STOP needed here). One method, `ensureGrantWithin
+Ceiling`, called from both `create` and `replaceRoles`, covers the local path
+(`rbac.web.UserAdminController`) and the `org:admin`-mediated path (`OrgAdminService
+#createChildUser`, via `shared.OnBehalfOfExecutor#runAsChildOrg`) automatically, by construction —
+matches the brief's "single chokepoint" requirement without any parallel logic.
+
+**The one genuinely subtle design decision (brief's own V1 flag), resolved by reading the code, not
+assumed:** the brief's literal wording ("رول's scopes ⊆ real caller's own scopes") reads as if it
+should be checked against the real caller's own *literal* JWT-granted scopes. Verified against
+`RoleCatalog` directly before implementing: `ORG_ADMIN`'s role carries exactly one scope,
+`org:admin` — so under `runAsChildOrg`, an `org:admin` caller's own literal raw scopes are just
+`{org:admin}`. A literal-subset rule evaluated against that set would correctly reject granting
+`ORG_ADMIN` to a child (the brief's own required "no self-propagation" outcome) but would *also*
+incorrectly reject every legitimate operational-role grant the org-mediated path already makes
+today — confirmed empirically by finding the exact existing test this would have broken:
+`OrgAdminGateTest#createChildUser_writesOrgOnBehalfOf_inParent_andUserCreated_inChild` already
+grants `ISSUER_OPERATOR` to a child's user and expects `200 OK`, and `issue`/`verify`/`revoke` are
+not in `org:admin`'s own raw scope set either. `OrgAdminService`'s own class Javadoc already states
+the resolving principle in so many words: the org-mediated path is deliberately modeled as "acts
+exactly as a local `tenant:admin` of the child already could, no additional privilege by
+construction." Pinning the ceiling to `TENANT_ADMIN`'s own scope set (not the caller's literal raw
+scopes) makes that modeling precise for role grants specifically: a real local `tenant:admin`'s own
+raw scopes already *equal* `TENANT_ADMIN`'s scope set (so the local path's behavior is provably
+unchanged either way — same ceiling, same set), while the org-mediated path is capped at exactly
+the ceiling a local `tenant:admin` of that same child would have. `PLATFORM_ADMIN` (adds
+`platform:admin`) and `ORG_ADMIN` (adds `org:admin`) are the only two catalog roles that ever
+exceed this ceiling, so both remain grantable only by an actual `platform:admin` holder, on either
+path — the exact four required outcomes (§V1 examples) all fall out of one rule, not four special
+cases. This scope-set form was kept over V1-b's fixed-ceiling fallback (produces an identical
+result for today's four-role catalog) since it degrades correctly if the catalog ever grows a role
+whose scopes are not a strict superset of `TENANT_ADMIN`'s own — the brief's own stated preference
+("(a) أعم وأصح مستقبلاً"). Full reasoning recorded in `UserAdminService`'s own class Javadoc for the
+next session that touches this.
+
+**D2 — error/audit:** new `KH-USR-2403` (403, `user.role-grant-exceeds-ceiling`, both message
+bundles same commit — **Arabic gate ACTIVE, not yet reviewed by Majd**, see "Current phase / task"
+above for the exact string). New `AuditAction.ROLE_GRANT_REJECTED`, written via `AuditService
+#recordIndependently` (same "survives the rejecting call's own rollback" mechanism
+`KEY_RETIRE_REJECTED` already established) — `entityRef` is the target username, `detail` carries
+the offending `roleCode`/`scope`. On the org-mediated path this row lands under the **child's** own
+audit trail (the check runs post-context-switch, matching every other org-mediated write's dual-
+audit shape — the parent still gets its own `ORG_ON_BEHALF_OF` marker regardless of the rejection).
+
+**D3 — tests, `mvn verify` green 478/478 (473 baseline + 5 new, 0 disabled):** new
+`rbac.RoleGrantCeilingHttpTest` (full HTTP-level, extends `RbacHttpTestSupport`): a `tenant:admin`
+granting an ordinary role still succeeds (no regression); a `tenant:admin` creating a user with
+`PLATFORM_ADMIN` is rejected with `KH-USR-2403` + an audited `ROLE_GRANT_REJECTED` row; a
+`tenant:admin` replacing a user's roles with `ORG_ADMIN` is rejected the same way; an `org:admin`
+creating a child's user with `ORG_ADMIN` via `/api/v1/org/children/{id}/users` is rejected — the
+real-caller-not-switched-context proof the brief's V1 called for — with the rejection audited under
+the *child's* trail; a `platform:admin` granting `PLATFORM_ADMIN` itself still succeeds. Every
+existing seeder/onboarding test stayed green with zero modification (`TenantProvisioningService
+Test`'s `Set.of(INITIAL_ADMIN_ROLE)` = `TENANT_ADMIN` trivially clears the ceiling regardless of
+caller; `AdminBootstrap` never calls `UserAdminService` at all — writes `app_user`/`role` directly,
+confirmed by reading the class, not assumed). **Security-invariant proof (same discipline every
+session since KH-2.6a):** `git diff --name-only main -- '*rls*' '*policy*'` → zero hits.
+
+**Contract, additive-only:** `docs/api/openapi.json` — three response-doc additions (`create`,
+`replaceRoles`, `createChildUser` each gained the `KH-USR-2403` case in their existing `403`
+response description; no schema/path/operationId change), regenerated via `OpenApiContractTest`'s
+own mechanism, not hand-edited. `docs/error-codes.md` regenerated via `ErrorCodesDocGenerationTest`
+the same way — one new row.
+
+**Docs:** `rbac` module's `package-info.java`/`README.md` both updated (the ceiling's rule and
+rationale) — CLAUDE.md work rule 1.
+
+**D4 — retroactive audit runbook (not yet executed, [MAJD]):** a read-only sanity query for the
+eventual PR description — run directly against Postgres (the DB owner role, not the RLS-bound
+`khatm_app` app role, so it sees every tenant at once):
+
+```sql
+SELECT id, tenant_id, actor_type, actor_id, entity_ref AS granted_to_username, detail, occurred_at
+FROM audit_log
+WHERE action IN ('USER_CREATED', 'USER_ROLES_CHANGED')
+  AND (detail -> 'roles' @> '["PLATFORM_ADMIN"]'::jsonb
+       OR detail -> 'roles' @> '["ORG_ADMIN"]'::jsonb)
+ORDER BY occurred_at;
+```
+
+Expected result: empty, or every row attributable to Majd's own already-`platform:admin` actions —
+this is reassurance, not remediation (the brief's own framing); a non-empty, non-Majd result would
+be a genuinely new finding to investigate, not silently accepted.
+
+**DoD status:**
+- `mvn verify` green (478/478), zero RLS touch, contract additive-only — done.
+- **Arabic gate — OPEN, blocking merge** (one new message key, see "Current phase / task" above).
+- **Retroactive audit — not yet executed** (query above, for the PR body).
+- **[MAJD] live compose check — not yet executed:** the two rejected attempts (local `tenant:admin`
+  → `PLATFORM_ADMIN`, `org:admin`-mediated → `ORG_ADMIN`) via console or Swagger.
+- **Not yet committed, pushed, or PR'd** — per this repo's own standing practice (every prior
+  session's commit/push/PR happened only after Majd's explicit instruction), pending that
+  instruction here too, on top of the two gates above.
 
 ## 2026-08-20 — Session: feat/KH-2.7-BE-jwks-discovery (jwks_uri at issuance, platform half)
 
