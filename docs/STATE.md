@@ -3,16 +3,17 @@
 > Updated at the end of EVERY Claude Code session. This file is the session anchor.
 
 ## Current phase / task
-**fix/role-grant-ceiling — IMPLEMENTATION DONE, not yet committed/pushed/PR'd** (bug fix, not a
-WBS item — the pre-existing escalation gap KH-2.6b flagged out of scope; brief
+**fix/role-grant-ceiling — PR #68 open, not yet merged**
+(`https://github.com/GloryMs/khatm-platform/pull/68`, opened 2026-08-20 — bug fix, not a WBS item,
+the pre-existing escalation gap KH-2.6b flagged out of scope; brief
 `docs/sessions/SESSION-CHORE-ROLE-GRANT-CEILING.md`; see the session entry below for the full
 implementation record). `mvn verify` green 478/478 (473 baseline + 5 new), zero RLS touch,
-contract additive-only. **Two [MAJD] gates open before this can merge, per the brief's own explicit
-DoD — not assumed closed:**
-- **Arabic-review gate (blocking) — one new message key:** `user.role-grant-exceeds-ceiling` =
-  "لا يمكنك منح الدور {0} — فهو يتجاوز نطاق صلاحياتك الإدارية."
-- **Retroactive audit runbook — not yet executed:** query supplied in the session entry below (for
-  the eventual PR body); expected result is empty (every admin today is Majd).
+contract additive-only. **Arabic-review gate — Majd approved the new message key as-is** (`user
+.role-grant-exceeds-ceiling` = "لا يمكنك منح الدور {0} — فهو يتجاوز نطاق صلاحياتك الإدارية."),
+push/PR authorized on that same instruction. **Two [MAJD] items remain, noted in the PR body, not
+blockers to opening it:**
+- **Retroactive audit runbook — not yet executed:** query in the PR description; expected result is
+  empty (every admin today is Majd).
 - **Live compose check — not yet executed:** the two rejected attempts (local tenant:admin →
   PLATFORM_ADMIN, org:admin-mediated → ORG_ADMIN) via console/Swagger.
 
@@ -217,13 +218,12 @@ be a genuinely new finding to investigate, not silently accepted.
 
 **DoD status:**
 - `mvn verify` green (478/478), zero RLS touch, contract additive-only — done.
-- **Arabic gate — OPEN, blocking merge** (one new message key, see "Current phase / task" above).
-- **Retroactive audit — not yet executed** (query above, for the PR body).
+- **Arabic gate — approved by Majd as-is** (one new message key, see "Current phase / task" above).
+- **Retroactive audit — not yet executed** (query above, included in the PR body).
 - **[MAJD] live compose check — not yet executed:** the two rejected attempts (local `tenant:admin`
   → `PLATFORM_ADMIN`, `org:admin`-mediated → `ORG_ADMIN`) via console or Swagger.
-- **Not yet committed, pushed, or PR'd** — per this repo's own standing practice (every prior
-  session's commit/push/PR happened only after Majd's explicit instruction), pending that
-  instruction here too, on top of the two gates above.
+- **PR open, not yet merged** — see "Current phase / task" above for the exact PR link, opened
+  only after Majd's explicit approval of the Arabic gate and go-ahead to push/PR.
 
 ## 2026-08-20 — Session: feat/KH-2.7-BE-jwks-discovery (jwks_uri at issuance, platform half)
 
