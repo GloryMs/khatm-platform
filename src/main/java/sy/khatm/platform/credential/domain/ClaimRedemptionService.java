@@ -118,17 +118,24 @@ public class ClaimRedemptionService {
     claimCode.setDisclosuresEnc(null);
     claimCodes.save(claimCode);
 
-    // Wrapped in TenantContext.runAsDefaultTenant: /claims/redeem is permitAll (genuinely
-    // anonymous), but a caller with a live console session still attaches their cookie to this
-    // same-origin call — TenantContext.current() then sees a real authenticated principal with
-    // nothing set on this thread and refuses its silent default-tenant fallback (see that guard's
-    // Javadoc on TenantContext). This write has no real tenant to attribute to either way, so it
-    // deliberately asks for the same fallback an anonymous caller gets. (Not the same thing as
-    // findRefForTenant below, which sets the credential's OWN tenant for a read, later in this
-    // method.)
-    TenantContext.runAsDefaultTenant(
-        () ->
-            audit.record(AuditAction.CLAIM_CODE_REDEEMED, "credential", credential.getRef(), null));
+    // Attributed to the credential's own issuing tenant, not the platform default — unlike
+    // /verify, a successful redeem by definition already has the credential row resolved (any
+    // failure throws before this point), so there is no early-exit branch with no tenant to
+    // attribute to; the same TenantContext.set/clear shape findRefForTenant below already uses for
+    // a read is used here for this write. (Fixes the bug where every CLAIM_CODE_REDEEMED row
+    // landed under khatm-default regardless of which tenant actually issued the credential — found
+    // via KH-2.6b's aggregated report always reading zero for real activity; /claims/redeem is
+    // permitAll like /verify, so this still explicitly sets something on the thread before the
+    // write — a caller with a live console session still attaches their cookie to this
+    // same-origin call, and TenantContext.current() refuses its silent default-tenant fallback for
+    // a real authenticated principal with nothing set, see that guard's Javadoc on TenantContext.)
+    String issuingSlug = tenants.findById(credential.getTenantId()).map(TenantRef::slug).orElse("");
+    TenantContext.set(credential.getTenantId(), issuingSlug);
+    try {
+      audit.record(AuditAction.CLAIM_CODE_REDEEMED, "credential", credential.getRef(), null);
+    } finally {
+      TenantContext.clear();
+    }
 
     SchemaDetail schema =
         schemas

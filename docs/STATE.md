@@ -3,6 +3,16 @@
 > Updated at the end of EVERY Claude Code session. This file is the session anchor.
 
 ## Current phase / task
+**fix/verify-audit-tenant-attribution — implementation complete, `mvn verify` green 469/469, NOT
+YET committed/PR'd** (bug fix, not a WBS item; reported live from khatm-console testing 2026-08-19
+while exercising KH-2.6b's own org:admin aggregated report — see the session entry immediately
+below for the full record). `/api/v1/credentials/verify` and `/api/v1/claims/redeem` had been
+attributing every `CREDENTIAL_VERIFY_OK`/`CREDENTIAL_VERIFY_FAILED`/`CLAIM_CODE_REDEEMED` audit row
+to the platform default tenant unconditionally, not just on the genuine early-exit branches with no
+credential resolved — fixed at both write sites, no RLS/schema change, no new `ErrorCode`/scope/
+migration (contract files untouched, confirmed via `git diff --name-only`). Majd confirmed the
+proposed fix shape before implementation; awaiting the go-ahead to commit/PR.
+
 **KH-2.6b-BE (`org:admin` + on-behalf-of + aggregated reports) — DONE & MERGED via PR #65**
 (opened 2026-08-19 on Majd's explicit "commit this and open the PR" instruction, merged
 2026-08-19T07:37:12Z on Majd's immediately-following explicit "merge PR and update STATE.md"
@@ -32,6 +42,78 @@ commit `f8390600496a170a88f62e57cdaff18f67642044`,
 `https://github.com/GloryMs/khatm-platform/pull/64`, standard merge via `gh pr merge --merge` on
 Majd's explicit instruction). All four CI checks green before merge: Build and verify, Trivy vuln
 scan, compose-smoke (restore-from-zero), gitleaks. `main` is now at `f839060`, zero open PRs.
+
+## 2026-08-19 — Session: fix/verify-audit-tenant-attribution
+
+Bug fix, not a WBS item — reported live from khatm-console testing while exercising KH-2.6b's own
+`GET /api/v1/org/reports`: `verifyOk`/`verifyFailed` always read 0 for every child tenant even
+right after real verify activity. Console's own investigation had already found the exact two
+write sites and the exact root cause before reporting it; this session's job was to verify that
+diagnosis against the current code (it held up exactly, plus one thing the report didn't have),
+assess before touching anything (Majd's explicit ask), then implement once confirmed.
+
+**Root cause, verified against the code, not assumed:** `credential.web.CredentialController#verify`
+and `credential.domain.ClaimRedemptionService#redeem` — both `permitAll` — wrapped their audit
+write in `shared.TenantContext#runAsDefaultTenant` unconditionally. That mechanism exists for a
+real reason (a live console session's cookie still reaches these `permitAll` endpoints, and
+`TenantContext.current()`'s fail-fast guard throws `IllegalStateException` if nothing was set on
+the thread at all — the 2026-08-11 hotfix `rbac.AuthenticatedCallerOnAnonymousEndpointsTest` pins).
+That hotfix's actual fix, though, was "attribute to the default tenant," not "resolve and attribute
+to the credential's real tenant" — the crash-avoidance goal only ever needed *something* set on the
+thread, not specifically the default tenant.
+
+**One nuance beyond the console's own report:** the fix isn't "always use the real tenant" for
+`verify()` — `CredentialService.verify()` has 7 return points, and only the ones reached after
+`Credential c = maybe.get()` have a resolved tenant at all; the early exits above that (malformed,
+bad signature, unknown `kid`/`ref`) never touch a credential row, so `runAsDefaultTenant` is
+*correct* behavior there, not the bug. `redeem()` has no such split — every successful redeem by
+definition already has the row in hand.
+
+**Fix, application-code only, exactly as proposed and confirmed before implementation:**
+- `CredentialService.verify()` renamed to a new `verifyOutcome()` (public, same module) that pairs
+  the unchanged `VerifyResponse` with the credential's resolved `tenantId`/`tenantSlug` (`null` on
+  the genuine early exits) via a new `VerifyOutcome` record (`credential.domain`, mirrors
+  `ClaimRedeemResult`'s own "public for cross-package, Modulith keeps it from other modules"
+  shape). `verify(String)` kept unchanged as a thin `verifyOutcome(...).response()` delegate — all
+  11+ existing direct callers (`SdJwtVerificationTest` and others) needed zero changes.
+- `CredentialController#verify` now calls `verifyOutcome`, and a new private `auditVerify` sets
+  `TenantContext` to the real tenant when one was resolved, falling back to
+  `runAsDefaultTenant` only for the true early exits.
+- `ClaimRedemptionService#redeem`: swapped `runAsDefaultTenant` for `TenantContext.set(credential
+  .getTenantId(), slug)`/`clear()` in a `finally` — the exact pattern already sitting two lines
+  below it in the same file (`findRefForTenant`), just applied to the write instead of a read.
+- **No `AuditService` change** — deliberately stayed consistent with the codebase's existing
+  convention (`TenantContext.set`/`clear` around a call, not a parameter on `record()`) rather than
+  introducing a second way to scope an audit write.
+- Updated stale Javadoc that assumed the old unconditional behavior: `TenantContext`'s own class
+  doc, `AuditAction.CREDENTIAL_VERIFY_OK`/`_FAILED`/`CLAIM_CODE_REDEEMED`, and
+  `AuthenticatedCallerOnAnonymousEndpointsTest`'s class doc (which now points at this session's own
+  test for "which tenant," since it only ever pinned "no crash").
+
+**Confirmed but not fixed this session, per Majd's explicit answer when asked:** `khatm-default` is
+not a real customer tenant, staging-only — lowering the real-world severity of the isolation-gap
+framing from the initial assessment, though the fix itself is identical regardless.
+
+**Tests, `mvn verify` green 469/469 (465 baseline + 4 new, 0 removed/disabled):** new
+`db.VerifyAuditTenantAttributionTest` (mirrors `CrossTenantIsolationTest`'s own manual login/TOTP
+dance, since `rbac.SessionTestSupport` is package-private to `rbac`) — a valid verify lands under
+the issuing tenant and NOT the default; a malformed presentation still lands under the default
+(proves the fix didn't overcorrect); a redeem lands under the issuing tenant and NOT the default;
+and a capstone end-to-end test onboarding a tenant with its own initial admin, issuing + verifying
+under it, then logging in as that tenant's own admin and confirming `GET /api/v1/stats`'s
+`verifyOk` now genuinely reflects its own activity — directly closing the loop on the console's
+original dashboard-adjacent hypothesis (`GET /api/v1/stats` shares `AuditService
+#countActionsInWindow`'s ambient-`TenantContext` mechanism with the org report, so fixing the two
+write sites closed it for free — confirmed by this test, not just reasoned about).
+**Security-invariant proof (same V5-style discipline every session since KH-2.6a has run):**
+`git diff --name-only main -- '*rls*' '*policy*'` → zero hits; no `ErrorCode`/scope/migration
+added (`docs/api/openapi.json`/`docs/error-codes.md`/`db/migration-checksums.lock` all confirmed
+untouched via `git diff --name-only`) — matches Majd's own scoping note that this needed neither.
+
+**DoD status:**
+- `mvn verify` green (469/469), zero contract drift — done.
+- No Arabic-review gate (no new message key or user-facing string) — correctly did not activate.
+- **Not yet committed/pushed/PR'd** — implementation complete, awaiting Majd's go-ahead.
 
 ## 2026-08-18 — Session: feat/KH-2.6b-BE-org-admin-reports (org:admin + on-behalf-of + aggregated reports)
 

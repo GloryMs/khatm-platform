@@ -44,9 +44,16 @@ import org.springframework.security.core.context.SecurityContextHolder;
  * non-anonymous principal just like any other request from that session. Two of these paths write
  * an {@code audit_log} row and so must resolve a tenant to attribute it to even then: {@code
  * credential.web.CredentialController#verify} and {@code credential.domain.ClaimRedemptionService
- * #redeem} both wrap that write in {@link #runAsDefaultTenant} for exactly this reason (a gap fixed
- * post-KH-2.4-BE — both crashed with this guard's {@link IllegalStateException} the first time
- * either was hit from an authenticated session instead of a bare {@code curl}). {@code
+ * #redeem} both explicitly {@link #set} a tenant before that write rather than relying on ambient
+ * context (a gap fixed post-KH-2.4-BE — both crashed with this guard's {@link
+ * IllegalStateException} the first time either was hit from an authenticated session instead of a
+ * bare {@code curl}). {@code #redeem} always resolves the credential's own real tenant by then (a
+ * successful redeem cannot exist without one); {@code #verify} does too on every branch that
+ * actually reached a credential row, falling back to {@link #runAsDefaultTenant} only on the
+ * genuine early exits that never resolved one at all (malformed presentation, bad signature,
+ * unknown {@code kid}/{@code ref}) — fixed KH-2.6b-adjacent (spec FS-2.5), after the platform
+ * default tenant was found absorbing every verify/redeem audit row regardless of which tenant
+ * actually issued the credential, not just those two genuinely tenant-less cases. {@code
  * SystemAccessExecutor}-wrapped worker/anonymous-lookup code paths run on threads Spring Security's
  * {@code SecurityContextHolder} never populates at all ({@code getAuthentication()} is {@code
  * null}); and every seeder/test either runs with no {@code SecurityContext} either, or (for the

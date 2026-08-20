@@ -148,7 +148,10 @@ public enum AuditAction {
 
   /**
    * A wallet successfully redeemed a claim code ({@code credential} module, KH-1.2.1). {@code
-   * entityRef} is the credential's ref — never the code itself.
+   * entityRef} is the credential's ref — never the code itself. Attributed to the credential's own
+   * issuing tenant ({@code ClaimRedemptionService#redeem} always has the row in hand by the time
+   * this is recorded) — never the platform default tenant, fixed KH-2.6b-adjacent (spec FS-2.5;
+   * same root cause and same fix shape as {@link #CREDENTIAL_VERIFY_OK}'s own note).
    */
   CLAIM_CODE_REDEEMED,
 
@@ -260,15 +263,23 @@ public enum AuditAction {
    * FS-1.5.3's pilot-metrics commitment). {@code entityRef} is the credential's ref when the
    * presentation's {@code ref} claim resolved to a known row, {@code null} otherwise; {@code
    * detail.reason} carries the {@code VerifyReason} code — never the presented claims themselves.
-   * Recorded by {@code credential.web.CredentialController#verify} after {@code
-   * CredentialService#verify} returns, deliberately outside that method's own {@code readOnly =
-   * true} transaction (a read-only transaction cannot accept this write).
+   * Recorded by {@code credential.web.CredentialController#verify} (its private {@code
+   * auditVerify}) after {@code CredentialService#verifyOutcome} returns, deliberately outside that
+   * method's own {@code readOnly = true} transaction (a read-only transaction cannot accept this
+   * write). Attributed to the credential's own issuing tenant, resolved by {@code verifyOutcome}
+   * alongside the row itself — never the platform default tenant unless the presentation never
+   * resolved a credential row at all (fixed KH-2.6b-adjacent, spec FS-2.5: every verify audit row
+   * had been landing under the default tenant regardless, surfaced by the aggregated report always
+   * reading zero verify activity for real, non-default tenants).
    */
   CREDENTIAL_VERIFY_OK,
 
   /**
    * An online {@code POST /api/v1/credentials/verify} call resolved as invalid (KH-1.1.3) — the
-   * counterpart to {@link #CREDENTIAL_VERIFY_OK}, same {@code entityRef}/{@code detail} shape.
+   * counterpart to {@link #CREDENTIAL_VERIFY_OK}, same {@code entityRef}/{@code detail}/tenant-
+   * attribution shape (a credential row still resolved on most failure reasons — revoked,
+   * exhausted, a tampered disclosure — just not on the early-exit ones with nothing to attribute
+   * to: malformed, bad signature, unknown {@code kid}/{@code ref}).
    */
   CREDENTIAL_VERIFY_FAILED,
 
