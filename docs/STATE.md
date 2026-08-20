@@ -3,11 +3,17 @@
 > Updated at the end of EVERY Claude Code session. This file is the session anchor.
 
 ## Current phase / task
-**feat/KH-2.7-BE-jwks-discovery — DONE, PR #67 open, not yet merged**
-(`https://github.com/GloryMs/khatm-platform/pull/67`, opened 2026-08-20 — platform half of the
-wallet "Signed by unrecognized key" fix, Amendment A1's `jwks_uri` claim; see the session entry
-below for the full implementation record). `mvn verify` green 473/473, zero RLS/contract drift.
-**[MAJD] after merge:** rebuild/redeploy staging (manual Vault unseal after), then issue a fresh
+**feat/KH-2.7-BE-jwks-discovery — DONE & MERGED via PR #67** (opened 2026-08-20, merged
+2026-08-20T11:42:13Z on Majd's explicit "merge the PR" instruction, merge commit
+`8ebb68b531c6a1d44fc427d5227cd889c920edea`,
+`https://github.com/GloryMs/khatm-platform/pull/67`, standard merge via `gh pr merge --merge` —
+platform half of the wallet "Signed by unrecognized key" fix, Amendment A1's `jwks_uri` claim; see
+the session entry below for the full implementation record). All four CI checks green before merge:
+Build and verify, Trivy vuln scan, compose-smoke (restore-from-zero), gitleaks. `main` is now at
+`8ebb68b`, zero open PRs; the feature branch was not deleted (still `feat/KH-2.7-BE-jwks-discovery`
+locally and on `origin` — delete on request). `mvn verify` was green 473/473 pre-merge, zero
+RLS/contract drift.
+**[MAJD] next:** rebuild/redeploy staging (manual Vault unseal after), then issue a fresh
 credential from `moi-immigration` — SESSION-W5-jwks-discovery (wallet) is unblocked and waiting on
 exactly that.
 
@@ -157,7 +163,8 @@ string).
   the standing posture below):** issue a fresh credential from `moi-immigration` so
   SESSION-W5-jwks-discovery has a live, non-default-tenant credential to test its wallet-side
   `jwks_uri` resolution and same-origin/path-shape trust-anchor guard against.
-- PR open at this entry — see "Current phase / task" above for the exact PR link once opened.
+- **DONE & MERGED via PR #67** (see "Current phase / task" above for the full merge record) —
+  committed/pushed/PR'd/merged only after Majd's explicit "merge the PR" instruction.
 
 ## 2026-08-19 — Session: fix/verify-audit-tenant-attribution
 
