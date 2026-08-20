@@ -3,15 +3,23 @@
 > Updated at the end of EVERY Claude Code session. This file is the session anchor.
 
 ## Current phase / task
-**fix/verify-audit-tenant-attribution — implementation complete, `mvn verify` green 469/469, NOT
-YET committed/PR'd** (bug fix, not a WBS item; reported live from khatm-console testing 2026-08-19
-while exercising KH-2.6b's own org:admin aggregated report — see the session entry immediately
-below for the full record). `/api/v1/credentials/verify` and `/api/v1/claims/redeem` had been
-attributing every `CREDENTIAL_VERIFY_OK`/`CREDENTIAL_VERIFY_FAILED`/`CLAIM_CODE_REDEEMED` audit row
-to the platform default tenant unconditionally, not just on the genuine early-exit branches with no
-credential resolved — fixed at both write sites, no RLS/schema change, no new `ErrorCode`/scope/
+**fix/verify-audit-tenant-attribution — DONE & MERGED via PR #66** (bug fix, not a WBS item;
+reported live from khatm-console testing 2026-08-19 while exercising KH-2.6b's own org:admin
+aggregated report; opened 2026-08-20 and merged the same day, both on Majd's explicit instruction,
+merge commit `6815ee97fd5fc36daf314792ceeaa3cea91f4e23`,
+`https://github.com/GloryMs/khatm-platform/pull/66`, standard merge via `gh pr merge --merge` — see
+the session entry immediately below for the full implementation record). All four CI checks green
+before merge: Build and verify, Trivy vuln scan, compose-smoke (restore-from-zero), gitleaks.
+`main` is now at `6815ee9`, zero open PRs; the fix branch was deleted (remote + local) after merge.
+`/api/v1/credentials/verify` and `/api/v1/claims/redeem` had been attributing every
+`CREDENTIAL_VERIFY_OK`/`CREDENTIAL_VERIFY_FAILED`/`CLAIM_CODE_REDEEMED` audit row to the platform
+default tenant unconditionally, not just on the genuine early-exit branches with no credential
+resolved — fixed at both write sites, no RLS/schema change, no new `ErrorCode`/scope/
 migration (contract files untouched, confirmed via `git diff --name-only`). Majd confirmed the
-proposed fix shape before implementation; awaiting the go-ahead to commit/PR.
+proposed fix shape before implementation, then rebuilt/restarted the local `khatm-api`/`khatm-worker`
+containers from this branch and tested it live himself — including Arabic content — before
+instructing commit/PR/merge; no separate compose-walkthrough gate needed since this was exercised
+directly, not deferred.
 
 **KH-2.6b-BE (`org:admin` + on-behalf-of + aggregated reports) — DONE & MERGED via PR #65**
 (opened 2026-08-19 on Majd's explicit "commit this and open the PR" instruction, merged
@@ -110,10 +118,22 @@ write sites closed it for free — confirmed by this test, not just reasoned abo
 added (`docs/api/openapi.json`/`docs/error-codes.md`/`db/migration-checksums.lock` all confirmed
 untouched via `git diff --name-only`) — matches Majd's own scoping note that this needed neither.
 
+**Live verification (2026-08-20, Majd):** rebuilt/restarted `khatm-api`/`khatm-worker` locally from
+this branch (`docker compose build khatm-api khatm-worker` + `docker compose up -d khatm-api
+khatm-worker` — `khatm-postgres`/`khatm-redis`/`khatm-vault` and the unrelated
+`staging-khatm-console` container left untouched); both started clean (Flyway confirmed schema
+v17, no errors, demo seeders ran). Majd then tested the running stack himself, including Arabic
+content, before instructing commit/PR/merge — no separate deferred compose-walkthrough gate
+needed here, unlike KH-2.6a/2.6b's own console-UI-shaped walkthroughs, since this fix has no console
+surface of its own to exercise beyond what curl/Swagger against the live containers already proved.
+
 **DoD status:**
 - `mvn verify` green (469/469), zero contract drift — done.
-- No Arabic-review gate (no new message key or user-facing string) — correctly did not activate.
-- **Not yet committed/pushed/PR'd** — implementation complete, awaiting Majd's go-ahead.
+- No Arabic-review gate (no new message key or user-facing string) — correctly did not activate;
+  Majd's live test explicitly included Arabic content regardless.
+- **DONE & MERGED via PR #66** (see "Current phase / task" above for the full merge record) —
+  committed/pushed/PR'd/merged only after Majd's explicit instruction and his own live test of the
+  rebuilt containers.
 
 ## 2026-08-18 — Session: feat/KH-2.6b-BE-org-admin-reports (org:admin + on-behalf-of + aggregated reports)
 
