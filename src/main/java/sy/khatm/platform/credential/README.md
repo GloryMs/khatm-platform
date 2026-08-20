@@ -28,9 +28,9 @@ or on expiry, never both, never neither.
 module:**
 - **D1 — every `claims_def` field becomes a salted disclosure, no exceptions.** There is no
   "this claim can stay explicit" escape hatch: `credential.signed_payload` carries only D3's
-  structural fields (`iss`, `iat`, `nbf`, `exp`, `vct`, `ref`, `status`) plus `_sd`/`_sd_alg` —
-  digests only. `SdJwtIssuanceStructuralTest` asserts this directly against the *persisted*
-  row, not just the in-memory response.
+  structural fields (`iss`, `iat`, `nbf`, `exp`, `vct`, `ref`, `status`, `jwks_uri` — the last
+  since Amendment A1) plus `_sd`/`_sd_alg` — digests only. `SdJwtIssuanceStructuralTest` asserts
+  this directly against the *persisted* row, not just the in-memory response.
 - **D2 — `sd_fields` changed meaning.** Same DB column (`credential_schema.sd_fields`,
   unchanged since FS-0.2), new semantics: no longer "hidden fields" (D1 already hides
   everything) but **"fields the holder may withhold at presentation time."** Every
@@ -38,6 +38,16 @@ module:**
   (`withheld_mandatory_claim`) a presentation missing one. `DemoSeeder`'s demo schema splits
   its three fields this way on purpose (`result` mandatory; `caseNumber`/`issuedAt`
   withholdable) so both directions are exercised.
+
+**`jwks_uri` claim (KH-2.7-BE, spec FS-0.4 Amendment A1, D3-a):** `domain.TenantJwksUriBuilder`
+(new, module-private — same shape as `status.domain.StatusListUriBuilder`: `shared
+.PublicUrlBuilder` + `TenantContext#currentSlug()`) bakes `{public-base-url}/t/{tenantSlug}
+/.well-known/jwks.json` into every issued credential, no exceptions (single and bulk both go
+through `CredentialService#issue`, so bulk gets it for free). Pure discovery metadata for
+external verifiers (the wallet, third parties) — never an input to this platform's own `kid ->
+KeyVerifier` trust decision, which is unchanged. Pre-A1 credentials (no `jwks_uri` claim) still
+verify identically; their fallback is the deprecated default-tenant-only alias
+(`key.web.JwksController`, kept alive on purpose for exactly this).
 
 Built on `com.authlete:sd-jwt` (D4) for disclosure/digest construction only — signing still
 happens exclusively through `KeySigner` (`key :: api`), completely unchanged from KH-0.5.

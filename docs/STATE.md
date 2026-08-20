@@ -3,6 +3,14 @@
 > Updated at the end of EVERY Claude Code session. This file is the session anchor.
 
 ## Current phase / task
+**feat/KH-2.7-BE-jwks-discovery — DONE, PR #67 open, not yet merged**
+(`https://github.com/GloryMs/khatm-platform/pull/67`, opened 2026-08-20 — platform half of the
+wallet "Signed by unrecognized key" fix, Amendment A1's `jwks_uri` claim; see the session entry
+below for the full implementation record). `mvn verify` green 473/473, zero RLS/contract drift.
+**[MAJD] after merge:** rebuild/redeploy staging (manual Vault unseal after), then issue a fresh
+credential from `moi-immigration` — SESSION-W5-jwks-discovery (wallet) is unblocked and waiting on
+exactly that.
+
 **fix/verify-audit-tenant-attribution — DONE & MERGED via PR #66** (bug fix, not a WBS item;
 reported live from khatm-console testing 2026-08-19 while exercising KH-2.6b's own org:admin
 aggregated report; opened 2026-08-20 and merged the same day, both on Majd's explicit instruction,
@@ -50,6 +58,106 @@ commit `f8390600496a170a88f62e57cdaff18f67642044`,
 `https://github.com/GloryMs/khatm-platform/pull/64`, standard merge via `gh pr merge --merge` on
 Majd's explicit instruction). All four CI checks green before merge: Build and verify, Trivy vuln
 scan, compose-smoke (restore-from-zero), gitleaks. `main` is now at `f839060`, zero open PRs.
+
+## 2026-08-20 — Decisions recorded (Majd)
+
+### OPEN DECISION (wallet "Signed by unrecognized key") — RESOLVED: Option 1
+- FS-0.4 §D3 amended (Amendment A1): `jwks_uri` becomes the TENTH explicit JWT field —
+  absolute per-tenant JWKS URL ({base}/t/{slug}/.well-known/jwks.json), baked at issuance,
+  mirroring status_list.uri's self-describing shape. The closed list stays closed, at ten.
+- Option 2 (nesting inside `status`) REJECTED: trust/signing metadata does not belong in a
+  consumption-status claim; contract clarity matters for FS-2.7 government integrators.
+- MANDATORY verifier-side trust-anchor rule (spec'd in A1, non-negotiable): jwks_uri is
+  self-declared — before any fetch, verifiers MUST check same-origin with the configured
+  platform base AND exact /t/{slug}/.well-known/jwks.json path shape; otherwise reject
+  without fetching. Wallet W5 also audits/extends the same guard to the status-list path.
+- Backward compat: pre-A1 credentials carry no jwks_uri → wallet falls back to the legacy
+  {host}/.well-known/jwks.json default-tenant alias, which stays alive deliberately.
+- Longer horizon recorded, NOT scoped now: per-tenant `iss` + standards-based issuer-key
+  discovery belongs to FS-2.7 / Phase 3 trust hierarchy; jwks_uri is the compatible bridge.
+- Execution: SESSION-KH-2.7-BE-jwks-discovery (platform, commits A1 into the spec first)
+  → SESSION-W5-jwks-discovery (wallet, resumes the paused session). Scheduling gates open.
+- **Platform half (SESSION-KH-2.7-BE-jwks-discovery) — DONE, PR open** (see the session entry
+  below for the full record). `jwks_uri` now baked into every newly issued credential.
+  **SESSION-W5-jwks-discovery (wallet) is now unblocked** — a fresh credential from
+  `moi-immigration` for live W5 testing needs a staging rebuild/redeploy first (manual Vault
+  unseal after), flagged to Majd below.
+
+### KH-2.6a/2.6b deferred compose walkthrough — CLOSED
+- Satisfied by C12's full live ministry-scenario walkthrough (2026-08-19/20, recorded in
+  khatm-console STATE) plus Majd's own live container test during PR #66. No separate
+  Swagger/curl walkthrough needed anymore.
+
+### Pre-existing role-grant escalation gap (flagged in KH-2.6b) — SCHEDULED
+- tenant:admin can today grant PLATFORM_ADMIN/ORG_ADMIN via /api/v1/users (no ceiling).
+  Hardening scoped as SESSION-CHORE-ROLE-GRANT-CEILING (subset-of-grantor rule at the
+  UserAdminService chokepoint, evaluated against the real invoking principal). To run
+  after KH-2.7-BE, before any real-world tenant onboarding.
+
+## 2026-08-20 — Session: feat/KH-2.7-BE-jwks-discovery (jwks_uri at issuance, platform half)
+
+Brief `docs/sessions/SESSION-KH-2.7-BE-jwks-discovery.md`, spec `docs/specs/FS-0.4-sdjwt-upgrade.md`
+Amendment A1 (`docs/specs/FS-0.4-A1-jwks-uri-amendment.md`) — the platform half of the wallet
+"Signed by unrecognized key" fix decided above (Option 1). **Preamble confirmed:** `main` clean at
+`b256b59` (PR #66 merge), zero open PRs, baseline `mvn verify` green 469/469.
+
+**D1 — Amendment A1 committed into the spec (independent first commit, per the brief):** appended
+A1's text to `FS-0.4-sdjwt-upgrade.md`, amending D3 (`jwks_uri` is now the tenth explicit JWT field)
+and adding D3-a; also updated §3's issuance-flow payload example for consistency (not explicitly
+required by D1's wording, but leaving it stale would have been a documentation discrepancy against
+the just-amended D3).
+
+**D2 — the builder and the injection:** new `credential.domain.TenantJwksUriBuilder`
+(package-private `@Component`), an exact shape-mirror of `status.domain.StatusListUriBuilder`
+(`shared.PublicUrlBuilder` + `TenantContext#currentSlug()`), outputting
+`{base}/t/{tenantSlug}/.well-known/jwks.json`. **Deliberately placed inside `credential.domain`,
+not exposed via any module's API:** unlike `status_list.uri` (owned and looked up through
+`status :: api`), the JWKS URL shape needs nothing from another module's private state — it is
+fully derivable from `PublicUrlBuilder` + the ambient `TenantContext`, so no new cross-module
+dependency or API surface was needed at all. Injected into `CredentialService.issue()` right after
+the `status` claim (matches Amendment A1's field order); `BulkIssuanceService` reuses `#issue` per
+row, so bulk issuance picked it up for free, confirmed by reading the call site rather than assumed.
+`key.web.JwksController`'s class Javadoc rewritten per the brief's explicit instruction: no longer a
+floating `@Deprecated`-with-no-context comment — now explains it is the deliberate, documented
+fallback for every credential issued *before* A1 (no `jwks_uri` claim at all), not removed until
+those expire.
+
+**D3 — tests, `mvn verify` green 473/473 (469 baseline + 4 new, 0 disabled):**
+`SdJwtIssuanceStructuralTest#EXPECTED_STRUCTURAL_KEYS` updated to the closed ten-field set (still
+exact-set, per D3-a). New `credential.domain.TenantJwksUriIssuanceHttpTest` (extends
+`rbac.RbacHttpTestSupport` for a real embedded HTTP server — the same cross-module test-support
+reuse `credential.web.ClaimControllerHttpTest`/`tenant.web.StatusListControllerHttpTest` already
+established): correct `jwks_uri` value for a real non-default tenant and for the default tenant;
+a genuine HTTP round trip — issue under a non-default tenant, decode the JWT, GET the baked
+`jwks_uri`'s path against `tenant.web.TenantJwksController`, confirm the returned JWKS actually
+contains the signing `kid` — closing the exact loop that broke on staging; and a hand-reconstructed
+pre-A1 presentation (original claims minus `jwks_uri`, re-signed with the same tenant's active key
+via `key.api.KeySigner`, same disclosures) verifying identically to the original, proving the
+platform's own `kid -> KeyVerifier` trust decision never depends on the field. **First run caught a
+real bug in the test itself, not the product code:** the legacy-presentation `verify()` call
+initially failed `before.valid()` — `issuer_key` is RLS-protected and the test's ambient
+`TenantContext` (nothing set → default) didn't match the credential's own tenant; fixed by wrapping
+both `verify()` calls in `SystemAccessExecutor#runAsSystem`, the identical pattern
+`TenantHierarchyLineageVerifyTest` already established for the same reason.
+
+**Docs:** `credential`'s `package-info.java`/`README.md` both updated (new `jwks_uri`
+paragraph/bullet, D1's structural-field list corrected to ten) — CLAUDE.md work rule 1.
+
+**Security-invariant proof (explicit grep, same discipline every session since KH-2.6a):**
+`git diff --name-only main -- '*rls*' '*policy*'` → zero hits; `git status`/`git diff --stat`
+confirm `docs/api/openapi.json`, `docs/error-codes.md`, and every migration file are untouched —
+the field lives inside the JWT payload, never in the REST contract, exactly as scoped. No new
+`ErrorCode`, no new message key (Arabic gate correctly did not activate — no new user-facing
+string).
+
+**DoD status:**
+- `mvn verify` green (473/473), zero contract/RLS drift — done.
+- No Arabic-review gate — correctly did not activate.
+- **[MAJD] once this PR merges and staging rebuilds/redeploys (manual Vault unseal after, per
+  the standing posture below):** issue a fresh credential from `moi-immigration` so
+  SESSION-W5-jwks-discovery has a live, non-default-tenant credential to test its wallet-side
+  `jwks_uri` resolution and same-origin/path-shape trust-anchor guard against.
+- PR open at this entry — see "Current phase / task" above for the exact PR link once opened.
 
 ## 2026-08-19 — Session: fix/verify-audit-tenant-attribution
 
