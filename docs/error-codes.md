@@ -47,6 +47,7 @@
 | `KH-USR-0423` | 409 | `user.last-admin` |
 | `KH-USR-1403` | 403 | `user.totp-required` |
 | `KH-USR-1409` | 409 | `user.totp-conflict` |
+| `KH-USR-2403` | 403 | `user.role-grant-exceeds-ceiling` |
 | `KH-ATT-0400` | 400 | `attestation.required` |
 | `KH-ATT-0401` | 400 | `attestation.not-applicable` |
 | `KH-ATT-0402` | 400 | `attestation.bulk-not-supported` |
