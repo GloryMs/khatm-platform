@@ -128,7 +128,11 @@ class OrgAdminController {
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "403",
-            description = "Missing the org:admin scope (KH-RBC-0403)",
+            description =
+                "Missing the org:admin scope (KH-RBC-0403), or a requested role exceeds the"
+                    + " caller's own role-grant ceiling (KH-USR-2403 — no self-propagation: an"
+                    + " org:admin cannot grant ORG_ADMIN to a child's user either, only"
+                    + " platform:admin can)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "404",

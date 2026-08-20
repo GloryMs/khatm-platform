@@ -84,6 +84,22 @@
  * shape, gated on {@code org:admin} instead of {@code platform:admin}; {@code
  * TotpEnrollmentEnforcementFilter}'s mandatory-scope set now includes {@code org:admin} too.
  *
+ * <p><b>chore/role-grant-ceiling — the role-grant ceiling (deny-by-default privilege escalation
+ * guard):</b> {@link sy.khatm.platform.rbac.domain.UserAdminService#create}/{@code #replaceRoles}
+ * now refuse any role grant whose scope set exceeds the real calling principal's own administrative
+ * ceiling, closing a pre-existing gap flagged (out of scope) in KH-2.6b — a plain {@code
+ * tenant:admin} could grant {@code PLATFORM_ADMIN}/{@code ORG_ADMIN} to a user in its own tenant
+ * via the existing {@code /api/v1/users} endpoint, and by inheritance so could an {@code org:admin}
+ * acting on a direct child via {@code OrgAdminService#createChildUser}. One chokepoint inside
+ * {@code UserAdminService} covers both the local and the org-mediated path automatically — see that
+ * class's own Javadoc for the ceiling's exact shape (pinned to {@code TENANT_ADMIN}'s scope set,
+ * not the literal calling principal's own raw scopes — the one genuinely subtle design point, since
+ * an {@code org:admin} acting on behalf of a child has real JWT scopes of just {@code {org:admin}},
+ * and a naive literal-subset rule would incorrectly also block every legitimate operational-role
+ * grant that path already makes today). New {@code KH-USR-2403}, audited independently as {@code
+ * ROLE_GRANT_REJECTED} (survives the rejecting call's own rollback, same mechanism {@code
+ * KEY_RETIRE_REJECTED} already established).
+ *
  * <p><b>KH-2.2c — TOTP second factor (spec FS-2.2 V1):</b> self-service enrollment ({@code POST
  * /users/me/totp/enroll}/{@code /confirm}, {@link sy.khatm.platform.rbac.domain.TotpService}),
  * AES-256-GCM secret encryption at rest ({@link

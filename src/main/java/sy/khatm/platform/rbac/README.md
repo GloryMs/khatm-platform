@@ -93,6 +93,15 @@ Deny-by-default: an endpoint without a declared scope fails `security/AdminPathS
 `org:admin`) — every tenant is seeded with all four (`RoleCatalogSeeder`, `V12`/`V17` migrations
 backfill pre-existing tenants).
 
+**Role-grant ceiling (chore/role-grant-ceiling):** `domain.UserAdminService#create`/
+`#replaceRoles` refuse any role grant whose scope set exceeds the real calling principal's own
+administrative ceiling — closes a pre-existing gap (a plain `tenant:admin` could grant
+`PLATFORM_ADMIN`/`ORG_ADMIN` via `/api/v1/users`, and by inheritance so could `org:admin` via
+`OrgAdminService#createChildUser`), one chokepoint covering both paths. The ceiling is pinned to
+`TENANT_ADMIN`'s own scope set (not the calling principal's literal raw scopes — see
+`UserAdminService`'s own Javadoc for why); a real `platform:admin` bypasses it entirely. New
+`KH-USR-2403`, audited independently as `ROLE_GRANT_REJECTED`.
+
 **Status:** KH-0.6b completed Phase 0's session/API-key auth. KH-2.2a replaced the `admin` scope
 stand-in with the granular registry above and re-gated every `/api/v1/admin/**` endpoint
 accordingly. KH-2.2b added tenant user management + onboarding completion. KH-2.2c added TOTP 2FA —

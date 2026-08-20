@@ -437,6 +437,21 @@ public enum ErrorCode {
   KH_USR_1409(HttpStatus.CONFLICT, "user.totp-conflict"),
 
   /**
+   * A role grant/replace ({@code POST /api/v1/users}, {@code POST /api/v1/users/{id}/roles}, and
+   * the {@code org:admin}-mediated {@code POST /api/v1/org/children/{id}/users}) requested a role
+   * whose scope set exceeds the actual calling principal's own administrative ceiling
+   * (chore/role-grant-ceiling — the pre-existing escalation gap flagged, out of scope, in KH-2.6b:
+   * a plain {@code tenant:admin} could grant {@code PLATFORM_ADMIN}/{@code ORG_ADMIN} via {@code
+   * /api/v1/users}). Deny-by-default: managing users does not include granting privilege the
+   * grantor does not itself have — see {@code rbac.domain.UserAdminService}'s own Javadoc for the
+   * ceiling's exact shape and why it is pinned to {@code TENANT_ADMIN}'s scope set rather than the
+   * literal calling principal's own scopes. A third {@code 403} in {@code USR}, after {@link
+   * #KH_USR_0403}/{@link #KH_USR_1403} — distinct so the console can tell "you may not grant this
+   * role" apart from a missing-scope 403 or the forced-password-change screen.
+   */
+  KH_USR_2403(HttpStatus.FORBIDDEN, "user.role-grant-exceeds-ceiling"),
+
+  /**
    * {@code POST /api/v1/credentials} (KH-2.4, spec FS-2.4 item 2) named a schema with {@code
    * requires_attestation=true} but the request carried no {@code attestation} object.
    */

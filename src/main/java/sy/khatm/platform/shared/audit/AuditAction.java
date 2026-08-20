@@ -113,6 +113,18 @@ public enum AuditAction {
   USER_ROLES_CHANGED,
 
   /**
+   * A role grant/replace was rejected by the role-grant ceiling (chore/role-grant-ceiling — {@code
+   * rbac.domain.UserAdminService}, the single chokepoint covering both {@code POST
+   * /api/v1/users}/{@code POST /api/v1/users/{id}/roles} and the {@code org:admin}-mediated {@code
+   * POST /api/v1/org/children/{id}/users}, deny-by-default). {@code entityRef} is the target
+   * username; {@code detail} carries {@code roleCode} and the specific offending {@code scope}.
+   * Recorded via {@link AuditService#recordIndependently}, not {@link AuditService#record} — the
+   * same "the rejection must survive the enclosing rollback" reason as {@link
+   * #KEY_RETIRE_REJECTED}.
+   */
+  ROLE_GRANT_REJECTED,
+
+  /**
    * A user was administratively locked (KH-2.2b, {@code POST /api/v1/users/{id}/lock}, spec FS-2.2
    * D5). {@code entityRef} is the username.
    */
