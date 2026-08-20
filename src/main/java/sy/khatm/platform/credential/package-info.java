@@ -20,6 +20,14 @@
  *       violation (FS-0.2 D9) baked permanently into a stored, signed artifact. Hiding everything
  *       is the only form that keeps P1 a structural property of the token rather than a
  *       storage-policy promise someone could get wrong later.
+ *   <li><b>{@code jwks_uri} claim (KH-2.7-BE, spec FS-0.4 Amendment A1, D3-a).</b> {@code
+ *       domain.TenantJwksUriBuilder} (new, module-private, mirrors {@code
+ *       status.domain.StatusListUriBuilder}'s shape) bakes {@code
+ *       {public-base-url}/t/{tenantSlug}/.well-known/jwks.json} into every issued credential —
+ *       self-declared discovery metadata for external verifiers only, never an input to this
+ *       platform's own {@code kid -> KeyVerifier} trust decision. Pre-A1 credentials (no {@code
+ *       jwks_uri}) verify identically; their fallback is the deprecated default-tenant-only alias
+ *       ({@code key.web.JwksController}, kept alive on purpose for exactly this).
  *   <li><b>D2 — {@code sd_fields} no longer means "hidden fields."</b> Since D1 already hides every
  *       field, {@code credential_schema.sd_fields} (unchanged column) is redefined to mean "fields
  *       the holder is <em>permitted to withhold</em> at presentation time." Every {@code

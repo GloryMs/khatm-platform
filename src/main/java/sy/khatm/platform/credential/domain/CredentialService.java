@@ -142,6 +142,7 @@ public class CredentialService {
   private final CurrentActorResolver currentActorResolver;
   private final AtomicConsumptionRecorder consumptionRecorder;
   private final TenantDirectory tenants;
+  private final TenantJwksUriBuilder jwksUriBuilder;
 
   @Value("${khatm.issuer-did:did:web:khatm.sy:demo}")
   private String issuerDid;
@@ -165,7 +166,8 @@ public class CredentialService {
       AuditService audit,
       CurrentActorResolver currentActorResolver,
       AtomicConsumptionRecorder consumptionRecorder,
-      TenantDirectory tenants) {
+      TenantDirectory tenants,
+      TenantJwksUriBuilder jwksUriBuilder) {
     this.credentials = credentials;
     this.events = events;
     this.claimCodes = claimCodes;
@@ -185,6 +187,7 @@ public class CredentialService {
     this.currentActorResolver = currentActorResolver;
     this.consumptionRecorder = consumptionRecorder;
     this.tenants = tenants;
+    this.jwksUriBuilder = jwksUriBuilder;
   }
 
   // ── Issue ────────────────────────────────────────────────────────────────
@@ -235,6 +238,9 @@ public class CredentialService {
     sdBuilder.putClaim("vct", vct);
     sdBuilder.putClaim("ref", ref);
     sdBuilder.putClaim("status", statusClaim(allocation, statusListUri));
+    // FS-0.4 Amendment A1 (D3-a): self-declared discovery metadata for external verifiers only —
+    // never consulted by this platform's own kid -> KeyVerifier trust decision.
+    sdBuilder.putClaim("jwks_uri", jwksUriBuilder.build());
     sdBuilder.putClaim("iat", now.getEpochSecond());
     sdBuilder.putClaim("nbf", now.getEpochSecond());
     sdBuilder.putClaim("exp", exp.getEpochSecond());

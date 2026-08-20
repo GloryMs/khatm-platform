@@ -31,13 +31,17 @@ import sy.khatm.platform.shared.TenantContext;
  * balancing normal-path performance against how quickly an emergency rotation should become
  * visible.
  *
- * <p><b>Deprecated alias (spec FS-2.1 D8, V2):</b> since KH-2.1, this path is an alias for the
- * default tenant only — {@link TenantContext#current()} falls back to {@link
- * TenantContext#DEFAULT_TENANT_ID} here because this endpoint is always anonymous ({@code
- * rbac.security.TenantContextFilter} never touches it). Every other tenant's JWKS is served at
- * {@code GET /t/{tenantSlug}/.well-known/jwks.json} ({@code tenant.web.TenantJwksController}). This
- * path stays through all of Phase 2 (never removed this phase) — cutting it breaks trust bootstrap
- * for every wallet/verifier that already resolved it.
+ * <p><b>Deprecated alias, kept alive on purpose (spec FS-2.1 D8, V2; FS-0.4 Amendment A1):</b>
+ * since KH-2.1, this path is an alias for the default tenant only — {@link TenantContext#current()}
+ * falls back to {@link TenantContext#DEFAULT_TENANT_ID} here because this endpoint is always
+ * anonymous ({@code rbac.security.TenantContextFilter} never touches it). Every other tenant's JWKS
+ * is served at {@code GET /t/{tenantSlug}/.well-known/jwks.json} ({@code
+ * tenant.web.TenantJwksController}). Since Amendment A1, every newly issued credential carries its
+ * own {@code jwks_uri} claim pointing at that per-tenant path directly, so this alias is no longer
+ * the discovery path new verifiers should reach for. It stays published deliberately as the
+ * fallback for every credential issued <em>before</em> A1 (no {@code jwks_uri} claim at all) —
+ * cutting it breaks trust bootstrap for every wallet/verifier still resolving one of those. Not
+ * removed until pre-A1 credentials have fully expired.
  */
 @RestController
 @Tag(name = "jwks", description = "Public JSON Web Key Set for signature verification")

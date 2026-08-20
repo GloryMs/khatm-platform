@@ -29,7 +29,7 @@ class SdJwtIssuanceStructuralTest extends IntegrationTestSupport {
 
   private static final ObjectMapper JSON = new ObjectMapper();
   private static final Set<String> EXPECTED_STRUCTURAL_KEYS =
-      Set.of("iss", "vct", "ref", "status", "iat", "nbf", "exp", "_sd", "_sd_alg");
+      Set.of("iss", "vct", "ref", "status", "jwks_uri", "iat", "nbf", "exp", "_sd", "_sd_alg");
 
   @Autowired private CredentialService credentialService;
   @Autowired private CredentialRepository credentialRepository;
