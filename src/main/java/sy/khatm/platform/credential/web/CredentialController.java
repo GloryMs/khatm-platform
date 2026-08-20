@@ -41,6 +41,7 @@ import sy.khatm.platform.credential.domain.BulkIssueItemOutcome;
 import sy.khatm.platform.credential.domain.BulkIssueOutcome;
 import sy.khatm.platform.credential.domain.ClaimCodeIssued;
 import sy.khatm.platform.credential.domain.CredentialService;
+import sy.khatm.platform.credential.domain.VerifyOutcome;
 import sy.khatm.platform.shared.SystemAccessExecutor;
 import sy.khatm.platform.shared.TenantContext;
 import sy.khatm.platform.shared.audit.AuditAction;
@@ -241,34 +242,21 @@ class CredentialController {
   VerifyResponse verify(@Valid @RequestBody VerifyRequest req) {
     // KH-2.1 (spec FS-2.1 D5): /verify is genuinely anonymous — a presented credential may belong
     // to any tenant, so this lookup runs under system access rather than any one tenant's RLS
-    // scope. The audit write below stays outside it, attributed to the default tenant like any
-    // other unscoped write.
-    VerifyResponse result = systemAccess.runAsSystem(() -> service.verify(req.sdJwt()));
+    // scope. The audit write below stays outside it, attributed explicitly per outcome (see
+    // auditVerify's own Javadoc) rather than any one tenant's ambient scope.
+    VerifyOutcome outcome = systemAccess.runAsSystem(() -> service.verifyOutcome(req.sdJwt()));
+    VerifyResponse result = outcome.response();
     String reasonMessage =
         messageSource.getMessage(
             "verify.reason." + result.reason(), null, LocaleContextHolder.getLocale());
 
-    // KH-1.1.3 D6: recorded here, deliberately outside CredentialService#verify's own
+    // KH-1.1.3 D6: recorded here, deliberately outside CredentialService#verifyOutcome's own
     // readOnly=true transaction — a read-only transaction cannot accept this write. `ref` comes
-    // from the already-decoded structural claims (never re-parsed), and is null whenever verify()
-    // never reached a credential row (malformed, bad signature, unknown kid).
-    //
-    // Wrapped in TenantContext.runAsDefaultTenant: /verify is permitAll (genuinely anonymous), but
-    // a caller with a live console session still attaches their cookie to this same-origin call —
-    // TenantContext.current() then sees a real authenticated principal with nothing set on this
-    // thread and refuses its silent default-tenant fallback (see that guard's Javadoc). This write
-    // has no real tenant to attribute to either way, so it deliberately asks for the same fallback
-    // an anonymous caller gets.
+    // from the already-decoded structural claims (never re-parsed), and is null whenever
+    // verifyOutcome() never reached a credential row (malformed, bad signature, unknown kid) — the
+    // exact same branches auditVerify falls back to the default tenant for.
     String ref = result.claims() == null ? null : (String) result.claims().get("ref");
-    TenantContext.runAsDefaultTenant(
-        () ->
-            audit.record(
-                result.valid()
-                    ? AuditAction.CREDENTIAL_VERIFY_OK
-                    : AuditAction.CREDENTIAL_VERIFY_FAILED,
-                "credential",
-                ref,
-                Map.of("reason", result.reason())));
+    auditVerify(outcome, ref);
 
     return new VerifyResponse(
         result.valid(),
@@ -281,6 +269,37 @@ class CredentialController {
         result.statusListVersion(),
         result.statusListUri(),
         result.issuerLineage());
+  }
+
+  /**
+   * Attributes {@code CREDENTIAL_VERIFY_OK}/{@code _FAILED} to the credential's own issuing tenant
+   * when {@link CredentialService#verifyOutcome} actually resolved one (fixing the bug where every
+   * verify audit row landed under the platform default tenant regardless — found via KH-2.6b's
+   * aggregated report always reading zero verifyOk/verifyFailed for real activity). Falls back to
+   * {@link TenantContext#runAsDefaultTenant} only for the genuine early-exit branches that never
+   * reach a credential row (malformed presentation, bad signature, unknown kid, unknown ref) —
+   * there is truly no other tenant to attribute to there. Either way, /verify is {@code permitAll}
+   * (genuinely anonymous), but a caller with a live console session still attaches their cookie to
+   * this same-origin call — {@code TenantContext.current()} would otherwise see a real
+   * authenticated principal with nothing set on this thread and refuse its silent default-tenant
+   * fallback (see that guard's Javadoc) — so this always sets <em>something</em> explicitly first.
+   */
+  private void auditVerify(VerifyOutcome outcome, String ref) {
+    AuditAction action =
+        outcome.response().valid()
+            ? AuditAction.CREDENTIAL_VERIFY_OK
+            : AuditAction.CREDENTIAL_VERIFY_FAILED;
+    Map<String, Object> detail = Map.of("reason", outcome.response().reason());
+    if (outcome.tenantId() == null) {
+      TenantContext.runAsDefaultTenant(() -> audit.record(action, "credential", ref, detail));
+      return;
+    }
+    TenantContext.set(outcome.tenantId(), outcome.tenantSlug());
+    try {
+      audit.record(action, "credential", ref, detail);
+    } finally {
+      TenantContext.clear();
+    }
   }
 
   @Operation(

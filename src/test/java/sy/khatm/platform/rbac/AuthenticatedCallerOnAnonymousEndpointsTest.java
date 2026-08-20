@@ -20,16 +20,20 @@ import sy.khatm.platform.credential.domain.CredentialService;
 /**
  * Regression coverage for a bug found live post-KH-2.4-BE: {@code /api/v1/credentials/verify} and
  * {@code /api/v1/claims/redeem} are {@code permitAll} (spec FS-0.6b DoD #9, FS-1.2.1 DoD #7) and
- * both write an {@code audit_log} row attributed to the default tenant via {@code
- * shared.TenantContext#runAsDefaultTenant}. {@code PublicEndpointsNoCredentialsTest} and {@code
+ * both write an {@code audit_log} row — which needs a tenant explicitly set on the thread before
+ * it, one way or another (see {@code shared.TenantContext}'s class Javadoc; as of the
+ * KH-2.6b-adjacent fix, that tenant is the credential's own real one whenever the call actually
+ * resolved a credential row, {@code shared.TenantContext#runAsDefaultTenant} only for the genuine
+ * early exits that never did). {@code PublicEndpointsNoCredentialsTest} and {@code
  * credential.web.ClaimControllerHttpTest} already prove these paths work with zero credentials —
  * but a real browser with a live console session still attaches its {@code KHATM_SESSION} cookie to
  * a same-origin call to either endpoint, which resolves to a real authenticated principal instead
- * of an anonymous one. Before the fix, that made {@code shared.TenantContext#current()}'s fail-fast
- * guard throw {@code IllegalStateException} (surfaced to the caller as {@code KH-SYS-0500}) the
- * moment either endpoint's audit write ran — neither path had ever been exercised from an
- * authenticated session before, only via {@code curl}/{@code TestRestTemplate} with no cookies at
- * all.
+ * of an anonymous one. Before the original fix, that made {@code shared.TenantContext#current()}'s
+ * fail-fast guard throw {@code IllegalStateException} (surfaced to the caller as {@code
+ * KH-SYS-0500}) the moment either endpoint's audit write ran — neither path had ever been exercised
+ * from an authenticated session before, only via {@code curl}/{@code TestRestTemplate} with no
+ * cookies at all. This class only pins the no-crash property; {@code
+ * db.VerifyAuditTenantAttributionTest} pins which tenant the row actually lands under.
  */
 class AuthenticatedCallerOnAnonymousEndpointsTest extends RbacHttpTestSupport {
 

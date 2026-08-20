@@ -398,10 +398,31 @@ public class CredentialService {
 
   // ── Verify (online: signature + status) ──────────────────────────────────
 
+  /**
+   * Verify an SD-JWT presentation. Thin wrapper over {@link #verifyOutcome} for every pre-existing
+   * caller that only ever needed the public wire result — the credential's issuing tenant (needed
+   * only to correctly attribute the {@code CREDENTIAL_VERIFY_OK}/{@code _FAILED} audit write,
+   * {@code credential.web.CredentialController#verify}'s job) is resolved by that method but
+   * deliberately not part of this one's return shape.
+   */
   @Transactional(readOnly = true)
   public VerifyResponse verify(String presentation) {
+    return verifyOutcome(presentation).response();
+  }
+
+  /**
+   * Verify an SD-JWT presentation, pairing the result with the credential's issuing tenant when one
+   * was actually resolved — {@code null} on every early-exit branch below that never reaches a
+   * credential row (malformed presentation, bad signature, unknown {@code kid}, unknown {@code
+   * ref}), since there is genuinely no tenant to attribute to there. See {@link VerifyOutcome}'s
+   * own Javadoc for why this split exists (KH-2.6b's own aggregated report surfaced that {@code
+   * CredentialController#verify} had been attributing every verify audit row to the platform
+   * default tenant unconditionally, not just on these genuine no-credential-resolved branches).
+   */
+  @Transactional(readOnly = true)
+  public VerifyOutcome verifyOutcome(String presentation) {
     if (presentation == null) {
-      return result(false, VerifyReason.MALFORMED, null, null, false);
+      return noTenant(result(false, VerifyReason.MALFORMED, null, null, false));
     }
 
     String compactJwt;
@@ -411,7 +432,7 @@ public class CredentialService {
       try {
         sdJwt = SDJWT.parse(presentation);
       } catch (RuntimeException e) {
-        return result(false, VerifyReason.MALFORMED, null, null, false);
+        return noTenant(result(false, VerifyReason.MALFORMED, null, null, false));
       }
       compactJwt = sdJwt.getCredentialJwt();
       disclosures = sdJwt.getDisclosures();
@@ -429,12 +450,12 @@ public class CredentialService {
       parsed = SignedJWT.parse(compactJwt);
       claimsSet = parsed.getJWTClaimsSet();
     } catch (ParseException e) {
-      return result(false, VerifyReason.MALFORMED, null, null, false);
+      return noTenant(result(false, VerifyReason.MALFORMED, null, null, false));
     }
 
     VerifyReason signatureResult = checkSignature(parsed);
     if (signatureResult != VerifyReason.VALID) {
-      return result(false, signatureResult, null, null, false);
+      return noTenant(result(false, signatureResult, null, null, false));
     }
 
     Map<String, Object> rawClaims = claimsSet.getClaims();
@@ -442,7 +463,7 @@ public class CredentialService {
 
     Date exp = claimsSet.getExpirationTime();
     if (exp != null && exp.toInstant().isBefore(Instant.now())) {
-      return result(false, VerifyReason.EXPIRED, structural, null, false);
+      return noTenant(result(false, VerifyReason.EXPIRED, structural, null, false));
     }
 
     String ref = (String) rawClaims.get("ref");
@@ -452,9 +473,11 @@ public class CredentialService {
       // mandatory-disclosure check (D2) needs the issuing schema, which we only know via this
       // DB row, so an unknown ref skips straight to this existing early-exit (spec FS-0.4 §4
       // step 2 reuses this path unchanged).
-      return result(true, VerifyReason.VALID_SIGNATURE_UNKNOWN_REF, structural, null, false);
+      return noTenant(
+          result(true, VerifyReason.VALID_SIGNATURE_UNKNOWN_REF, structural, null, false));
     }
     Credential c = maybe.get();
+    String issuerSlug = tenants.findById(c.getTenantId()).map(TenantRef::slug).orElse("");
 
     // KH-1.3 D6: now that the credential row is in hand, resolve its status list and surface the
     // additive verify-time fields. statusListChecked=true here means this result is backed by the
@@ -477,46 +500,55 @@ public class CredentialService {
             .toList();
 
     if (c.isRevoked()) {
-      return result(
-          false,
-          VerifyReason.REVOKED,
-          structural,
-          c.getUsesRemaining(),
-          true,
-          statusListChecked,
-          statusListVersion,
-          statusListUri,
-          issuerLineage);
+      return withTenant(
+          result(
+              false,
+              VerifyReason.REVOKED,
+              structural,
+              c.getUsesRemaining(),
+              true,
+              statusListChecked,
+              statusListVersion,
+              statusListUri,
+              issuerLineage),
+          c.getTenantId(),
+          issuerSlug);
     }
 
     // FS-1.6 D4: an exhausted (but not explicitly revoked) credential is a distinct, non-error
     // domain result — checked right after REVOKED, before the disclosure-shape checks below, since
     // those are about the presentation's own integrity, not the credential's lifecycle state.
     if (c.getUsesRemaining() <= 0) {
-      return result(
-          false,
-          VerifyReason.EXHAUSTED,
-          structural,
-          c.getUsesRemaining(),
-          false,
-          statusListChecked,
-          statusListVersion,
-          statusListUri,
-          issuerLineage);
+      return withTenant(
+          result(
+              false,
+              VerifyReason.EXHAUSTED,
+              structural,
+              c.getUsesRemaining(),
+              false,
+              statusListChecked,
+              statusListVersion,
+              statusListUri,
+              issuerLineage),
+          c.getTenantId(),
+          issuerSlug);
     }
 
     // D8: _sd_alg must be sha-256.
     if (!SD_ALG.equals(rawClaims.get("_sd_alg"))) {
-      return result(
-          false,
-          VerifyReason.BAD_SD_ALG,
-          structural,
-          c.getUsesRemaining(),
-          false,
-          statusListChecked,
-          statusListVersion,
-          statusListUri,
-          issuerLineage);
+      return withTenant(
+          result(
+              false,
+              VerifyReason.BAD_SD_ALG,
+              structural,
+              c.getUsesRemaining(),
+              false,
+              statusListChecked,
+              statusListVersion,
+              statusListUri,
+              issuerLineage),
+          c.getTenantId(),
+          issuerSlug);
     }
     List<?> sdDigests = rawClaims.get("_sd") instanceof List<?> list ? list : List.of();
 
@@ -525,28 +557,34 @@ public class CredentialService {
     for (Disclosure d : disclosures) {
       String claimName = d.getClaimName();
       if (claimName == null || !sdDigests.contains(d.digest())) {
-        return result(
-            false,
-            VerifyReason.FORGED_DISCLOSURE,
-            structural,
-            c.getUsesRemaining(),
-            false,
-            statusListChecked,
-            statusListVersion,
-            statusListUri,
-            issuerLineage);
+        return withTenant(
+            result(
+                false,
+                VerifyReason.FORGED_DISCLOSURE,
+                structural,
+                c.getUsesRemaining(),
+                false,
+                statusListChecked,
+                statusListVersion,
+                statusListUri,
+                issuerLineage),
+            c.getTenantId(),
+            issuerSlug);
       }
       if (disclosed.containsKey(claimName)) {
-        return result(
-            false,
-            VerifyReason.DUPLICATE_DISCLOSURE,
-            structural,
-            c.getUsesRemaining(),
-            false,
-            statusListChecked,
-            statusListVersion,
-            statusListUri,
-            issuerLineage);
+        return withTenant(
+            result(
+                false,
+                VerifyReason.DUPLICATE_DISCLOSURE,
+                structural,
+                c.getUsesRemaining(),
+                false,
+                statusListChecked,
+                statusListVersion,
+                statusListUri,
+                issuerLineage),
+            c.getTenantId(),
+            issuerSlug);
       }
       disclosed.put(claimName, d.getClaimValue());
     }
@@ -556,32 +594,47 @@ public class CredentialService {
     if (schemaRef.isPresent()) {
       for (String mandatoryField : mandatoryFields(schemaRef.get())) {
         if (!disclosed.containsKey(mandatoryField)) {
-          return result(
-              false,
-              VerifyReason.WITHHELD_MANDATORY_CLAIM,
-              structural,
-              c.getUsesRemaining(),
-              false,
-              statusListChecked,
-              statusListVersion,
-              statusListUri,
-              issuerLineage);
+          return withTenant(
+              result(
+                  false,
+                  VerifyReason.WITHHELD_MANDATORY_CLAIM,
+                  structural,
+                  c.getUsesRemaining(),
+                  false,
+                  statusListChecked,
+                  statusListVersion,
+                  statusListUri,
+                  issuerLineage),
+              c.getTenantId(),
+              issuerSlug);
         }
       }
     }
 
     Map<String, Object> verifiedClaims = new LinkedHashMap<>(structural);
     verifiedClaims.putAll(disclosed);
-    return result(
-        true,
-        VerifyReason.VALID,
-        verifiedClaims,
-        c.getUsesRemaining(),
-        false,
-        statusListChecked,
-        statusListVersion,
-        statusListUri,
-        issuerLineage);
+    return withTenant(
+        result(
+            true,
+            VerifyReason.VALID,
+            verifiedClaims,
+            c.getUsesRemaining(),
+            false,
+            statusListChecked,
+            statusListVersion,
+            statusListUri,
+            issuerLineage),
+        c.getTenantId(),
+        issuerSlug);
+  }
+
+  private static VerifyOutcome noTenant(VerifyResponse response) {
+    return new VerifyOutcome(response, null, null);
+  }
+
+  private static VerifyOutcome withTenant(
+      VerifyResponse response, UUID tenantId, String tenantSlug) {
+    return new VerifyOutcome(response, tenantId, tenantSlug);
   }
 
   /**
