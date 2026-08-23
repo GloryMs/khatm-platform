@@ -97,8 +97,10 @@ class UserAdminController {
         @ApiResponse(
             responseCode = "403",
             description =
-                "Missing the tenant:admin scope (KH-RBC-0403), or the caller's own"
-                    + " mustChangePassword flag is set (KH-USR-0403 — see GET /api/v1/auth/me)",
+                "Missing the tenant:admin scope (KH-RBC-0403), the caller's own"
+                    + " mustChangePassword flag is set (KH-USR-0403 — see GET /api/v1/auth/me), or"
+                    + " a requested role exceeds the caller's own role-grant ceiling"
+                    + " (KH-USR-2403 — only platform:admin may grant PLATFORM_ADMIN/ORG_ADMIN)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "409",
@@ -127,8 +129,10 @@ class UserAdminController {
         @ApiResponse(
             responseCode = "403",
             description =
-                "Missing the tenant:admin scope (KH-RBC-0403), or the caller's own"
-                    + " mustChangePassword flag is set (KH-USR-0403 — see GET /api/v1/auth/me)",
+                "Missing the tenant:admin scope (KH-RBC-0403), the caller's own"
+                    + " mustChangePassword flag is set (KH-USR-0403 — see GET /api/v1/auth/me), or"
+                    + " a requested role exceeds the caller's own role-grant ceiling"
+                    + " (KH-USR-2403 — only platform:admin may grant PLATFORM_ADMIN/ORG_ADMIN)",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
         @ApiResponse(
             responseCode = "404",

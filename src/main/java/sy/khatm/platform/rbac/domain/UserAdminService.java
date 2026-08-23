@@ -11,6 +11,8 @@ import java.util.UUID;
 import java.util.regex.Pattern;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +23,7 @@ import sy.khatm.platform.shared.TenantContext;
 import sy.khatm.platform.shared.Uuidv7;
 import sy.khatm.platform.shared.audit.AuditAction;
 import sy.khatm.platform.shared.audit.AuditService;
+import sy.khatm.platform.shared.error.AuthorizationException;
 import sy.khatm.platform.shared.error.ConflictException;
 import sy.khatm.platform.shared.error.ErrorCode;
 import sy.khatm.platform.shared.error.NotFoundException;
@@ -46,8 +49,47 @@ import sy.khatm.platform.shared.error.ValidationException;
  * tenant so the count is always consistent. {@code db.ConcurrentLastAdminTest} proves exactly one
  * of two such concurrent locks succeeds.
  *
+ * <p><b>Role-grant ceiling (chore/role-grant-ceiling):</b> {@link #create} and {@link
+ * #replaceRoles} refuse any grant whose role carries a scope outside {@link #GRANT_CEILING_SCOPES}
+ * unless the real, authenticated calling principal holds {@code platform:admin} — closing a
+ * pre-existing gap flagged (out of scope) in KH-2.6b, where a plain {@code tenant:admin} could
+ * grant {@code PLATFORM_ADMIN}/{@code ORG_ADMIN} via this same {@code create}/{@code replaceRoles}
+ * surface. One chokepoint covers both the local path ({@code rbac.web.UserAdminController}) and the
+ * {@code org:admin}-mediated path ({@code rbac.domain.OrgAdminService#createChildUser}, via {@code
+ * shared.OnBehalfOfExecutor #runAsChildOrg}) automatically, by construction — neither caller needs
+ * its own copy of this check.
+ *
+ * <p><b>Why the ceiling is pinned to {@code TENANT_ADMIN}'s own scope set, not the literal calling
+ * principal's own granted scopes — the one genuinely subtle design point here.</b> Under {@code
+ * runAsChildOrg}, this class runs with {@link TenantContext} switched to the <em>child</em> tenant,
+ * but the real authenticated principal is still the parent's {@code org:admin} holder — whose own
+ * JWT/session scope is exactly, and only, {@code org:admin} ({@code RoleCatalog.ORG_ADMIN}'s single
+ * scope). A literal "role's scopes must be a subset of the real caller's own raw scopes" rule,
+ * evaluated against that {@code {org:admin}} set, would correctly reject granting {@code ORG_ADMIN}
+ * to a child (no self-propagation down the tenant tree — the required outcome) but would
+ * <em>also</em> incorrectly reject every legitimate operational-role grant the org-mediated path
+ * already makes today (e.g. granting {@code ISSUER_OPERATOR} — {@code
+ * rbac.OrgAdminGateTest#createChildUser_writesOrgOnBehalfOf_inParent_andUserCreated_inChild}),
+ * since {@code issue}/{@code verify}/{@code revoke} are not in {@code org:admin}'s own raw scope
+ * set either. {@code OrgAdminService}'s own class Javadoc already establishes the resolving
+ * principle: the org-mediated path is deliberately modeled as "acts exactly as a local {@code
+ * tenant:admin} of the child already could, no additional privilege by construction." Pinning the
+ * ceiling to {@code TENANT_ADMIN}'s scope set — rather than the caller's own literal scopes — makes
+ * that modeling precise for role grants specifically: a real local {@code tenant:admin}'s own raw
+ * scopes already <em>equal</em> {@code TENANT_ADMIN}'s scope set (so the local path's behavior is
+ * unchanged either way), while the org-mediated path is capped at the exact same ceiling a local
+ * {@code tenant:admin} of that same child tenant would have — which is precisely what "acts as if
+ * local tenant:admin" means. {@code PLATFORM_ADMIN} (adds {@code platform:admin}) and {@code
+ * ORG_ADMIN} (adds {@code org:admin}) are the only two catalog roles that ever exceed this ceiling,
+ * so both remain grantable only by an actual {@code platform:admin} holder — on either path.
+ * (Session brief's veto point V1-b, the fixed-ceiling fallback, produces the identical outcome for
+ * today's four-role catalog; this scope-set form is kept as the general rule since it degrades
+ * correctly if the catalog grows a role whose scopes are not a strict superset of {@code
+ * TENANT_ADMIN}'s own.)
+ *
  * <p>This class is module-private; {@code rbac.web}'s controllers (a different Java package inside
- * the module) are the only callers.
+ * the module) and {@code rbac.domain.OrgAdminService} (the org-mediated on-behalf-of plane) are the
+ * only callers.
  */
 @Service
 public class UserAdminService {
@@ -59,6 +101,20 @@ public class UserAdminService {
    * reason {@code shared.OnBehalfOfExecutor} duplicates {@code "SCOPE_platform:admin"}.
    */
   private static final String TENANT_ADMIN_SCOPE = "tenant:admin";
+
+  /**
+   * The authenticated caller's {@code platform:admin} authority string, as {@code
+   * rbac.security.KhatmAuthorities} builds it. Duplicated rather than imported for the identical
+   * Modulith-boundary reason {@link #TENANT_ADMIN_SCOPE} already documents — {@code
+   * shared.OnBehalfOfExecutor} duplicates this exact same literal for the exact same reason.
+   */
+  private static final String PLATFORM_ADMIN_AUTHORITY = "SCOPE_platform:admin";
+
+  /**
+   * The role-grant ceiling — see this class's own Javadoc for why it is {@code TENANT_ADMIN}'s
+   * scope set specifically, not the calling principal's own literal granted scopes.
+   */
+  private static final Set<String> GRANT_CEILING_SCOPES = tenantAdminCeilingScopes();
 
   private static final Pattern USERNAME_PATTERN = Pattern.compile("^[a-z0-9][a-z0-9._-]{2,63}$");
 
@@ -123,6 +179,8 @@ public class UserAdminService {
    * @throws ValidationException {@code KH-USR-0400} if the username format is invalid or a role
    *     code is not in the catalog
    * @throws ConflictException {@code KH-USR-0409} if the username already exists in this tenant
+   * @throws AuthorizationException {@code KH-USR-2403} if a requested role exceeds the real calling
+   *     principal's own role-grant ceiling (see this class's own Javadoc)
    */
   @Transactional
   public CreatedUser create(String username, LocalizedText displayNameI18n, Set<String> roleCodes) {
@@ -133,6 +191,7 @@ public class UserAdminService {
     }
     Set<String> codes = normalize(roleCodes);
     List<Role> roleEntities = resolveRoles(tenantId, codes);
+    ensureGrantWithinCeiling(username, roleEntities);
 
     String temporaryPassword = generateTemporaryPassword();
     AppUser user = new AppUser();
@@ -169,6 +228,8 @@ public class UserAdminService {
    * @return the user's updated view
    * @throws NotFoundException {@code KH-USR-0404} if the user does not exist in this tenant
    * @throws ValidationException {@code KH-USR-0400} if a role code is not in the catalog
+   * @throws AuthorizationException {@code KH-USR-2403} if a requested role exceeds the real calling
+   *     principal's own role-grant ceiling (see this class's own Javadoc)
    * @throws ConflictException {@code KH-USR-0423} if this would remove the last active
    *     administrator
    */
@@ -179,6 +240,7 @@ public class UserAdminService {
     AppUser user = requireUser(tenantId, userId);
     Set<String> codes = normalize(roleCodes);
     List<Role> newRoles = resolveRoles(tenantId, codes);
+    ensureGrantWithinCeiling(user.getUsername(), newRoles);
     boolean newGrantsAdmin =
         newRoles.stream()
             .anyMatch(role -> Arrays.asList(role.getScopes()).contains(TENANT_ADMIN_SCOPE));
@@ -313,6 +375,55 @@ public class UserAdminService {
     if (users.countActiveAdminsExcluding(tenantId, target.getId()) == 0) {
       throw new ConflictException(ErrorCode.KH_USR_0423, "user.last-admin");
     }
+  }
+
+  /**
+   * The role-grant ceiling gate (chore/role-grant-ceiling) — see this class's own Javadoc for the
+   * full rationale. A {@code platform:admin} holder bypasses it entirely (grants anything, by
+   * construction); any other real caller may only grant roles whose scopes are all within {@link
+   * #GRANT_CEILING_SCOPES}. Rejects on the <em>first</em> offending scope found, audited
+   * independently (this call's own transaction is about to roll back via the thrown exception).
+   *
+   * @param targetUsername the user the roles are being granted to — the audit row's {@code
+   *     entityRef}
+   * @param roleEntities the already-catalog-validated roles being granted (from {@link
+   *     #resolveRoles})
+   * @throws AuthorizationException {@code KH-USR-2403} on the first role whose scope set is not
+   *     entirely within the ceiling
+   */
+  private void ensureGrantWithinCeiling(String targetUsername, List<Role> roleEntities) {
+    if (callerHoldsPlatformAdmin()) {
+      return;
+    }
+    for (Role role : roleEntities) {
+      for (String scope : role.getScopes()) {
+        if (!GRANT_CEILING_SCOPES.contains(scope)) {
+          audit.recordIndependently(
+              AuditAction.ROLE_GRANT_REJECTED,
+              "app_user",
+              targetUsername,
+              Map.of("roleCode", role.getCode(), "scope", scope));
+          throw new AuthorizationException(
+              ErrorCode.KH_USR_2403, "user.role-grant-exceeds-ceiling", role.getCode());
+        }
+      }
+    }
+  }
+
+  private static boolean callerHoldsPlatformAdmin() {
+    Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+    return authentication != null
+        && authentication.getAuthorities().stream()
+            .anyMatch(authority -> PLATFORM_ADMIN_AUTHORITY.equals(authority.getAuthority()));
+  }
+
+  private static Set<String> tenantAdminCeilingScopes() {
+    return RoleCatalog.ALL.stream()
+        .filter(definition -> "TENANT_ADMIN".equals(definition.code()))
+        .findFirst()
+        .map(definition -> Set.copyOf(definition.scopes()))
+        .orElseThrow(
+            () -> new IllegalStateException("RoleCatalog is missing its TENANT_ADMIN definition"));
   }
 
   /**

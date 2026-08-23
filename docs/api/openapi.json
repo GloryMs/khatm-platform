@@ -4041,7 +4041,7 @@
                 }
               }
             },
-            "description" : "Missing the org:admin scope (KH-RBC-0403)"
+            "description" : "Missing the org:admin scope (KH-RBC-0403), or a requested role exceeds the caller's own role-grant ceiling (KH-USR-2403 — no self-propagation: an org:admin cannot grant ORG_ADMIN to a child's user either, only platform:admin can)"
           },
           "404" : {
             "content" : {
@@ -5013,7 +5013,7 @@
                 }
               }
             },
-            "description" : "Missing the tenant:admin scope (KH-RBC-0403), or the caller's own mustChangePassword flag is set (KH-USR-0403 — see GET /api/v1/auth/me)"
+            "description" : "Missing the tenant:admin scope (KH-RBC-0403), the caller's own mustChangePassword flag is set (KH-USR-0403 — see GET /api/v1/auth/me), or a requested role exceeds the caller's own role-grant ceiling (KH-USR-2403 — only platform:admin may grant PLATFORM_ADMIN/ORG_ADMIN)"
           },
           "409" : {
             "content" : {
@@ -5392,7 +5392,7 @@
                 }
               }
             },
-            "description" : "Missing the tenant:admin scope (KH-RBC-0403), or the caller's own mustChangePassword flag is set (KH-USR-0403 — see GET /api/v1/auth/me)"
+            "description" : "Missing the tenant:admin scope (KH-RBC-0403), the caller's own mustChangePassword flag is set (KH-USR-0403 — see GET /api/v1/auth/me), or a requested role exceeds the caller's own role-grant ceiling (KH-USR-2403 — only platform:admin may grant PLATFORM_ADMIN/ORG_ADMIN)"
           },
           "404" : {
             "content" : {
