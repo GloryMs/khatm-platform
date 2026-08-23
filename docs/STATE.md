@@ -3,19 +3,54 @@
 > Updated at the end of EVERY Claude Code session. This file is the session anchor.
 
 ## Current phase / task
-**fix/role-grant-ceiling — PR #68 open, not yet merged**
-(`https://github.com/GloryMs/khatm-platform/pull/68`, opened 2026-08-20 — bug fix, not a WBS item,
-the pre-existing escalation gap KH-2.6b flagged out of scope; brief
+**fix/role-grant-ceiling — DONE & MERGED via PR #68**
+(`https://github.com/GloryMs/khatm-platform/pull/68`, opened 2026-08-20, merged
+2026-08-23T07:51:57Z on Majd's explicit "merge PR #68 and update STATE.md" instruction, merge
+commit `03cbe10f38bf52d4d2089ca01d2b9accbd82ec78`, standard merge via `gh pr merge --merge` — bug
+fix, not a WBS item, the pre-existing escalation gap KH-2.6b flagged out of scope; brief
 `docs/sessions/SESSION-CHORE-ROLE-GRANT-CEILING.md`; see the session entry below for the full
-implementation record). `mvn verify` green 478/478 (473 baseline + 5 new), zero RLS touch,
-contract additive-only. **Arabic-review gate — Majd approved the new message key as-is** (`user
-.role-grant-exceeds-ceiling` = "لا يمكنك منح الدور {0} — فهو يتجاوز نطاق صلاحياتك الإدارية."),
-push/PR authorized on that same instruction. **Two [MAJD] items remain, noted in the PR body, not
-blockers to opening it:**
-- **Retroactive audit runbook — not yet executed:** query in the PR description; expected result is
-  empty (every admin today is Majd).
-- **Live compose check — not yet executed:** the two rejected attempts (local tenant:admin →
-  PLATFORM_ADMIN, org:admin-mediated → ORG_ADMIN) via console/Swagger.
+implementation record). All four CI checks green before merge: Build and verify, Trivy vuln scan,
+compose-smoke (restore-from-zero), gitleaks. `main` is now at `03cbe10`, zero open PRs. `mvn
+verify` was green 478/478 (473 baseline + 5 new) pre-merge, zero RLS touch, contract
+additive-only. **Arabic-review gate — Majd approved the new message key as-is** (`user
+.role-grant-exceeds-ceiling` = "لا يمكنك منح الدور {0} — فهو يتجاوز نطاق صلاحياتك الإدارية.").
+
+**Both [MAJD] DoD items closed before merge, executed live by Claude at Majd's explicit
+instruction ("proceed in order to test that locally"), against the local compose stack rebuilt
+from this branch (2026-08-23):**
+- **Retroactive audit runbook — executed, clean.** The PR-body query against local Postgres
+  returned exactly 4 historical `USER_CREATED` rows ever granting `PLATFORM_ADMIN`/`ORG_ADMIN`
+  (`moi-admin`, `immi-org-admin`, plus two grants made during this session's own test setup) — every
+  one attributed to actor `01a0145e-df88-77b7-81bb-53c74d682dd9`, the bootstrap `platform:admin`.
+  No pre-existing privilege-escalation grant exists.
+- **Live compose check — executed, all four required outcomes confirmed via curl against
+  `localhost:8080`** (two fresh test users provisioned via the `platform:admin` cross-tenant
+  endpoint — `qa-tenant-admin` as `TENANT_ADMIN` in `moi-immigration`, `qa-org-admin` as
+  `ORG_ADMIN` in parent tenant `moi` — each password-changed and TOTP-enrolled to clear the
+  mandatory-2FA wall, then driven through the real HTTP endpoints):
+  - `qa-tenant-admin` → grant `PLATFORM_ADMIN` via `/api/v1/users` → **403 `KH-USR-2403`**.
+  - `qa-tenant-admin` → grant `ORG_ADMIN` via `/api/v1/users` → **403 `KH-USR-2403`**.
+  - `qa-org-admin` → grant `ORG_ADMIN` to a user in child tenant `moi-immigration` via
+    `/api/v1/org/children/{id}/users` (self-propagation attempt) → **403 `KH-USR-2403`**.
+  - Real bootstrap `admin` (`platform:admin`) → grant `PLATFORM_ADMIN` → **200 OK** (ceiling
+    correctly bypassed).
+  - Sanity: both `qa-tenant-admin` and `qa-org-admin` granting `ISSUER_OPERATOR` (ordinary,
+    within-ceiling roles) → **200 OK**, confirming the fix is not overbroad.
+  - All three rejections produced independent `ROLE_GRANT_REJECTED` audit rows (verified via
+    direct Postgres query), each surviving its own request's 403 rollback with the correct
+    `roleCode`/`scope` detail — the `AuditService#recordIndependently` design working as intended.
+  - Test users/data (`qa-tenant-admin`, `qa-org-admin`, `legit-operator`, `child-legit-operator`,
+    `platform-admin-check`) deliberately left in the local Postgres per Majd's explicit
+    instruction, not cleaned up.
+- Two pre-existing untracked doc files (`docs/STATE-archive-phase2.md`,
+  `docs/sessions/SESSION-CHORE-VAULT-HOUSEKEEPING.md`, carried in the working tree from prior
+  sessions) were committed alongside this merge on Majd's explicit instruction — no secrets found
+  on inspection (unseal-key/root-token references only point at Majd's password manager, per this
+  repo's own governance rule).
+- Unrelated observation, not investigated further (out of scope for this fix): a
+  `VaultTransitProvider — signing key not found` error for `khatm-khatm-default-key-2` appeared in
+  `khatm-api` logs at local container startup, predating any of this session's testing — likely a
+  leftover key-version mismatch from a prior manual Vault unseal on this machine.
 
 **feat/KH-2.7-BE-jwks-discovery — DONE & MERGED via PR #67** (opened 2026-08-20, merged
 2026-08-20T11:42:13Z on Majd's explicit "merge the PR" instruction, merge commit
