@@ -35,6 +35,12 @@ public record CurrentActor(
      * An API key owned by one registered consuming party (spec FS-0.6b D3) — the only kind {@code
      * /consume} accepts (SEC §7).
      */
-    API_KEY_CONSUMING_PARTY
+    API_KEY_CONSUMING_PARTY,
+    /**
+     * A machine-to-machine issuer client ({@code Bearer khi_...}, KH-2.8.1, spec FS-2.7a D3) —
+     * {@link CurrentActor#id()} is the {@code issuer_client} id. May only issue and read its own
+     * credentials; every other route is denied by one central rule.
+     */
+    API_KEY_ISSUER_CLIENT
   }
 }

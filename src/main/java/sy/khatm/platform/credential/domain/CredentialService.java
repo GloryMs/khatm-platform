@@ -26,6 +26,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -60,6 +61,7 @@ import sy.khatm.platform.credential.persistence.ConsumptionEventRepository;
 import sy.khatm.platform.credential.persistence.CredentialRepository;
 import sy.khatm.platform.holder.api.HolderDirectory;
 import sy.khatm.platform.holder.api.HolderRef;
+import sy.khatm.platform.issuerclient.api.IssuerClientSchemaAccess;
 import sy.khatm.platform.key.api.KeySigner;
 import sy.khatm.platform.key.api.KeyVerifier;
 import sy.khatm.platform.key.api.PublicKeyHandle;
@@ -143,6 +145,11 @@ public class CredentialService {
   private final AtomicConsumptionRecorder consumptionRecorder;
   private final TenantDirectory tenants;
   private final TenantJwksUriBuilder jwksUriBuilder;
+  private final IssuerClientSchemaAccess issuerClientSchemas;
+  private final Set<String> forbiddenClaimNames;
+
+  /** The connector contract's holder reference: a lowercase hex SHA-256 HMAC (spec FS-2.7a D8). */
+  private static final Pattern HOLDER_REF_SHAPE = Pattern.compile("^[0-9a-f]{64}$");
 
   @Value("${khatm.issuer-did:did:web:khatm.sy:demo}")
   private String issuerDid;
@@ -167,7 +174,16 @@ public class CredentialService {
       CurrentActorResolver currentActorResolver,
       AtomicConsumptionRecorder consumptionRecorder,
       TenantDirectory tenants,
-      TenantJwksUriBuilder jwksUriBuilder) {
+      TenantJwksUriBuilder jwksUriBuilder,
+      IssuerClientSchemaAccess issuerClientSchemas,
+      @Value("${khatm.issuance.forbidden-claim-names:nationalId,nid,national_id,ssn,passportNo}")
+          List<String> forbiddenClaimNames) {
+    this.issuerClientSchemas = issuerClientSchemas;
+    this.forbiddenClaimNames =
+        forbiddenClaimNames.stream()
+            .map(name -> name.trim().toLowerCase(Locale.ROOT))
+            .filter(name -> !name.isEmpty())
+            .collect(Collectors.toUnmodifiableSet());
     this.credentials = credentials;
     this.events = events;
     this.claimCodes = claimCodes;
@@ -199,14 +215,29 @@ public class CredentialService {
     int maxUses = req.maxUses() == null ? 1 : req.maxUses();
     int validMinutes = req.validMinutes() == null ? 60 : req.validMinutes();
     String schemaCode = req.schemaCode() == null ? "GenericDocument/v1" : req.schemaCode();
-    String holderPseudoRef = req.holderRef() == null ? "holder-demo" : req.holderRef();
     Map<String, Object> claims = req.claims() == null ? Map.of() : req.claims();
+    // Spec FS-2.7a D8: the connector contract applies to EVERY issuance path, console included.
+    validateConnectorContract(req.holderRef(), claims);
+    String holderPseudoRef = req.holderRef();
+    UUID issuerClientId =
+        currentActorResolver
+            .resolve()
+            .filter(a -> a.kind() == CurrentActor.ActorKind.API_KEY_ISSUER_CLIENT)
+            .map(CurrentActor::id)
+            .orElse(null);
     List<String> sdFields = req.sdFields() == null ? List.copyOf(claims.keySet()) : req.sdFields();
 
     SchemaRef schemaRef =
         req.schemaId() != null
             ? schemas.requirePublishedById(req.schemaId())
             : schemas.ensurePublished(buildSchemaDefinition(schemaCode, claims, sdFields, maxUses));
+    // Spec FS-2.7a D1/D4: an issuer client issues only against its own schema allowlist
+    // (deny-by-default). The transaction rolls back on this throw, so even a stand-in schema the
+    // code path above just find-or-created for an unknown code leaves nothing behind.
+    if (issuerClientId != null
+        && !issuerClientSchemas.isSchemaAllowed(issuerClientId, schemaRef.id())) {
+      throw new AuthorizationException(ErrorCode.KH_AUTH_0403, "error.auth.scope-denied");
+    }
     validateAttestation(schemaRef, req.attestation());
     validateClaimPatterns(schemaRef, claims);
     HolderRef holderRef = holders.ensureHolder(holderPseudoRef);
@@ -290,6 +321,7 @@ public class CredentialService {
     c.setUsesRemaining(maxUses);
     c.setRevoked(false);
     c.setCreatedAt(now);
+    c.setIssuerClientId(issuerClientId);
     credentials.save(c);
 
     // KH-2.4 (spec FS-2.4 item 2): recorded before CREDENTIAL_ISSUED, same transaction — a
@@ -311,7 +343,32 @@ public class CredentialService {
     eventPublisher.publishEvent(new CredentialIssued(ref, null, now, c.getTenantId()));
     audit.record(AuditAction.CREDENTIAL_ISSUED, "credential", ref, null);
 
-    return new IssueResponse(id.toString(), ref, presentation);
+    return new IssueResponse(
+        id.toString(),
+        ref,
+        presentation,
+        false,
+        issuerClientId == null ? null : issuerClientId.toString());
+  }
+
+  /**
+   * The connector contract (spec FS-2.7a D8): {@code holderRef} must be exactly 64 lowercase hex
+   * characters (a SHA-256 HMAC — its shape is checked, its meaning never is), and no top-level
+   * claim may be named like a national identifier ({@code khatm.issuance.forbidden-claim-names},
+   * case-insensitive). A cheap safety net so a hastily written connector cannot push a national ID
+   * into the platform. The offending value is never echoed or logged — only the field name.
+   */
+  private void validateConnectorContract(String holderRef, Map<String, Object> claims) {
+    if (holderRef == null || !HOLDER_REF_SHAPE.matcher(holderRef).matches()) {
+      throw new ValidationException(
+          ErrorCode.KH_ISS_0400, "issuance.validation-failed", "holderRef");
+    }
+    for (String claimName : claims.keySet()) {
+      if (claimName != null && forbiddenClaimNames.contains(claimName.toLowerCase(Locale.ROOT))) {
+        throw new ValidationException(
+            ErrorCode.KH_ISS_0400, "issuance.validation-failed", "claims");
+      }
+    }
   }
 
   /**
@@ -912,8 +969,20 @@ public class CredentialService {
     return true;
   }
 
+  /**
+   * A credential's status view. For an issuer-client caller (spec FS-2.7a D4/V6) only credentials
+   * that client itself issued are visible: any other id — a sibling client's, a console-issued one
+   * — is indistinguishable from a missing one ({@code Optional.empty()} → 404, never 403), so
+   * existence cannot be probed.
+   */
   public Optional<CredentialView> getView(UUID id) {
-    return credentials.findById(id).map(mapper::toView);
+    Optional<CurrentActor> actor = currentActorResolver.resolve();
+    Optional<Credential> found = credentials.findById(id);
+    if (actor.isPresent() && actor.get().kind() == CurrentActor.ActorKind.API_KEY_ISSUER_CLIENT) {
+      UUID clientId = actor.get().id();
+      found = found.filter(c -> clientId.equals(c.getIssuerClientId()));
+    }
+    return found.map(mapper::toView);
   }
 
   // ── Search (KH-1.1.4) ────────────────────────────────────────────────────

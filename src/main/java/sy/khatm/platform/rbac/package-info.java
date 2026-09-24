@@ -30,7 +30,14 @@
  * (new in {@code V13__totp_2fa.sql}, KH-2.2c — {@code app_user} itself gained three columns in the
  * same migration for the TOTP secret/enrollment/confirmation state).
  *
- * <p><b>Cross-module dependencies:</b> {@code shared} (its open root package — {@link
+ * <p><b>Issuer clients (KH-2.8.1):</b> {@code rbac.security.IssuerClientAuthFilter} authenticates
+ * {@code Bearer khi_...} requests through {@code issuerclient :: api}'s {@code
+ * IssuerClientAuthenticator} (an allowed dependency edge; the reverse would be a cycle) and builds
+ * the request's principal with the new {@code ActorKind.API_KEY_ISSUER_CLIENT}. One central
+ * authorization rule in {@code SecurityConfig} confines that principal to issuance and reading its
+ * own credentials.
+ *
+ * <p><b>Cross-module dependencies:</b> {@code issuerclient :: api} (KH-2.8.1); {@code shared} (its open root package — {@link
  * sy.khatm.platform.shared.TenantContext}, {@link sy.khatm.platform.shared.Uuidv7}, {@link
  * sy.khatm.platform.shared.LocalizedText}); {@code shared :: error} ({@code KhatmException}
  * subtypes — {@code AuthenticationException}/{@code AuthorizationException}, finally thrown as of
@@ -123,6 +130,7 @@
       "shared :: web",
       "consumer :: api",
       "schema :: api",
-      "tenant :: api"
+      "tenant :: api",
+      "issuerclient :: api"
     })
 package sy.khatm.platform.rbac;

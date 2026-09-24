@@ -512,6 +512,26 @@
         "required" : [ "nameI18n" ],
         "type" : "object"
       },
+      "CreateIssuerClientRequest" : {
+        "properties" : {
+          "allowedSchemaIds" : {
+            "items" : {
+              "format" : "uuid",
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "expiresAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "name" : {
+            "$ref" : "#/components/schemas/NameI18nRequest"
+          }
+        },
+        "required" : [ "name" ],
+        "type" : "object"
+      },
       "CreateUserRequest" : {
         "properties" : {
           "displayNameI18n" : {
@@ -542,6 +562,31 @@
             "type" : "string"
           },
           "username" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "CreatedIssuerClientResponse" : {
+        "properties" : {
+          "apiKey" : {
+            "type" : "string"
+          },
+          "client" : {
+            "$ref" : "#/components/schemas/IssuerClientResponse"
+          },
+          "holderHmacSecret" : {
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "keyPrefix" : {
+            "type" : "string"
+          },
+          "retiringClientId" : {
+            "format" : "uuid",
             "type" : "string"
           }
         },
@@ -843,13 +888,74 @@
       "IssueResponse" : {
         "description" : "Result of a successful SD-JWT credential issuance",
         "properties" : {
+          "claimed" : {
+            "type" : "boolean"
+          },
           "id" : {
+            "type" : "string"
+          },
+          "issuerClientId" : {
             "type" : "string"
           },
           "ref" : {
             "type" : "string"
           },
           "sdJwt" : {
+            "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "IssuerClientResponse" : {
+        "properties" : {
+          "allowedSchemaIds" : {
+            "items" : {
+              "format" : "uuid",
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "createdAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "expiresAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "id" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "keyPrefix" : {
+            "type" : "string"
+          },
+          "lastUsedAt" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "name" : {
+            "$ref" : "#/components/schemas/LocalizedText"
+          },
+          "retireAfter" : {
+            "format" : "date-time",
+            "type" : "string"
+          },
+          "rotatedFrom" : {
+            "format" : "uuid",
+            "type" : "string"
+          },
+          "scopes" : {
+            "items" : {
+              "type" : "string"
+            },
+            "type" : "array"
+          },
+          "status" : {
+            "type" : "string"
+          },
+          "tenantId" : {
+            "format" : "uuid",
             "type" : "string"
           }
         },
@@ -1101,6 +1207,15 @@
           "validTo" : {
             "format" : "date-time",
             "type" : "string"
+          }
+        },
+        "type" : "object"
+      },
+      "RotateIssuerClientRequest" : {
+        "properties" : {
+          "retireAfterHours" : {
+            "format" : "int32",
+            "type" : "integer"
           }
         },
         "type" : "object"
@@ -3679,6 +3794,348 @@
         "tags" : [ "credential" ]
       }
     },
+    "/api/v1/issuer-clients" : {
+      "get" : {
+        "description" : "The tenant's issuer clients, newest first: prefix, status, scopes, allowed schemas, last use. Never returns the key, its secret, or its hash. Requires key:manage.",
+        "operationId" : "listIssuerClients",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/IssuerClientResponse"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "The tenant's issuer clients"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid console session"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the key:manage scope (KH-RBC-0403)"
+          }
+        },
+        "summary" : "List issuer clients",
+        "tags" : [ "issuer-clients" ]
+      },
+      "post" : {
+        "description" : "Creates a client and returns its khi_ API key ONCE — it cannot be retrieved again. For the first client of a root tenant the response also carries the tenant's holder HMAC secret (holderHmacSecret), also shown once; later clients and child-tenant clients never carry one. Requires key:manage.",
+        "operationId" : "createIssuerClient",
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CreateIssuerClientRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "201" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CreatedIssuerClientResponse"
+                }
+              }
+            },
+            "description" : "Created; the one-time key is in the body"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Bean Validation failed, or an unknown schema id (KH-ICL-0400)"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid console session"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the key:manage scope (KH-RBC-0403)"
+          },
+          "503" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "The holder secret could not be stored in Vault (KH-ICL-0503)"
+          }
+        },
+        "summary" : "Create an issuer client",
+        "tags" : [ "issuer-clients" ]
+      }
+    },
+    "/api/v1/issuer-clients/{id}/resume" : {
+      "post" : {
+        "description" : "SUSPENDED → ACTIVE. Requires key:manage.",
+        "operationId" : "resumeIssuerClient",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/IssuerClientResponse"
+                }
+              }
+            },
+            "description" : "Resumed"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No such client (KH-ICL-0404)"
+          },
+          "409" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "The client is not SUSPENDED (KH-ICL-1409)"
+          }
+        },
+        "summary" : "Resume an issuer client",
+        "tags" : [ "issuer-clients" ]
+      }
+    },
+    "/api/v1/issuer-clients/{id}/revoke" : {
+      "post" : {
+        "description" : "Permanent. Requires key:manage.",
+        "operationId" : "revokeIssuerClient",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/IssuerClientResponse"
+                }
+              }
+            },
+            "description" : "Revoked"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No such client (KH-ICL-0404)"
+          },
+          "409" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Already revoked (KH-ICL-1409)"
+          }
+        },
+        "summary" : "Revoke an issuer client",
+        "tags" : [ "issuer-clients" ]
+      }
+    },
+    "/api/v1/issuer-clients/{id}/rotate" : {
+      "post" : {
+        "description" : "Mints a replacement client (new key, same schemas and expiry) and puts this one into a grace window: it keeps authenticating for retireAfterHours (0-72, default 24), then is revoked by the worker. Only an ACTIVE client can be rotated. Requires key:manage.",
+        "operationId" : "rotateIssuerClient",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/RotateIssuerClientRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "201" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CreatedIssuerClientResponse"
+                }
+              }
+            },
+            "description" : "Replacement created; new key in the body"
+          },
+          "400" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "retireAfterHours outside 0-72 (KH-ICL-0400)"
+          },
+          "401" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No valid console session"
+          },
+          "403" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "Missing the key:manage scope (KH-RBC-0403)"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No such client in this tenant (KH-ICL-0404)"
+          },
+          "409" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "The client is not ACTIVE (KH-ICL-1409)"
+          }
+        },
+        "summary" : "Rotate an issuer client's key",
+        "tags" : [ "issuer-clients" ]
+      }
+    },
+    "/api/v1/issuer-clients/{id}/suspend" : {
+      "post" : {
+        "description" : "ACTIVE → SUSPENDED; its key is rejected until resumed. Requires key:manage.",
+        "operationId" : "suspendIssuerClient",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "id",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/IssuerClientResponse"
+                }
+              }
+            },
+            "description" : "Suspended"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No such client (KH-ICL-0404)"
+          },
+          "409" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "The client is not ACTIVE (KH-ICL-1409)"
+          }
+        },
+        "summary" : "Suspend an issuer client",
+        "tags" : [ "issuer-clients" ]
+      }
+    },
     "/api/v1/org/children" : {
       "get" : {
         "description" : "Every direct child of the caller's own tenant and its status — never grandchildren (spec §7). Requires the org:admin scope.",
@@ -3720,6 +4177,278 @@
         },
         "summary" : "List the caller's direct children",
         "tags" : [ "org-admin" ]
+      }
+    },
+    "/api/v1/org/children/{childId}/issuer-clients" : {
+      "get" : {
+        "description" : "Requires org:admin on the parent tenant; the child must be a direct child.",
+        "operationId" : "listChildIssuerClients",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "childId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "items" : {
+                    "$ref" : "#/components/schemas/IssuerClientResponse"
+                  },
+                  "type" : "array"
+                }
+              }
+            },
+            "description" : "The child's issuer clients"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No such direct child (KH-ORG-0404, unified)"
+          }
+        },
+        "summary" : "List a child tenant's issuer clients",
+        "tags" : [ "org-issuer-clients" ]
+      },
+      "post" : {
+        "description" : "As POST /api/v1/issuer-clients, in the child. The child inherits the root tenant's holder secret, so no holderHmacSecret is ever returned here.",
+        "operationId" : "createChildIssuerClient",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "childId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/CreateIssuerClientRequest"
+              }
+            }
+          },
+          "required" : true
+        },
+        "responses" : {
+          "201" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CreatedIssuerClientResponse"
+                }
+              }
+            },
+            "description" : "Created; the one-time key is in the body"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No such direct child (KH-ORG-0404, unified)"
+          }
+        },
+        "summary" : "Create an issuer client in a child tenant",
+        "tags" : [ "org-issuer-clients" ]
+      }
+    },
+    "/api/v1/org/children/{childId}/issuer-clients/{clientId}/resume" : {
+      "post" : {
+        "operationId" : "resumeChildIssuerClient",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "childId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "clientId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/IssuerClientResponse"
+                }
+              }
+            },
+            "description" : "Resumed"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No such direct child or client"
+          }
+        },
+        "summary" : "Resume a child's issuer client",
+        "tags" : [ "org-issuer-clients" ]
+      }
+    },
+    "/api/v1/org/children/{childId}/issuer-clients/{clientId}/revoke" : {
+      "post" : {
+        "operationId" : "revokeChildIssuerClient",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "childId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "clientId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/IssuerClientResponse"
+                }
+              }
+            },
+            "description" : "Revoked"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No such direct child or client"
+          }
+        },
+        "summary" : "Revoke a child's issuer client",
+        "tags" : [ "org-issuer-clients" ]
+      }
+    },
+    "/api/v1/org/children/{childId}/issuer-clients/{clientId}/rotate" : {
+      "post" : {
+        "operationId" : "rotateChildIssuerClient",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "childId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "clientId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "requestBody" : {
+          "content" : {
+            "application/json" : {
+              "schema" : {
+                "$ref" : "#/components/schemas/RotateIssuerClientRequest"
+              }
+            }
+          }
+        },
+        "responses" : {
+          "201" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/CreatedIssuerClientResponse"
+                }
+              }
+            },
+            "description" : "Replacement created"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No such direct child (KH-ORG-0404) or client (KH-ICL-0404)"
+          }
+        },
+        "summary" : "Rotate a child's issuer client",
+        "tags" : [ "org-issuer-clients" ]
+      }
+    },
+    "/api/v1/org/children/{childId}/issuer-clients/{clientId}/suspend" : {
+      "post" : {
+        "operationId" : "suspendChildIssuerClient",
+        "parameters" : [ {
+          "in" : "path",
+          "name" : "childId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        }, {
+          "in" : "path",
+          "name" : "clientId",
+          "required" : true,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/IssuerClientResponse"
+                }
+              }
+            },
+            "description" : "Suspended"
+          },
+          "404" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "No such direct child or client"
+          }
+        },
+        "summary" : "Suspend a child's issuer client",
+        "tags" : [ "org-issuer-clients" ]
       }
     },
     "/api/v1/org/children/{id}/activate" : {
@@ -5661,6 +6390,9 @@
     "description" : "Console session login/logout and admin API-key management",
     "name" : "auth"
   }, {
+    "description" : "Machine-to-machine issuer clients — keys, rotation, suspension, revocation",
+    "name" : "issuer-clients"
+  }, {
     "description" : "Credential schema (credential type) lookups and authoring",
     "name" : "schema"
   }, {
@@ -5672,6 +6404,9 @@
   }, {
     "description" : "Wallet claim-code delivery",
     "name" : "claim"
+  }, {
+    "description" : "Parent-organisation management of direct children's issuer clients",
+    "name" : "org-issuer-clients"
   }, {
     "description" : "org:admin on-behalf-of plane — direct children only (spec FS-2.5 §3/§4)",
     "name" : "org-admin"

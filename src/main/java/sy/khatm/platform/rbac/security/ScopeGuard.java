@@ -1,12 +1,16 @@
 package sy.khatm.platform.rbac.security;
 
+import java.util.List;
 import java.util.Set;
 import java.util.function.Supplier;
 import org.springframework.security.authorization.AuthorizationDecision;
 import org.springframework.security.authorization.AuthorizationManager;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
+import org.springframework.security.web.util.matcher.RegexRequestMatcher;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 
 /**
  * {@link AuthorizationManager} factories for {@code SecurityConfig}'s per-route rules (spec FS-0.6b
@@ -84,6 +88,51 @@ final class ScopeGuard {
   static AuthorizationManager<RequestAuthorizationContext> requireUserSession() {
     return (authentication, context) ->
         decide(hasAuthority(authentication, KhatmAuthorities.ACTOR_USER));
+  }
+
+  /**
+   * The routes an issuer-client principal ({@code Bearer khi_...}, spec FS-2.7a D4) may call —
+   * everything else is denied. Single-issue, bulk issue, and reading one credential by id (the
+   * ownership check for that last one lives in {@code CredentialService#getView}: a URL rule cannot
+   * see whose credential it is).
+   */
+  private static final List<RequestMatcher> ISSUER_CLIENT_ALLOWED =
+      List.of(
+          new RegexRequestMatcher("^/api/v1/credentials/issue$", "POST"),
+          new RegexRequestMatcher("^/api/v1/credentials/bulk$", "POST"),
+          new RegexRequestMatcher(
+              "^/api/v1/credentials/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}"
+                  + "-[0-9a-fA-F]{12}$",
+              "GET"));
+
+  /** Whether the current request was authenticated as an issuer client. */
+  static boolean isIssuerClientAuthenticated() {
+    Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+    if (authentication == null) {
+      return false;
+    }
+    for (GrantedAuthority granted : authentication.getAuthorities()) {
+      if (KhatmAuthorities.ACTOR_API_KEY_ISSUER_CLIENT.equals(granted.getAuthority())) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * The ONE central rule for issuer-client principals (spec FS-2.7a D4, deny-by-default): granted
+   * only for the {@code issue} scope on an allowlisted route. Registered first in {@code
+   * SecurityConfig}, matched by actor kind, so it overrides every per-path rule below it — without
+   * it, e.g. {@code GET /api/v1/schemas} (which accepts any action scope, {@code issue} included)
+   * would leak to a machine principal. A future route is therefore denied to issuer clients until
+   * someone adds it here on purpose.
+   */
+  static AuthorizationManager<RequestAuthorizationContext> requireIssuerClientAllowedRoute() {
+    return (authentication, context) ->
+        decide(
+            hasAuthority(authentication, scopeAuthority(ScopeRegistry.ISSUE))
+                && ISSUER_CLIENT_ALLOWED.stream()
+                    .anyMatch(matcher -> matcher.matches(context.getRequest())));
   }
 
   private static String scopeAuthority(String scope) {

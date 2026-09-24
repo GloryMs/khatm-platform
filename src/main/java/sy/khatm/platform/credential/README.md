@@ -19,6 +19,19 @@ race-safe against `ClaimCodeExpiryWorker`'s concurrent sweep touching the same r
 the two paths guarantee `disclosures_enc` always ends up `NULL` exactly once, either on claim
 or on expiry, never both, never neither.
 
+**Issuer clients and the connector contract (KH-2.8.1, spec FS-2.7a).** `credential.issuer_client_id`
+(V18, nullable) records which machine issuer client issued a credential (`NULL` for console
+sessions); the actor comes from `CurrentActorResolver` (`ActorKind.API_KEY_ISSUER_CLIENT`), so this
+module never sees the `issuer_client` table. `CredentialService#issue` now (1) requires `holderRef`
+to be **64 lowercase hex characters** — the shape of an HMAC-SHA256, checked, never interpreted —
+and rejects a top-level claim named like a national identifier
+(`khatm.issuance.forbidden-claim-names`, case-insensitive), both `400 KH-ISS-0400`, for **every**
+issuance path, console sessions included; (2) for an issuer-client caller, requires the schema to be
+on the client's allowlist (`issuerclient :: api`'s `IssuerClientSchemaAccess`, `403 KH-AUTH-0403`);
+(3) stamps `issuer_client_id`. `CredentialService#getView` shows an issuer-client caller only its own
+credentials (a foreign id is a 404). `IssueResponse` gains `claimed` (always `false` for now) and
+`issuerClientId`.
+
 **Events in:** none yet. **Events out:** `CredentialIssued`, `CredentialConsumed`,
 `CredentialRevoked` (future — KH-1.3).
 

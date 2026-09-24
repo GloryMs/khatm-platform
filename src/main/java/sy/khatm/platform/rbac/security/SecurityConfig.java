@@ -20,6 +20,7 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfFilter;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import sy.khatm.platform.issuerclient.api.IssuerClientAuthenticator;
 import sy.khatm.platform.rbac.domain.ApiKeyService;
 import sy.khatm.platform.shared.audit.AuditService;
 
@@ -194,6 +195,19 @@ import sy.khatm.platform.shared.audit.AuditService;
  * cover on their own: an existing session surviving its tenant being suspended mid-session (see its
  * own Javadoc).
  *
+ * <p><b>Issuer clients (KH-2.8.1, spec FS-2.7a D2/D3/D4):</b> a {@code Bearer khi_...} request is a
+ * machine-to-machine issuer client, and rides the same stateless {@link #apiKeySecurityFilterChain}
+ * as {@code khk_} keys ({@link #hasApiKeyHeader} matches either prefix): {@link
+ * IssuerClientAuthFilter} sits next to {@link ApiKeyAuthFilter}, and {@link TenantContextFilter}
+ * runs after both. Authorization for that principal is ONE central rule, declared first in {@link
+ * #configureAuthorization} ({@link ScopeGuard#requireIssuerClientAllowedRoute}): only single issue,
+ * bulk issue, and {@code GET /api/v1/credentials/{id}} (ownership-checked in the service) pass;
+ * every other route is denied as {@code KH-AUTH-0403}, whatever its own per-path rule would say —
+ * without it, {@code GET /api/v1/schemas} (which accepts any action scope, {@code issue} included)
+ * would leak. {@code /api/v1/issuer-clients/**} is the console-side administration ({@code
+ * key:manage}, session only); the parent-organisation variant lives under {@code /api/v1/org/**}
+ * and is covered by that plane's own {@code org:admin} rule. No public endpoint was added.
+ *
  * <p><b>Worker role:</b> this configuration class loads in every profile (nothing here is
  * conditional on {@code khatm.web.enabled}) — the worker image runs no business REST endpoints
  * regardless (ADR-09's {@code @ConditionalOnProperty} on the controllers themselves), so
@@ -223,6 +237,8 @@ class SecurityConfig {
   private static final String CONSUME_PATH = "/api/v1/credentials/consume";
   private static final String REVOKE_PATH = "/api/v1/credentials/*/revoke";
   private static final String CLAIM_CODE_PATH = "/api/v1/credentials/*/claim-code";
+  // KH-2.8.1 (spec FS-2.7a §3.2): issuer-client administration — key:manage, console session only.
+  private static final String ISSUER_CLIENTS_PATH = "/api/v1/issuer-clients/**";
   private static final String ADMIN_TENANTS_PATH = "/api/v1/admin/tenants/**";
   private static final String ADMIN_CONSUMING_PARTIES_PATH = "/api/v1/admin/consuming-parties/**";
   private static final String ADMIN_API_KEYS_PATH = "/api/v1/admin/api-keys/**";
@@ -261,6 +277,7 @@ class SecurityConfig {
   SecurityFilterChain apiKeySecurityFilterChain(
       HttpSecurity http,
       ApiKeyService apiKeyService,
+      IssuerClientAuthenticator issuerClientAuthenticator,
       AuditService audit,
       KhatmAuthenticationEntryPoint entryPoint,
       KhatmAccessDeniedHandler accessDeniedHandler,
@@ -277,7 +294,11 @@ class SecurityConfig {
             ex -> ex.authenticationEntryPoint(entryPoint).accessDeniedHandler(accessDeniedHandler))
         .addFilterBefore(
             new ApiKeyAuthFilter(apiKeyService, audit), UsernamePasswordAuthenticationFilter.class)
-        .addFilterAfter(tenantContextFilter, ApiKeyAuthFilter.class);
+        // KH-2.8.1: the adjacent issuer-client (khi_) filter, then the tenant context — which must
+        // run after BOTH authenticators, since it reads whichever principal they resolved.
+        .addFilterAfter(
+            new IssuerClientAuthFilter(issuerClientAuthenticator), ApiKeyAuthFilter.class)
+        .addFilterAfter(tenantContextFilter, IssuerClientAuthFilter.class);
     return http.build();
   }
 
@@ -341,6 +362,10 @@ class SecurityConfig {
         .permitAll()
         .requestMatchers(HttpMethod.POST, CLAIMS_REDEEM_PATH)
         .permitAll()
+        // KH-2.8.1 (spec FS-2.7a D4): the ONE central rule for issuer-client principals — must stay
+        // before every per-path rule below so none of their scope semantics can ever apply to it.
+        .requestMatchers(SecurityConfig::isIssuerClientRequest)
+        .access(ScopeGuard.requireIssuerClientAllowedRoute())
         .requestMatchers(HttpMethod.POST, ISSUE_PATH)
         .access(ScopeGuard.requireScopeNotConsumingPartyKey(ScopeRegistry.ISSUE))
         .requestMatchers(HttpMethod.POST, BULK_ISSUE_PATH)
@@ -351,6 +376,8 @@ class SecurityConfig {
         .access(ScopeGuard.requireScopeAndConsumingPartyKey(ScopeRegistry.CONSUME))
         .requestMatchers(HttpMethod.POST, REVOKE_PATH)
         .access(ScopeGuard.requireScopeAndUserSession(ScopeRegistry.REVOKE))
+        .requestMatchers(ISSUER_CLIENTS_PATH)
+        .access(ScopeGuard.requireScopeAndUserSession(ScopeRegistry.KEY_MANAGE))
         .requestMatchers(ADMIN_TENANTS_PATH)
         .access(ScopeGuard.requireScope(ScopeRegistry.PLATFORM_ADMIN))
         .requestMatchers(ADMIN_CONSUMING_PARTIES_PATH)
@@ -402,10 +429,19 @@ class SecurityConfig {
         .authenticated();
   }
 
-  /** Matches any request carrying a well-formed {@code Authorization: Bearer khk_...} header. */
+  /**
+   * Matches any request carrying a {@code Authorization: Bearer khk_...} (tenant/consuming-party
+   * key) or {@code Bearer khi_...} (issuer client, KH-2.8.1) header — both are stateless bearer
+   * credentials and share the api-key chain.
+   */
   private static boolean hasApiKeyHeader(HttpServletRequest request) {
     String header = request.getHeader("Authorization");
-    return header != null && header.startsWith("Bearer khk_");
+    return header != null && (header.startsWith("Bearer khk_") || header.startsWith("Bearer khi_"));
+  }
+
+  /** True when this request was authenticated as an issuer client (see the central rule). */
+  private static boolean isIssuerClientRequest(HttpServletRequest request) {
+    return ScopeGuard.isIssuerClientAuthenticated();
   }
 
   /** True when the request carries no {@code KHATM_SESSION} cookie — see the CSRF Javadoc above. */
