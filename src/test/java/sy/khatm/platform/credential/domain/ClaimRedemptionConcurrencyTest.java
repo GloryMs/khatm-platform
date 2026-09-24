@@ -59,7 +59,7 @@ class ClaimRedemptionConcurrencyTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "ConcurrentRedeem/v1",
-                "holder-concurrent-redeem",
+                "e83389faaadff995670f45d66eeaa15b78edaf43c221df9b989e522df3a2fd3f",
                 1,
                 60,
                 Map.of("result", "X"),
@@ -130,7 +130,7 @@ class ClaimRedemptionConcurrencyTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "RedeemSweepRace/v1",
-                "holder-redeem-sweep-race",
+                "159904df280713403aecc8ab0dc77adefddd36c30a6078f087c6f258c179491f",
                 1,
                 60,
                 Map.of("result", "X"),

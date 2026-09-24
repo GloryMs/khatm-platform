@@ -37,7 +37,14 @@ class CredentialSigningAndVerificationTest extends IntegrationTestSupport {
   void issue_jwsHeaderCarriesAWellFormedKid() throws Exception {
     IssueResponse issued =
         credentialService.issue(
-            new IssueRequest("GenericDocument/v1", "holder-kid-test", 1, 60, Map.of(), null, null));
+            new IssueRequest(
+                "GenericDocument/v1",
+                "327a1466f49aa1a15e335630516284169bb9f132517a47783f441fef146ec85d",
+                1,
+                60,
+                Map.of(),
+                null,
+                null));
 
     String compactJwt = SDJWT.parse(issued.sdJwt()).getCredentialJwt();
     SignedJWT parsed = SignedJWT.parse(compactJwt);

@@ -35,7 +35,7 @@ class ClaimCodeMintServiceTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "MintHappy/v1",
-                "holder-mint-happy",
+                "6abb7e3b46548a891bf4d588561705b4556b0d0bb696d52f31ee52f8998208c0",
                 1,
                 60,
                 Map.of("field", "value"),
@@ -69,7 +69,13 @@ class ClaimCodeMintServiceTest extends IntegrationTestSupport {
     IssueResponse issued =
         credentialService.issue(
             new IssueRequest(
-                "MintTtl/v1", "holder-mint-ttl", 1, 60, Map.of("field", "value"), List.of(), null));
+                "MintTtl/v1",
+                "5d887aee98957d8af9edb9f486487c5fb29a28b5aff54d39bb8546758bc3f4ba",
+                1,
+                60,
+                Map.of("field", "value"),
+                List.of(),
+                null));
 
     Instant before = Instant.now();
     ClaimCodeIssued minted =
@@ -85,7 +91,7 @@ class ClaimCodeMintServiceTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "MintVoidPrior/v1",
-                "holder-mint-void-prior",
+                "457555c69516f00c30aa4ab29fbd6135539b1c9fc512ddd54d43da281b345f0e",
                 1,
                 60,
                 Map.of("field", "value"),
@@ -131,7 +137,7 @@ class ClaimCodeMintServiceTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "MintRevoked/v1",
-                "holder-mint-revoked",
+                "15cf5e5fd7d77dc157cec87d51db73188b758a90534a21b491c69c3ffe6e7769",
                 1,
                 60,
                 Map.of("field", "value"),
@@ -153,7 +159,7 @@ class ClaimCodeMintServiceTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "MintExpired/v1",
-                "holder-mint-expired",
+                "c22044e5145e600ce9f01d8e25de2778f1ae4673c784aa60496350ce2e0c3b91",
                 1,
                 60,
                 Map.of("field", "value"),

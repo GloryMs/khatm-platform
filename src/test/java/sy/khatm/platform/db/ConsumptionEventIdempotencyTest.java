@@ -36,7 +36,13 @@ class ConsumptionEventIdempotencyTest extends IntegrationTestSupport {
     IssueResponse issued =
         credentialService.issue(
             new IssueRequest(
-                "IdempotencyProbe/v1", "holder-idempotency-probe", 5, 60, Map.of(), null, null));
+                "IdempotencyProbe/v1",
+                "7dd0d564f4540231c91bd22f100bb8b30ba0c37b0bc5db6dec57b77721a20b2f",
+                5,
+                60,
+                Map.of(),
+                null,
+                null));
     ConsumingPartyRef party = consumingParties.ensure("idempotency-probe-party");
     UUID credentialId = UUID.fromString(issued.id());
     String sharedKey = "idempotency-probe-" + UUID.randomUUID();

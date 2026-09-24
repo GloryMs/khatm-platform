@@ -46,7 +46,13 @@ class SdJwtIssuanceStructuralTest extends IntegrationTestSupport {
     IssueResponse issued =
         credentialService.issue(
             new IssueRequest(
-                "StructuralProbe/v1", "holder-structural-probe", 1, 60, claims, sdFields, null));
+                "StructuralProbe/v1",
+                "6c4ac00ac9c02a2896ccc73f3db8dba3bd15db0a2dabe938fdd2da0f13711b28",
+                1,
+                60,
+                claims,
+                sdFields,
+                null));
 
     String compactJwt =
         credentialRepository

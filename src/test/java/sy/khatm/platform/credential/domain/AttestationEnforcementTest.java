@@ -48,7 +48,7 @@ class AttestationEnforcementTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 code,
-                "holder-att-req-present",
+                "5c1325960e34eafc1376e5867670e9938521ed6a58d5c2fae44c714f18155759",
                 1,
                 60,
                 Map.of("name", "value"),
@@ -67,7 +67,7 @@ class AttestationEnforcementTest extends IntegrationTestSupport {
                 credentialService.issue(
                     new IssueRequest(
                         code,
-                        "holder-att-req-absent",
+                        "a32584135edc2874f878d5cef8627ffdebfe3345f4e1d738639ee8c07f93ffd7",
                         1,
                         60,
                         Map.of("name", "value"),
@@ -86,7 +86,13 @@ class AttestationEnforcementTest extends IntegrationTestSupport {
     IssueResponse issued =
         credentialService.issue(
             new IssueRequest(
-                code, "holder-att-notreq-absent", 1, 60, Map.of("name", "value"), List.of(), null));
+                code,
+                "6805a675f2ea0d510fd3c2e73a0404b1287229cd9555c6e798f1a278297756f0",
+                1,
+                60,
+                Map.of("name", "value"),
+                List.of(),
+                null));
 
     assertThat(issued.id()).isNotBlank();
   }
@@ -100,7 +106,7 @@ class AttestationEnforcementTest extends IntegrationTestSupport {
                 credentialService.issue(
                     new IssueRequest(
                         code,
-                        "holder-att-notreq-present",
+                        "6c284451c82071d8ba4cb691a0c493ceb49a262005dc3e002d5c3114b8489c66",
                         1,
                         60,
                         Map.of("name", "value"),
@@ -122,7 +128,7 @@ class AttestationEnforcementTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 code,
-                "holder-att-ordering",
+                "8a7f6a77f3f137f84d15dd2c879b2c3f297ab201f2cd3244bbe398275dea19ee",
                 1,
                 60,
                 Map.of("name", "value"),
@@ -164,7 +170,7 @@ class AttestationEnforcementTest extends IntegrationTestSupport {
           credentialService.issue(
               new IssueRequest(
                   code,
-                  "holder-att-rollback",
+                  "66a17398cb976bf53746c1bef8b4a119be19af2e081ec07cc171839ad9185d58",
                   1,
                   60,
                   Map.of("name", "value"),
@@ -232,7 +238,7 @@ class AttestationEnforcementTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 code,
-                "holder-att-pattern-valid",
+                "43de55628e6f06e8859ddf19e0985571a0c4a55f433ea38e1893e13838da4be4",
                 1,
                 60,
                 Map.of(
@@ -252,7 +258,7 @@ class AttestationEnforcementTest extends IntegrationTestSupport {
                 credentialService.issue(
                     new IssueRequest(
                         code,
-                        "holder-att-pattern-bad",
+                        "78802981bf33b7981bdd30d80418242a57388880ea9f825d346d38535d40c7a6",
                         1,
                         60,
                         Map.of("doc_sha256", malformedValue),

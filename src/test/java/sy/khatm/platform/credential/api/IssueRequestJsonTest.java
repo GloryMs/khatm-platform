@@ -22,7 +22,7 @@ class IssueRequestJsonTest {
         """
         {
           "schemaCode": "BaCertificate",
-          "holderRef": "holder-1",
+          "holderRef": "6ab7f69cbc433ed208ab791531f8fd0e1707735f3710e4aeaffcf83a10e5d7f7",
           "claims": {"test_field": "123456789"},
           "sdFields": [],
           "schemaId": "%s"
@@ -33,6 +33,7 @@ class IssueRequestJsonTest {
     IssueRequest req = mapper.readValue(json, IssueRequest.class);
 
     assertThat(req.schemaId()).isEqualTo(schemaId);
-    assertThat(req.holderRef()).isEqualTo("holder-1");
+    assertThat(req.holderRef())
+        .isEqualTo("6ab7f69cbc433ed208ab791531f8fd0e1707735f3710e4aeaffcf83a10e5d7f7");
   }
 }

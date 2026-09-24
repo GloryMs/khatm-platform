@@ -36,7 +36,7 @@ class IssuanceSchemaGuardTest extends IntegrationTestSupport {
                 credentialService.issue(
                     new IssueRequest(
                         "IssuanceGuardDraft/v1",
-                        "holder-issuance-guard-draft",
+                        "528c4bf6fb601543c078430aaf33f2ac6ff25e9356958e7d54e63cf640da4866",
                         1,
                         60,
                         Map.of("name", "value"),
@@ -56,7 +56,7 @@ class IssuanceSchemaGuardTest extends IntegrationTestSupport {
                 credentialService.issue(
                     new IssueRequest(
                         "IssuanceGuardArchived/v1",
-                        "holder-issuance-guard-archived",
+                        "b099380555164a917c88265eedffcbecab545f9399bb8da729ebe2ab6e22cb26",
                         1,
                         60,
                         Map.of("name", "value"),
@@ -73,7 +73,7 @@ class IssuanceSchemaGuardTest extends IntegrationTestSupport {
     credentialService.issue(
         new IssueRequest(
             "IssuanceGuardPublished/v1",
-            "holder-issuance-guard-published",
+            "c37e59bc6764f93da6bcc95a0c2d0c6856a764949ce047338d180fc93da04240",
             1,
             60,
             Map.of("name", "value"),

@@ -45,7 +45,7 @@ class ConcurrentConsumeTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "ConcurrentConsumeProbe/v1",
-                "holder-concurrent-probe",
+                "34e74f79c1bc8f57a67d177a35952323cfd10f7acd4b55d297480d1b710388ee",
                 1,
                 60,
                 Map.of(),
@@ -105,7 +105,7 @@ class ConcurrentConsumeTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "ConcurrentExhaustionProbe/v1",
-                "holder-exhaustion-probe",
+                "5320af7cc1a6eacd08fe9b0c0876882636d6c96c1fac9e2894aefeb8b50609ed",
                 maxUses,
                 60,
                 Map.of(),

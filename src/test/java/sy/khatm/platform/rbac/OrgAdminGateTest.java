@@ -17,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import sy.khatm.platform.rbac.SessionTestSupport.AuthenticatedSession;
 import sy.khatm.platform.shared.TenantContext;
+import sy.khatm.platform.support.HolderRefs;
 
 /**
  * KH-2.6b, spec FS-2.5 §3/§4 — the {@code org:admin} on-behalf-of plane over real HTTP: the
@@ -157,7 +158,7 @@ class OrgAdminGateTest extends RbacHttpTestSupport {
             "schemaCode",
             schemaCode,
             "holderRef",
-            "holder-" + UUID.randomUUID(),
+            HolderRefs.unique("holder-"),
             "claims",
             Map.of("field", "value"));
     HttpHeaders headers = new HttpHeaders();

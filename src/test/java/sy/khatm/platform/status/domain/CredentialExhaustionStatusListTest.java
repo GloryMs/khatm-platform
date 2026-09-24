@@ -40,7 +40,7 @@ class CredentialExhaustionStatusListTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "ExhaustionStatusList/v1",
-                "holder-exhaustion-statuslist",
+                "b393914c5ac30fb0c230a7cbeda8fe3611a9318c6dbb23524e48bcb5d028424e",
                 1,
                 60,
                 Map.of("field", "value"),

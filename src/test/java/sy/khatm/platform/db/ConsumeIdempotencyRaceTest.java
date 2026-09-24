@@ -50,7 +50,7 @@ class ConsumeIdempotencyRaceTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "IdemRaceProbe/v1",
-                "holder-idem-race",
+                "cac648fa0f33a54e33c342945f3d4b0fb5802500d15024ccc6b9160227563204",
                 2,
                 60,
                 Map.of("field", "value"),

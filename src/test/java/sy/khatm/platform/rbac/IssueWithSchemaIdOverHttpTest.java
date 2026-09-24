@@ -16,6 +16,7 @@ import sy.khatm.platform.schema.api.SchemaAuthoringRequest;
 import sy.khatm.platform.schema.api.SchemaCreateRequest;
 import sy.khatm.platform.schema.api.SchemaDetail;
 import sy.khatm.platform.schema.domain.SchemaAuthoringService;
+import sy.khatm.platform.support.HolderRefs;
 
 /**
  * Live-diagnostic regression for the "still fails after the fix" report: reproduces the exact
@@ -67,7 +68,7 @@ class IssueWithSchemaIdOverHttpTest extends RbacHttpTestSupport {
     Map<String, Object> body = new LinkedHashMap<>();
     body.put("schemaCode", code);
     body.put("schemaId", v2.id().toString());
-    body.put("holderRef", "holder-http-schema-pin");
+    body.put("holderRef", HolderRefs.of("holder-http-schema-pin"));
     body.put("claims", Map.of("test_field", "123456789"));
     body.put("sdFields", List.of());
 

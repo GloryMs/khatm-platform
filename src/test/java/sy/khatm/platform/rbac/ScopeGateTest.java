@@ -22,6 +22,7 @@ import sy.khatm.platform.rbac.persistence.RoleRepository;
 import sy.khatm.platform.shared.LocalizedText;
 import sy.khatm.platform.shared.TenantContext;
 import sy.khatm.platform.shared.Uuidv7;
+import sy.khatm.platform.support.HolderRefs;
 
 /**
  * Spec FS-0.6b DoD #3 — {@code /issue} without any session or key returns 401; with a session
@@ -42,7 +43,9 @@ class ScopeGateTest extends RbacHttpTestSupport {
   void issue_withNoSessionOrKey_returns401() throws Exception {
     ResponseEntity<String> response =
         rest.postForEntity(
-            "/api/v1/credentials/issue", Map.of("holderRef", "holder-no-auth"), String.class);
+            "/api/v1/credentials/issue",
+            Map.of("holderRef", HolderRefs.of("holder-no-auth")),
+            String.class);
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
     JsonNode body = JSON.readTree(response.getBody());
@@ -56,7 +59,10 @@ class ScopeGateTest extends RbacHttpTestSupport {
 
     ResponseEntity<String> response =
         SessionTestSupport.post(
-            rest, "/api/v1/credentials/issue", session, Map.of("holderRef", "holder-no-scope"));
+            rest,
+            "/api/v1/credentials/issue",
+            session,
+            Map.of("holderRef", HolderRefs.of("holder-no-scope")));
 
     assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
     JsonNode body = JSON.readTree(response.getBody());
@@ -71,7 +77,7 @@ class ScopeGateTest extends RbacHttpTestSupport {
     Map<String, Object> issueRequest =
         Map.of(
             "schemaCode", "ScopeGateProbe/v1",
-            "holderRef", "holder-scope-gate-operator",
+            "holderRef", HolderRefs.of("holder-scope-gate-operator"),
             "claims", Map.of("field", "value"));
 
     ResponseEntity<String> response =

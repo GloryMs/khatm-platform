@@ -16,6 +16,7 @@ import sy.khatm.platform.credential.api.IssueRequest;
 import sy.khatm.platform.credential.api.IssueResponse;
 import sy.khatm.platform.credential.domain.ClaimCodeIssued;
 import sy.khatm.platform.credential.domain.CredentialService;
+import sy.khatm.platform.support.HolderRefs;
 
 /**
  * Regression coverage for a bug found live post-KH-2.4-BE: {@code /api/v1/credentials/verify} and
@@ -68,7 +69,7 @@ class AuthenticatedCallerOnAnonymousEndpointsTest extends RbacHttpTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "AuthenticatedRedeemProbe/v1",
-                "holder-authenticated-redeem-" + UUID.randomUUID(),
+                HolderRefs.unique("holder-authenticated-redeem-"),
                 1,
                 60,
                 Map.of("result", "X"),

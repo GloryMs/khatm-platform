@@ -27,7 +27,9 @@ class OrgOnBehalfOfCallerAllowlistTest {
   private static final Pattern CALL_SITE = Pattern.compile("\\.runAsChildOrg\\(");
 
   private static final Set<String> ALLOWED_FILES =
-      Set.of("sy/khatm/platform/rbac/domain/OrgAdminService.java");
+      Set.of(
+          "sy/khatm/platform/rbac/domain/OrgAdminService.java",
+          "sy/khatm/platform/issuerclient/domain/OrgIssuerClientService.java");
 
   @Test
   void runAsChildOrg_isCalledOnlyByTheEnumeratedCallSites() throws IOException {

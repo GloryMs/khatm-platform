@@ -260,7 +260,7 @@ class ErrorEnvelopeAndI18nTest extends ErrorEnvelopeTestSupport {
     IssueRequest issueRequest =
         new IssueRequest(
             "ErrorEnvelopeProbe/v1",
-            "holder-error-envelope-probe",
+            "3fcd721ee1a99f803150e14a12f4ab8ff97827978e38b003c37a267f08eaaeb7",
             5,
             60,
             Map.of("field1", "value1", "field2", "value2"),

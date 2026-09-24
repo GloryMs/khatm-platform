@@ -37,7 +37,10 @@ class SystemAccessCallerAllowlistTest {
           "sy/khatm/platform/rbac/domain/ApiKeyService.java", // API-key verification (KH-2.1)
           "sy/khatm/platform/credential/worker/ClaimCodeExpiryWorker.java", // cross-tenant sweep
           "sy/khatm/platform/status/worker/StatusListPublishSweepWorker.java", // cross-tenant sweep
-          "sy/khatm/platform/rbac/domain/OrgAdminService.java" // org:admin aggregated report
+          "sy/khatm/platform/rbac/domain/OrgAdminService.java", // org:admin aggregated report
+          "sy/khatm/platform/issuerclient/domain/IssuerClientAuthenticatorService.java", // khi_
+          // auth
+          "sy/khatm/platform/issuerclient/domain/RetiringSweeper.java" // cross-tenant sweep
           );
 
   @Test

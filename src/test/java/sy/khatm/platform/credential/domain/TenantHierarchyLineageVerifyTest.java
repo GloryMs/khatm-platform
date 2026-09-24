@@ -39,7 +39,13 @@ class TenantHierarchyLineageVerifyTest extends IntegrationTestSupport {
       issued =
           credentialService.issue(
               new IssueRequest(
-                  "GenericDocument/v1", "lineage-holder", 1, 60, Map.of(), null, null));
+                  "GenericDocument/v1",
+                  "a4f43ca2ef4c3fa299fafb4c3f3bfbdcedae5e37904081bbe4ce8ded03ebd7ec",
+                  1,
+                  60,
+                  Map.of(),
+                  null,
+                  null));
     } finally {
       TenantContext.clear();
     }

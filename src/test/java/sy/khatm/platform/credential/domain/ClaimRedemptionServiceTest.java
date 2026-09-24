@@ -45,7 +45,7 @@ class ClaimRedemptionServiceTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "RedeemHappy/v1",
-                "holder-redeem-happy",
+                "f5084c29a94802d55641d705caf8ba00ecc63f1d67a71c0b9d5cd07445e6d6d9",
                 1,
                 60,
                 claims,
@@ -103,7 +103,13 @@ class ClaimRedemptionServiceTest extends IntegrationTestSupport {
     IssueResponse issued =
         credentialService.issue(
             new IssueRequest(
-                "RedeemEmpty/v1", "holder-redeem-empty", 1, 60, Map.of(), List.of(), null));
+                "RedeemEmpty/v1",
+                "05cfe6c4965d2f2377ac31ff1731a20aa738cd495892c24806ea79e6f3a25078",
+                1,
+                60,
+                Map.of(),
+                List.of(),
+                null));
     ClaimCodeIssued claimCode =
         credentialService.issueClaimCode(
             UUID.fromString(issued.id()), issued.sdJwt(), Duration.ofMinutes(5));
@@ -119,7 +125,7 @@ class ClaimRedemptionServiceTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "RedeemTwice/v1",
-                "holder-redeem-twice",
+                "3cf68a762ea1c3e0b686f49500d5e1ef188b80a90654e7630fb0ece4122f271b",
                 1,
                 60,
                 Map.of("result", "X"),
@@ -158,7 +164,7 @@ class ClaimRedemptionServiceTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "RedeemExpired/v1",
-                "holder-redeem-expired",
+                "a82b9522d9405f081afb9ee6ffd5ebcc054ba90a495c382588215364f55e05aa",
                 1,
                 60,
                 Map.of("result", "X"),
@@ -195,7 +201,7 @@ class ClaimRedemptionServiceTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "RedeemZeroed/v1",
-                "holder-redeem-zeroed",
+                "b0e7fe24a4ab38a0d2e2fb70eed1b15f7b24e21f51897207f95767dadbb4e91a",
                 1,
                 60,
                 Map.of("result", "X"),

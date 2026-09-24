@@ -7,7 +7,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpEntity;
@@ -23,6 +22,7 @@ import sy.khatm.platform.rbac.SessionTestSupport.AuthenticatedSession;
 import sy.khatm.platform.rbac.domain.ApiKeyOwnerType;
 import sy.khatm.platform.rbac.domain.ApiKeyService;
 import sy.khatm.platform.rbac.domain.CreatedApiKey;
+import sy.khatm.platform.support.HolderRefs;
 
 /**
  * KH-1.1.4 — {@code GET /api/v1/credentials} requires a console session specifically ({@code
@@ -104,7 +104,7 @@ class CredentialListScopeGateTest extends RbacHttpTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "CredentialListStatusHttp/v1",
-                "holder-status-http-" + UUID.randomUUID(),
+                HolderRefs.unique("holder-status-http-"),
                 1,
                 60,
                 Map.of("field", "value"),

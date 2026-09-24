@@ -114,7 +114,14 @@ class SdJwtVerificationTest extends IntegrationTestSupport {
     Map<String, Object> claims = Map.of("mandatoryField", "M1", "optionalField", "O1");
     List<String> sdFields = List.of("optionalField");
     return credentialService.issue(
-        new IssueRequest("VerifyProbe/v1", "holder-verify-probe", 5, 60, claims, sdFields, null));
+        new IssueRequest(
+            "VerifyProbe/v1",
+            "0e18e0f6e16a4060ca9ee76a564eda111196d6b7cd3a4ea7936e31505a46dbd3",
+            5,
+            60,
+            claims,
+            sdFields,
+            null));
   }
 
   private static String withoutDisclosure(String presentation, String claimNameToDrop) {

@@ -19,6 +19,7 @@ import sy.khatm.platform.schema.api.SchemaDetail;
 import sy.khatm.platform.schema.domain.SchemaAuthoringService;
 import sy.khatm.platform.shared.error.ConflictException;
 import sy.khatm.platform.shared.error.ValidationException;
+import sy.khatm.platform.support.HolderRefs;
 import sy.khatm.platform.support.IntegrationTestSupport;
 
 /**
@@ -43,9 +44,12 @@ class BulkIssuanceServiceTest extends IntegrationTestSupport {
             schemaCode,
             new BulkIssueDefaults(60, 1),
             List.of(
-                new BulkIssueItem(Map.of("field", "a"), "holder-bulk-happy-1", null, null),
-                new BulkIssueItem(Map.of("field", "b"), "holder-bulk-happy-2", null, null),
-                new BulkIssueItem(Map.of("field", "c"), "holder-bulk-happy-3", null, null)),
+                new BulkIssueItem(
+                    Map.of("field", "a"), HolderRefs.of("holder-bulk-happy-1"), null, null),
+                new BulkIssueItem(
+                    Map.of("field", "b"), HolderRefs.of("holder-bulk-happy-2"), null, null),
+                new BulkIssueItem(
+                    Map.of("field", "c"), HolderRefs.of("holder-bulk-happy-3"), null, null)),
             false);
 
     BulkIssueOutcome outcome = bulkIssuance.bulkIssue(req);
@@ -85,7 +89,9 @@ class BulkIssuanceServiceTest extends IntegrationTestSupport {
         new BulkIssueRequest(
             schemaCode,
             null,
-            List.of(new BulkIssueItem(Map.of("field", "a"), "holder-bulk-mint-1", null, null)),
+            List.of(
+                new BulkIssueItem(
+                    Map.of("field", "a"), HolderRefs.of("holder-bulk-mint-1"), null, null)),
             true);
 
     BulkIssueOutcome outcome = bulkIssuance.bulkIssue(req);
@@ -117,8 +123,10 @@ class BulkIssuanceServiceTest extends IntegrationTestSupport {
             draftCode,
             null,
             List.of(
-                new BulkIssueItem(Map.of("field", "a"), "holder-bulk-mixed-1", null, null),
-                new BulkIssueItem(Map.of("field", "b"), "holder-bulk-mixed-2", null, null)),
+                new BulkIssueItem(
+                    Map.of("field", "a"), HolderRefs.of("holder-bulk-mixed-1"), null, null),
+                new BulkIssueItem(
+                    Map.of("field", "b"), HolderRefs.of("holder-bulk-mixed-2"), null, null)),
             false);
 
     BulkIssueOutcome outcome = bulkIssuance.bulkIssue(req);
@@ -156,7 +164,9 @@ class BulkIssuanceServiceTest extends IntegrationTestSupport {
             new BulkIssueRequest(
                 draftCode,
                 null,
-                List.of(new BulkIssueItem(Map.of("field", "a"), "holder-bulk-draft", null, null)),
+                List.of(
+                    new BulkIssueItem(
+                        Map.of("field", "a"), HolderRefs.of("holder-bulk-draft"), null, null)),
                 false));
 
     assertThat(outcome.results().get(0).error()).isInstanceOf(ConflictException.class);
@@ -176,7 +186,8 @@ class BulkIssuanceServiceTest extends IntegrationTestSupport {
                 archivedCode,
                 null,
                 List.of(
-                    new BulkIssueItem(Map.of("field", "a"), "holder-bulk-archived", null, null)),
+                    new BulkIssueItem(
+                        Map.of("field", "a"), HolderRefs.of("holder-bulk-archived"), null, null)),
                 false));
 
     assertThat(outcome.results().get(0).error()).isInstanceOf(ConflictException.class);
@@ -194,7 +205,10 @@ class BulkIssuanceServiceTest extends IntegrationTestSupport {
   void bulkIssue_tooManyItems_throwsValidationException() {
     List<BulkIssueItem> items =
         IntStream.range(0, 201)
-            .mapToObj(i -> new BulkIssueItem(Map.of("field", "v" + i), "holder-" + i, null, null))
+            .mapToObj(
+                i ->
+                    new BulkIssueItem(
+                        Map.of("field", "v" + i), HolderRefs.of("holder-" + i), null, null))
             .toList();
     BulkIssueRequest req = new BulkIssueRequest("BulkTooMany/v1", null, items, false);
 

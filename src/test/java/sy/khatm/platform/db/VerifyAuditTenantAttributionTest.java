@@ -19,6 +19,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import sy.khatm.platform.rbac.RbacHttpTestSupport;
 import sy.khatm.platform.shared.TenantContext;
+import sy.khatm.platform.support.HolderRefs;
 import sy.khatm.platform.support.TotpEnrollmentCache;
 import sy.khatm.platform.support.TotpTestCodes;
 
@@ -192,7 +193,7 @@ class VerifyAuditTenantAttributionTest extends RbacHttpTestSupport {
             "schemaCode",
             schemaCode,
             "holderRef",
-            "holder-" + UUID.randomUUID(),
+            HolderRefs.unique("holder-"),
             "claims",
             Map.of("field", "value"));
     HttpHeaders headers = new HttpHeaders();
