@@ -392,5 +392,44 @@ public enum AuditAction {
    * {@code detail} carries {@code descendantCount}, {@code from}, and {@code to} — counters and a
    * window, never any row-level detail (P1).
    */
-  ORG_REPORT_VIEWED
+  ORG_REPORT_VIEWED,
+
+  /**
+   * An issuer client was created ({@code issuerclient} module, KH-2.8.1, spec FS-2.7a D11). {@code
+   * entityRef} is the key prefix — never the key or its secret.
+   */
+  ISSUER_CLIENT_CREATED,
+
+  /**
+   * An issuer client was rotated ({@code issuerclient} module): recorded against the <em>old</em>
+   * client's prefix; {@code detail} carries the new prefix and the retire-after instant.
+   */
+  ISSUER_CLIENT_ROTATED,
+
+  /** An issuer client was suspended. {@code entityRef} is the key prefix. */
+  ISSUER_CLIENT_SUSPENDED,
+
+  /** A suspended issuer client was resumed. {@code entityRef} is the key prefix. */
+  ISSUER_CLIENT_RESUMED,
+
+  /**
+   * An issuer client was revoked (final) — by an operator, or by the retiring sweep once its
+   * rotation grace window ended ({@code detail.reason}). {@code entityRef} is the key prefix.
+   */
+  ISSUER_CLIENT_REVOKED,
+
+  /**
+   * A {@code Bearer khi_...} authentication failed (spec FS-2.7a D11/D12). {@code detail.prefix}
+   * (when the presented value parsed far enough to have one) and {@code detail.reason} only — never
+   * the secret. Throttled to one row per prefix per minute so it cannot become a DoS vector against
+   * the audit table.
+   */
+  ISSUER_CLIENT_AUTH_FAILED,
+
+  /**
+   * The tenant-level holder HMAC secret was generated in Vault KV for a root tenant (spec FS-2.7a
+   * D9). {@code entityRef}/{@code detail.rootSlug} is the root tenant's slug; the secret is never
+   * audited. Recorded exactly once per root tenant.
+   */
+  HOLDER_SECRET_GENERATED
 }

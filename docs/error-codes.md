@@ -52,3 +52,11 @@
 | `KH-ATT-0401` | 400 | `attestation.not-applicable` |
 | `KH-ATT-0402` | 400 | `attestation.bulk-not-supported` |
 | `KH-ORG-0404` | 404 | `org.child-not-found` |
+| `KH-AUTH-0401` | 401 | `error.auth.unauthenticated` |
+| `KH-AUTH-0403` | 403 | `error.auth.scope-denied` |
+| `KH-ICL-0409` | 409 | `error.icl.unavailable` |
+| `KH-ICL-0400` | 400 | `issuer-client.validation-failed` |
+| `KH-ICL-0404` | 404 | `issuer-client.not-found` |
+| `KH-ICL-1409` | 409 | `issuer-client.invalid-transition` |
+| `KH-ICL-0503` | 503 | `issuer-client.holder-secret-unavailable` |
+| `KH-ISS-0400` | 400 | `issuance.validation-failed` |
