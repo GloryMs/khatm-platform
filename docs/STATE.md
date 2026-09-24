@@ -46,6 +46,15 @@ secret") — **not performed by this session**.
   This repo: ~45 test call sites, `DemoSeeder`, and `scripts/smoke.sh` (CI compose-smoke) were
   migrated to 64-hex (`support.HolderRefs`). Console (C2/C3 wizard, bulk `pseudoRef`) must send a
   conforming value before this is deployed.
+  **Decision (Majd, 2026-09-24): option C — keep the universal rule, phase it in.** The rule ships with this PR;
+  the console fix is gated into the SAME release window so the wizard never runs against the new rule without it.
+  Console audit (read-only, `khatm-console/src`): two call sites break — (1) attested single issue
+  (`features/attestedIssuance`: free-text `holderRef`, only `min(1)`, help text says "pseudonymous identifier from
+  your system") and (2) bulk (`features/bulkIssuance/request.ts`: optional CSV `pseudoRef` column). Bulk rows with
+  no `pseudoRef` used to be silently issued to the literal holder `"holder-demo"` (old `CredentialService` default,
+  removed here) — they now fail per row with `KH-ISS-0400`. Search filter and the wallet are unaffected (the wallet
+  never calls `/issue`/`/bulk`). **Open, console repo (not started):** 64-hex validation + guidance (EN/AR) on the
+  attested form and the bulk column, before the platform release containing this PR is deployed.
 - **Claim code gap.** `/issue` returns `sdJwt`, not a `claimCode` (brief §5 step 2 / spec §3.1
   assume one), and `POST /{id}/claim-code` is not on the D4 allowlist. The M2M-reachable way to get a
   code today is `POST /credentials/bulk` with `mintClaimCodes:true` (what `demo-m2m.sh` uses). Needs a
