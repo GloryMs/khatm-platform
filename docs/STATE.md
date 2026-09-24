@@ -2,6 +2,8 @@
 # STATE — khatm-platform
 > Updated at the end of EVERY Claude Code session. This file is the session anchor.
 
+## 2026-09-24: Valute token has been renewed until: 2026-10-25.
+
 ## Current phase / task
 **fix/role-grant-ceiling — DONE & MERGED via PR #68**
 (`https://github.com/GloryMs/khatm-platform/pull/68`, opened 2026-08-20, merged
