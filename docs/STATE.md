@@ -75,6 +75,18 @@ secret") — **not performed by this session**.
   `runAsTenant` + allowlist test; console C13); Arabic wording of the 8 new message keys is
   **pending Majd's review** (Arabic-review gate).
 
+**CI fixes on PR #69 (2026-09-24).** First CI run: Build/compose-smoke green; gitleaks + Trivy red, neither from this
+feature's code. (1) gitleaks: false positive on the illustrative `Idempotency-Key:` example in the read-only spec
+mirror → allowlisted in `.gitleaks.toml` (spec never edited). (2) Trivy: 6 new dependency CVEs since `main`'s last
+green run (2026-08-23), `pom.xml` untouched by this PR. Fixed by same-line bumps: netty 4.1.136→4.1.137 (CVE-2026-75595),
+Tomcat 10.1.55→**10.1.59** (CVE-2026-65182/65905/68525+1; Trivy named 10.1.58 but that release does not exist on
+Maven Central). **BouncyCastle (CVE-2026-8763 CRITICAL, CVE-2026-13506 HIGH): option A tried and rejected** — 1.85
+enforces RFC 5280 ub-common-name (64), `SoftKeyProvider` builds `CN=<kid>` (kid = slug up to 63 chars + `:key-N`),
+so long tenant slugs could not get a signing key; 4 existing tests failed. Fell back to B: held at 1.78.1 with
+reachability-based `.trivyignore` entries (BC only generates the self-signed PKCS#12 cert and does Argon2 — no cert
+path validation, no untrusted ASN.1 parsing). CVE-2026-13506 was triaged from its advisory title only — re-check.
+**Open:** before any future BC bump, make `SoftKeyProvider`'s certificate subject independent of the kid length.
+
 **Next:** review + `[MAJD]` live round → merge → KH-2.8.2-BE (D5–D7 idempotency; also decides the
 claim-code delivery shape above) → C13 console screen.
 

@@ -19,6 +19,11 @@
 #    #43 through #50 had CI skipped outright by the GitHub Actions billing outage (see
 #    docs/STATE.md "CI status (temporary)") and never actually ran gitleaks for real until this
 #    one. Not a production key.
+#  * univ-2026-grad-000123 — the illustrative `Idempotency-Key:` header value in the read-only spec
+#    mirror docs/specs/FS-2_7a-issuer-m2m-foundation.md (PR #69, 2026-09-24). It is a made-up
+#    example of a connector-chosen idempotency key, not a credential; the generic-api-key rule
+#    trips on the `Key:` label. The mirror is never edited here (CONVENTIONS §10), so the value is
+#    allowlisted instead.
 
 title = "khatm-platform"
 
@@ -37,4 +42,6 @@ regexes = [
   '''a2hhdG0tdGVzdC10b3RwLWVuYy1rZXktMzJieXRlcyE=''',
   # decoded literal
   '''khatm-test-totp-enc-key-32bytes!''',
+  # illustrative Idempotency-Key example in the FS-2.7a spec mirror (see triage log above)
+  '''univ-2026-grad-000123''',
 ]

@@ -82,3 +82,22 @@ CVE-2026-41850
 # application.yml). Confirmed unreachable now, not merely unlikely.
 CVE-2026-41842
 CVE-2026-41845
+
+# 2026-09-24 PR #69 — org.bouncycastle:bcprov-jdk18on / bcpkix-jdk18on 1.78.1, CRITICAL. CVE-2026-8763:
+# X.509 name-constraints bypass (trailing dot) in certificate PATH VALIDATION. Unreachable: this
+# codebase never validates a certificate path with BouncyCastle — it only generates a self-signed
+# certificate to satisfy the PKCS#12 container format (key.domain.SoftKeyProvider) and uses Argon2
+# for password hashing; every signature verification goes through Nimbus/JCA (CLAUDE.md: bcpkix is
+# "never used in verification paths"). Fix is 1.85, which was tried and REJECTED: it enforces RFC 5280
+# ub-common-name (64 chars) and SoftKeyProvider's `CN=<kid>` (slug up to 63 + ":key-N") would fail for
+# long tenant slugs — 4 existing tests broke. Revisit when SoftKeyProvider's subject no longer
+# depends on the kid length (see pom.xml bcpkix comment).
+CVE-2026-8763
+
+# 2026-09-24 PR #69 — same artifacts, HIGH. CVE-2026-13506: denial of service via a crafted "lazy"
+# ASN.1 sequence, i.e. when BouncyCastle PARSES untrusted ASN.1. Unreachable: no untrusted ASN.1 is
+# ever handed to BouncyCastle here — its only inputs are values this process generates itself
+# (self-signed cert subject, Argon2 parameters). JWS/JWT and status-list parsing use Nimbus. Same
+# 1.85 fix/rejection as CVE-2026-8763 above. NOTE: triaged from the advisory title only
+# ("Denial of Service via lazy ASN.1 sequence...") — re-check on the next dependency pass.
+CVE-2026-13506
