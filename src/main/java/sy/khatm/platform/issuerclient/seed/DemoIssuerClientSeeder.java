@@ -5,6 +5,7 @@ import java.util.Optional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
@@ -28,6 +29,9 @@ import sy.khatm.platform.shared.LocalizedText;
  */
 @Component
 @Profile("local")
+// api role only: the local compose runs the worker image too, and two seeders racing to create the
+// "first" client would mint two demo keys (and only one of them could ever show the holder secret).
+@ConditionalOnProperty(name = "khatm.web.enabled", havingValue = "true", matchIfMissing = true)
 @Order(2)
 class DemoIssuerClientSeeder implements CommandLineRunner {
 

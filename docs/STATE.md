@@ -4,6 +4,71 @@
 
 ## 2026-09-24: Valute token has been renewed until: 2026-10-25.
 
+## KH-2.8.1-BE — `issuer_client` + M2M auth + `issue` scope + tenant holder secret — PR OPEN, NOT MERGED
+(branch `feat/KH-2.8.1-issuer-client`, spec `docs/specs/FS-2.7a-issuer-m2m-foundation.md` D1–D4, D8–D9,
+D11–D12; brief `docs/sessions/SESSION-KH-2.8.1-BE.md`; 2026-09-24.) `mvn verify` green **509/509**
+(478 baseline + 31 new), Spotless/Checkstyle/Modulith green, `openapi.json` additive-only (structural
+diff: 0 removed, 0 changed, 17 added), migration V18 additive-only. **Not merged — awaits Majd's
+review and the live [MAJD] round (`scripts/demo-m2m.sh`, brief §5).** **KH-2.8.2-BE (idempotency,
+D5–D7) was NOT started.**
+
+**What shipped.** New Modulith module `issuerclient/` (`api`: `IssuerClientAuthenticator`,
+`IssuerClientPrincipal`, `IssuerClientSchemaAccess`; `domain`: entity, argon2id-hashed once-shown
+`khi_<10 base32>_<43 base64url>` key, lifecycle create/rotate/suspend/resume/revoke, `RetiringSweeper`
+on the worker role, `HolderSecretProvisioner`, `OrgIssuerClientService`; `web`: console + org-plane
+controllers). `rbac.security.IssuerClientAuthFilter` beside `ApiKeyAuthFilter` on the same stateless
+chain; ONE central rule (`ScopeGuard#requireIssuerClientAllowedRoute`, first in `SecurityConfig`)
+confines the principal to `POST /credentials/issue`, `POST /credentials/bulk`, and
+`GET /credentials/{id}` (own credentials only, foreign = 404). `credential`: 64-hex `holderRef` +
+forbidden claim names (`KH-ISS-0400`) on **every** issuance path, `issuer_client_id` stamped, schema
+allowlist enforced, `IssueResponse` gains `claimed`/`issuerClientId`. Vault KV v2 mounted at `khatm/`
+in compose; `khatm-transit-app.hcl` grants create/update/read on `tenants/*`.
+
+**Investigation decisions** (full record in the PR body): consumer keys are `khk_` (not `khc_`) with a
+dot-separated body → a *second adjacent filter*, no `SecurityConfig` rewrite; filter lives in
+`rbac.security` (there is no `shared/security`, and the token type is package-private);
+`key:manage` already existed and was already seeded on `TENANT_ADMIN`/`PLATFORM_ADMIN` (V10) → **no
+data migration**; bulk **is** an API → in scope; the real issue path is `/api/v1/credentials/issue`
+(spec text says `/credentials`); org plane keyed by tenant **id** like the rest of `/api/v1/org`
+(spec says `{slug}`); there is **no `VaultTemplate`** in this codebase — Vault is reached with a
+plain-HTTP `RestClient` (as `VaultTransitProvider` does), so `HolderSecretProvisioner` does the same.
+
+**Vault KV experiment (V3, done before any code).** A scratch Vault 1.17 + a token bound ONLY to the
+updated policy: first `cas=0` write ✔, second `cas=0` → `400 check-and-set parameter did not match`
+(the platform's "already provisioned" signal), read ✔, metadata read ✔, `delete`/`list`/write outside
+`tenants/*` → 403, transit unaffected. Unlike `transit/keys/*` there was no create-vs-update surprise.
+Staging still needs the operator steps in `docs/deploy-staging.md` ("KV v2 for the tenant holder
+secret") — **not performed by this session**.
+
+**Lessons / things to know.**
+- **`holderRef` enforcement is universal (brief §3.4/§4 #8) — cross-repo impact.** The console's
+  issue flow and any wallet/other client sending free-form `holderRef`s now gets `400 KH-ISS-0400`.
+  This repo: ~45 test call sites, `DemoSeeder`, and `scripts/smoke.sh` (CI compose-smoke) were
+  migrated to 64-hex (`support.HolderRefs`). Console (C2/C3 wizard, bulk `pseudoRef`) must send a
+  conforming value before this is deployed.
+- **Claim code gap.** `/issue` returns `sdJwt`, not a `claimCode` (brief §5 step 2 / spec §3.1
+  assume one), and `POST /{id}/claim-code` is not on the D4 allowlist. The M2M-reachable way to get a
+  code today is `POST /credentials/bulk` with `mintClaimCodes:true` (what `demo-m2m.sh` uses). Needs a
+  decision with KH-2.8.2 (D7 assumes an inline `claimCode`).
+- springdoc auto-numbers `operationId`s (`list_3`…): new controllers with `list()`/`create()` methods
+  silently renumbered 8 EXISTING operations (breaks the console's generated client). Fixed by explicit
+  `operationId`s on every new operation — remember this for any future controller.
+- `Clock` bean added (none existed) so rotation/expiry are tested by moving time, not sleeping;
+  tests override it with a `@Primary` mutable clock.
+- Mutation-checked: removing the central rule makes the every-route test fail with `GET /schemas`
+  (200), `/auth/me`, `logout`, claim-code leaking to a `khi_` principal.
+- Holder secret is generated LAST in the create transaction and a Vault failure rolls it back
+  (`KH-ICL-0503`); residual risk: Vault commits then the DB commit fails → secret exists in Vault,
+  never shown → an operator reads it from Vault (documented in the module README).
+- `ISSUER_CLIENT_AUTH_FAILED` throttling is an in-memory per-prefix window (single replica; a shared
+  limiter belongs with KH-2.5 per-client rate limiting).
+- Not done (out of scope, recorded): platform:admin cross-tenant *read* of clients (needs
+  `runAsTenant` + allowlist test; console C13); Arabic wording of the 8 new message keys is
+  **pending Majd's review** (Arabic-review gate).
+
+**Next:** review + `[MAJD]` live round → merge → KH-2.8.2-BE (D5–D7 idempotency; also decides the
+claim-code delivery shape above) → C13 console screen.
+
 ## Current phase / task
 **fix/role-grant-ceiling — DONE & MERGED via PR #68**
 (`https://github.com/GloryMs/khatm-platform/pull/68`, opened 2026-08-20, merged

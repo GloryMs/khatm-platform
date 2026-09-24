@@ -37,23 +37,23 @@
  * authorization rule in {@code SecurityConfig} confines that principal to issuance and reading its
  * own credentials.
  *
- * <p><b>Cross-module dependencies:</b> {@code issuerclient :: api} (KH-2.8.1); {@code shared} (its open root package — {@link
- * sy.khatm.platform.shared.TenantContext}, {@link sy.khatm.platform.shared.Uuidv7}, {@link
- * sy.khatm.platform.shared.LocalizedText}); {@code shared :: error} ({@code KhatmException}
- * subtypes — {@code AuthenticationException}/{@code AuthorizationException}, finally thrown as of
- * this module); {@code shared :: audit} ({@code AuditService} — the seven {@code AUTH_*}/{@code
- * API_KEY_*}/{@code USER_CREATED} actions this module records); {@code shared :: web} ({@code
- * ErrorEnvelope}, referenced from this module's OpenAPI annotations and built directly by {@code
- * security.SecurityEnvelopeWriter} for the pre-{@code DispatcherServlet} filter-chain denials);
- * {@code consumer :: api} ({@code ConsumingPartyRegistry} — {@code seed.DemoApiKeySeeder}'s {@code
- * local}/{@code dev}-only demo {@code CONSUMING_PARTY} API key needs a real consuming party to own
- * it, and — KH-1.4.3 — allowlists that party for the demo schema); {@code schema :: api} ({@code
- * SchemaCatalog#listAll}, KH-1.4.3 — {@code seed.DemoApiKeySeeder} resolves the demo schema's id by
- * code to allowlist it, same local/dev-only seeder); {@code tenant :: api} ({@code
- * TenantDirectory}, KH-2.1 spec FS-2.1 D1/D7 — {@code security.TenantContextFilter} resolves a
- * principal's tenant and enforces suspension; {@code domain.ApiKeyService#verify}/{@code
- * domain.AuthService#login} check the same tenant's active status directly, mirroring the KH-1.4.3
- * suspended-consuming-party check).
+ * <p><b>Cross-module dependencies:</b> {@code issuerclient :: api} (KH-2.8.1); {@code shared} (its
+ * open root package — {@link sy.khatm.platform.shared.TenantContext}, {@link
+ * sy.khatm.platform.shared.Uuidv7}, {@link sy.khatm.platform.shared.LocalizedText}); {@code shared
+ * :: error} ({@code KhatmException} subtypes — {@code AuthenticationException}/{@code
+ * AuthorizationException}, finally thrown as of this module); {@code shared :: audit} ({@code
+ * AuditService} — the seven {@code AUTH_*}/{@code API_KEY_*}/{@code USER_CREATED} actions this
+ * module records); {@code shared :: web} ({@code ErrorEnvelope}, referenced from this module's
+ * OpenAPI annotations and built directly by {@code security.SecurityEnvelopeWriter} for the
+ * pre-{@code DispatcherServlet} filter-chain denials); {@code consumer :: api} ({@code
+ * ConsumingPartyRegistry} — {@code seed.DemoApiKeySeeder}'s {@code local}/{@code dev}-only demo
+ * {@code CONSUMING_PARTY} API key needs a real consuming party to own it, and — KH-1.4.3 —
+ * allowlists that party for the demo schema); {@code schema :: api} ({@code SchemaCatalog#listAll},
+ * KH-1.4.3 — {@code seed.DemoApiKeySeeder} resolves the demo schema's id by code to allowlist it,
+ * same local/dev-only seeder); {@code tenant :: api} ({@code TenantDirectory}, KH-2.1 spec FS-2.1
+ * D1/D7 — {@code security.TenantContextFilter} resolves a principal's tenant and enforces
+ * suspension; {@code domain.ApiKeyService#verify}/{@code domain.AuthService#login} check the same
+ * tenant's active status directly, mirroring the KH-1.4.3 suspended-consuming-party check).
  *
  * <p><b>KH-2.1 Part B:</b> {@code api_key} is Row-Level-Security-protected like every other
  * business table, and {@code domain.ApiKeyService#verify} is, by construction, a lookup with no

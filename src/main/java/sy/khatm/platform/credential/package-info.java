@@ -128,11 +128,11 @@
  *
  * <p><b>Issuer clients (KH-2.8.1):</b> {@code issuer_client_id} on {@code credential}, the
  * connector contract on issuance (64-hex {@code holderRef}, forbidden national-id claim names —
- * {@code KH-ISS-0400}, every path), the per-client schema allowlist check via {@code issuerclient ::
- * api}, and own-credentials-only reads for an issuer-client caller. See this module's README.
+ * {@code KH-ISS-0400}, every path), the per-client schema allowlist check via {@code issuerclient
+ * :: api}, and own-credentials-only reads for an issuer-client caller. See this module's README.
  *
- * <p><b>Cross-module dependencies:</b> {@code issuerclient :: api} ({@code IssuerClientSchemaAccess},
- * KH-2.8.1); {@code key :: api} ({@link
+ * <p><b>Cross-module dependencies:</b> {@code issuerclient :: api} ({@code
+ * IssuerClientSchemaAccess}, KH-2.8.1); {@code key :: api} ({@link
  * sy.khatm.platform.key.api.KeySigner} for signing, {@link sy.khatm.platform.key.api.KeyVerifier}
  * for strict-by-{@code kid} verification, no fallback); {@code schema :: api}, {@code holder ::
  * api}, {@code status :: api}, {@code consumer :: api} — issuing/consuming a credential must
