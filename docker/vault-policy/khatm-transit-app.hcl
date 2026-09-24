@@ -43,6 +43,24 @@ path "transit/verify/*" {
   capabilities = ["update"]
 }
 
+# ---------------------------------------------------------------------------------------------
+# KH-2.8.1 (spec FS-2.7a D9/V3) — KV v2 at khatm/, tenant holder HMAC secrets only.
+#
+# The app writes khatm/data/tenants/<root-slug>/holder-hmac ONCE per root tenant (KV v2
+# check-and-set with cas=0, i.e. "only if it does not exist yet"). KV v2 splits data and metadata
+# paths: writes/reads of the value are under khatm/data/, and "read" on khatm/metadata/ is only for
+# existence/version introspection. No "delete" and no "list" anywhere: the app can neither destroy
+# a holder secret nor enumerate other tenants'. Enable the engine once per Vault with:
+#   vault secrets enable -path=khatm kv-v2
+# ---------------------------------------------------------------------------------------------
+path "khatm/data/tenants/*" {
+  capabilities = ["create", "update", "read"]
+}
+
+path "khatm/metadata/tenants/*" {
+  capabilities = ["read"]
+}
+
 # Explicitly nothing else — no "delete" on transit/keys/*, no transit/export/*, no sys/*, no
 # other secrets engine path. A token bound to this policy cannot export key material, delete a
 # key, disable the transit engine, or read any other tenant's non-transit secrets even if some
