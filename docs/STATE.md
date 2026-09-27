@@ -4,6 +4,93 @@
 
 ## 2026-09-24: Valute token has been renewed until: 2026-10-25.
 
+## KH-2.8.2-BE — issuance idempotency + claim code over M2M + human-session `holderRef` — DONE & MERGED via PR #70
+(branch `feat/KH-2.8.2-issuance-idempotency`, spec `docs/specs/FS-2_7a-issuer-m2m-foundation.md` D5–D7 + the
+2026-09-27 errata, brief `docs/sessions/SESSION-KH-2.8.2-BE.md`; 2026-09-27.) `mvn verify` green **524/524**
+(509 baseline + 15 new), Spotless/Checkstyle/Modulith green, migration V19 additive-only, `openapi.json`
+additive except the two V1-b relaxations below. **Arabic-review gate: the 3 new `idempotency.*` keys approved
+as-is by Majd (2026-09-27).** Errata mirrored into khatm-docs `specs/FS-2_7a-issuer-m2m-foundation.md` (file is
+untracked there, like its sibling specs — edited, not committed).
+**Live `[MAJD]` round (brief §6), 2026-09-27, local compose rebuilt from this branch (V19 applied), QR base
+`http://172.16.3.106:8080`:** (1) `demo-001` + `mintClaimCode` → 200, code A; (2) identical request → 200
+`Idempotent-Replayed: true`, code B, `claimCodeReissued:true`, `sdJwt:null` — **wallet: A rejected, B showed the
+credential** (`CRI-2026-407875`); (3) third replay → `claimed:true`, no code; (4) different body →
+`422 KH-IDEM-0422`, no header → `400 KH-IDEM-0400`; direct-mode replay → `sdJwt:null, deliveryLost:true`; scope /
+tampered-key / nationalId / bad-holderRef checks unchanged from KH-2.8.1. (6) `api`+`worker` logs: zero hits for
+`demo-001`, `khi_`, both codes, the holderRef, the holder secret, the key body; three `ISSUANCE_REPLAYED` audit
+rows (actor `API_KEY`, `keySha256` only) with the expected flags. (5) console-session issue with an empty
+`holderRef` → 200 with a generated 64-hex `holderRef` — **done by Majd, 2026-09-27. Round fully signed off; merge
+approved by Majd (2026-09-27).**
+`demo-m2m.sh` gained `DEMO_PAUSE=1` (pause also on piped stdin) so the round can be driven from a tool without
+step 3 reissuing the code before the wallet scans.
+
+**Vetoes as approved (Majd, 2026-09-27, all defaults):** V1 = (b) `holderRef` optional for human sessions,
+generated when absent; V2 = (a) `mintClaimCode` on `IssueRequest` (no `POST /{id}/claim-code` for M2M); V3 =
+default (direct-mode replay → `sdJwt:null`, `deliveryLost:true`); V4 = one key per batch, code-free snapshot,
+codes reissued per unclaimed row on replay; V5 = 30-day retention, hourly worker sweep; V6 = a human session's
+key is honored, never required.
+
+**Impact of V1-b on console C13a (the scope shrinks):** the attested single-issue form's `holderRef` becomes
+**optional** — hint "leave empty to have one generated"; when a value is typed it must still be 64 lowercase
+hex (`KH-ISS-0400`). The bulk CSV `pseudoRef` column becomes optional again: rows without it now issue, each to
+its own random reference (no more shared `"holder-demo"`). The response now carries `holderRef` (single) /
+`results[i].holderRef` (bulk) — the console may show it. Still required from C13a: the shape validation +
+EN/AR guidance for a typed value, the `KH-ISS-0400` mapping, and the contract re-vendor (in the regenerated
+contract `holderRef` is no longer `required` and gains `pattern`). Deploy order is unchanged: C13a ships with
+or before the release containing PR #69 (the console's free-text values are still rejected; only *empty* is
+newly fine).
+
+**What shipped.** `V19__issuance_idempotency.sql` (unique `(tenant, COALESCE(client, nil), scope, key)`,
+strict-equality RLS, `expires_at` index, DELETE grant for the sweeper). `credential.domain`:
+`IssuanceIdempotencyGuard` (key rules, canonical-JSON SHA-256, claim/complete/replay, `ISSUANCE_REPLAYED`
+audit), `ClaimCodeReissuer` (in-place reissue under `SELECT ... FOR UPDATE`), `HolderRefs#random`,
+`IssuanceContext`/`IssuanceResult`; `CredentialService#issue(req, context)` + `#issueBatchRow`;
+`worker.IdempotencyRetentionSweeper`. `IssueRequest.mintClaimCode`; `IssueResponse` gains `holderRef`,
+`claimCode`, `claimCodeExpiresAt`, `claimCodeReissued`, `deliveryLost` (and `claimed` now means something on
+replays); `BulkIssueItemResult` gains `holderRef`, `claimed`. `Idempotency-Key` request header and
+`Idempotent-Replayed`/`Retry-After` response headers documented on `/issue` and `/bulk` (no new operations, so
+no operationId renumbering). `KH-IDEM-0400/0409/0422` + EN/AR messages. `holder :: api` gains
+`HolderDirectory#findById` (additive). `scripts/demo-m2m.sh` rewritten around `mintClaimCode` + the replay story.
+
+**Investigation findings / decisions taken in-session (full record in the PR body).**
+- Disclosures live only in `claim_code.disclosures_enc`; a direct-mode credential has no `claim_code` row and
+  the platform cannot mint one later without the caller's `sdJwt` → V3 default confirmed.
+- In-place reissue is constraint-free (`code_hash` unique, new random value). The expiry sweeper's bulk
+  `UPDATE` waits on the reissue's row lock and re-checks its `WHERE` against the extended `expires_at`, so an
+  extended row is never zeroed. **Case the brief did not cover:** if the sweeper wins first (disclosures
+  already zeroed), nothing is deliverable → the replay reports `deliveryLost:true` (same for a revoked/expired
+  credential). Pinned by an 8-round race test.
+- **`ON CONFLICT DO NOTHING` instead of catching `DataIntegrityViolationException`**: the unique index still
+  decides the race, but the loser's transaction is never aborted, so it reads the winner's committed row in
+  the same transaction. For `/issue` a twin simply waits on the index and replays; `409` is effectively a
+  `/bulk` outcome.
+- **`/bulk` is not one transaction** (per-row independence, KH-1.1.3), so the brief's "insert in the same
+  transaction" cannot hold there: the claim commits `IN_PROGRESS` first, `DONE` + snapshot last. An unexpected
+  error mid-batch still records processed rows (rest as `KH-SYS-0500`); a hard crash leaves the key
+  `IN_PROGRESS` (409) until retention — documented in the README as the known limit.
+- Bulk rows now mint their claim code **inside** the row's issuing transaction (was a second transaction; a
+  failed mint used to leave an issued credential reported `FAILED`). Rows go through the new
+  `issueBatchRow` — the batch key covers them, so a machine principal is not asked for a per-row key.
+- **`/issue` answers `200`, not `201`** (spec §3.1 assumed 201) — kept, replay told apart only by the header;
+  recorded in the errata.
+- V1-b applies to `ActorKind.USER` only; tenant API keys count as machine callers (holderRef required,
+  Idempotency-Key optional). `@NotBlank` left the DTO (the rule depends on the caller), so the FS-0.6a DoD #3
+  Bean-Validation probe moved to `/bulk`'s `schemaCode`.
+- OpenAPI structural diff: 0 changed, 18 added, **2 removed** — `IssueRequest.required:[holderRef]` and
+  `holderRef.minLength` — the V1-b relaxation itself.
+- The sweeper-race test drives the sweeper on DB time (`CURRENT_TIMESTAMP`, unchanged); the injected `Clock`
+  drives the reissue TTL and the retention sweeper.
+- The errata was appended to the `docs/specs/` mirror on the brief's explicit instruction (A1 precedent),
+  although CLAUDE.md calls the mirrors read-only — **the same paragraph must land in khatm-docs.**
+
+**Open / follow-ups.** Claim-code TTL stays 15 minutes (existing constant) for M2M too — likely short for a
+connector that delivers codes via SMS/e-mail; a `claimCodeTtlMinutes` would be an additive later change.
+Everything recorded as open under KH-2.8.1 below still stands (C13 cross-tenant read, staging KV steps,
+`SoftKeyProvider` CN length before a BC bump).
+
+**Next:** Majd's live round + Arabic review on this PR → console **C13a** (reduced scope above) → C13 console
+clients screen → staging KV operator steps at deploy time.
+
 ## KH-2.8.1-BE — `issuer_client` + M2M auth + `issue` scope + tenant holder secret — DONE & MERGED via PR #69
 (branch `feat/KH-2.8.1-issuer-client`, spec `docs/specs/FS-2.7a-issuer-m2m-foundation.md` D1–D4, D8–D9,
 D11–D12; brief `docs/sessions/SESSION-KH-2.8.1-BE.md`; 2026-09-24.) `mvn verify` green **509/509**

@@ -29,13 +29,58 @@ and rejects a top-level claim named like a national identifier
 issuance path, console sessions included; (2) for an issuer-client caller, requires the schema to be
 on the client's allowlist (`issuerclient :: api`'s `IssuerClientSchemaAccess`, `403 KH-AUTH-0403`);
 (3) stamps `issuer_client_id`. `CredentialService#getView` shows an issuer-client caller only its own
-credentials (a foreign id is a 404). `IssueResponse` gains `claimed` (always `false` for now) and
-`issuerClientId`.
+credentials (a foreign id is a 404). `IssueResponse` gains `claimed` and `issuerClientId`.
+
+**Idempotency (KH-2.8.2, spec FS-2.7a D5–D7).** `POST /credentials/issue` and `/bulk` accept an
+`Idempotency-Key` header (1–128 printable ASCII). It is **mandatory for machine issuer clients**
+(`400 KH-IDEM-0400` without it) and optional-but-honored for console sessions and tenant API keys.
+`domain.IssuanceIdempotencyGuard` claims the key **before** any work by inserting an `IN_PROGRESS`
+row into `issuance_idempotency` (V19) with `INSERT ... ON CONFLICT DO NOTHING` — the unique index
+`(tenant, client-or-nil, scope, key)` decides every race in the database, and the insert never aborts
+the caller's transaction:
+- `/issue`: the claim lives in the issuing transaction. A failed issuance rolls it back; a concurrent
+  twin blocks on the index until the winner commits, then replays it (so `/issue` practically never
+  answers `409`).
+- `/bulk`: rows commit one by one (per-row independence), so the claim commits first, and becomes
+  `DONE` with a code-free `result_snapshot` at the end. A twin in between gets
+  `409 KH-IDEM-0409` + `Retry-After: 2`. An unexpected error mid-batch still records the processed
+  rows (the rest as `KH-SYS-0500` failures) so a retry replays the truth; a process crash leaves
+  the claim `IN_PROGRESS` until retention expires (the connector checks with `GET /credentials/{id}`
+  and continues under a new key).
+- Same key + same body → replay: HTTP `200` (like a fresh issue — `/issue` has always answered 200)
+  with `Idempotent-Replayed: true`. Same key + different body → `422 KH-IDEM-0422`. The body hash is
+  SHA-256 over canonical JSON (keys sorted, `null`s dropped); the key itself is not part of it.
+- Every replay writes `ISSUANCE_REPLAYED` (detail: `keySha256`, `scope`, `claimCodeReissued`,
+  `deliveryLost` — never the key, a code, or a `holderRef`).
+- Retention `khatm.issuance.idempotency.retention` (default `P30D`); the worker-role
+  `worker.IdempotencyRetentionSweeper` deletes expired rows hourly.
+
+**Delivery modes (KH-2.8.2, D-CC).** A credential reaches the holder in one of two ways:
+- **Claim code** — `IssueRequest.mintClaimCode: true` (bulk: `mintClaimCodes: true`). The code is
+  minted *in the issuing transaction* and returned as `claimCode`/`claimCodeExpiresAt` next to the
+  one-time `sdJwt`. On a replay, `domain.ClaimCodeReissuer` rewrites the credential's one
+  `claim_code` row in place under the same `SELECT ... FOR UPDATE` lock the redeem path takes: new
+  code, new `code_hash`, fresh `expires_at`, `disclosures_enc` untouched — the old code dies
+  (`claimCodeReissued: true`). Already claimed → `claimed: true`, no code. Disclosures already zeroed
+  (expired and swept, voided, or the credential is revoked/past validity) → `deliveryLost: true`.
+- **Direct `sdJwt`** — the default. The presentation is never stored (P1), so a replay returns
+  `sdJwt: null` and `deliveryLost: true`; the connector decides (revoke + reissue under a new key).
+
+**Machine connectors SHOULD use `mintClaimCode`**: it is the only mode a lost response can be
+recovered from. `POST /{id}/claim-code` stays console-only (not on the issuer-client allowlist).
+
+**`holderRef` for human sessions (KH-2.8.2, veto V1-b).** A console session (`ActorKind.USER`,
+channel C — an issuer with no system of its own to compute the HMAC) may omit `holderRef`
+(bulk: `pseudoRef`): the platform assigns `domain.HolderRefs#random()` (32 `SecureRandom` bytes →
+64 hex), unique per credential and linked to no one, and returns it as `holderRef`. Machine callers
+(issuer clients, tenant API keys) must still send one (`KH-ISS-0400`); a value that *is* sent must
+be 64 lowercase hex for everyone. The rule depends on the caller, so it lives in the service, not
+in Bean Validation.
 
 **Events in:** none yet. **Events out:** `CredentialIssued`, `CredentialConsumed`,
 `CredentialRevoked` (future — KH-1.3).
 
-**Tables owned:** `credential`, `consumption_event`, `claim_code`.
+**Tables owned:** `credential`, `consumption_event`, `claim_code`, `issuance_idempotency` (KH-2.8.2).
 
 **SD-JWT (KH-0.4, spec FS-0.4) — the two decisions worth understanding before touching this
 module:**

@@ -108,12 +108,11 @@ class IssuerClientAuthHttpTest extends IssuerClientHttpTestSupport {
     body.put("mintClaimCodes", true);
     body.put(
         "items", List.of(Map.of("claims", Map.of("field", "v"), "pseudoRef", validHolderRef())));
-    ResponseEntity<String> response =
-        m2m(HttpMethod.POST, "/api/v1/credentials/bulk", client.apiKey(), body);
+    ResponseEntity<String> response = m2mBulk(client.apiKey(), body, "bulk-" + UUID.randomUUID());
 
     assertThat(response.getStatusCode()).as(response.getBody()).isEqualTo(HttpStatus.OK);
     JsonNode item = tree(response.getBody()).get("results").get(0);
-    assertThat(item.get("status").asText()).isEqualTo("ISSUED");
+    assertThat(item.get("status").asText()).as(response.getBody()).isEqualTo("ISSUED");
     assertThat(item.get("claimCode").asText()).isNotBlank();
   }
 

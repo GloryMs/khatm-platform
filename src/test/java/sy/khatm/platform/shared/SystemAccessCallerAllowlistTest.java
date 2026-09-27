@@ -40,8 +40,9 @@ class SystemAccessCallerAllowlistTest {
           "sy/khatm/platform/rbac/domain/OrgAdminService.java", // org:admin aggregated report
           "sy/khatm/platform/issuerclient/domain/IssuerClientAuthenticatorService.java", // khi_
           // auth
-          "sy/khatm/platform/issuerclient/domain/RetiringSweeper.java" // cross-tenant sweep
-          );
+          "sy/khatm/platform/issuerclient/domain/RetiringSweeper.java", // cross-tenant sweep
+          // KH-2.8.2: cross-tenant retention sweep of issuance_idempotency (spec FS-2.7a D6)
+          "sy/khatm/platform/credential/worker/IdempotencyRetentionSweeper.java");
 
   @Test
   void runAsSystem_isCalledOnlyByTheEnumeratedServices() throws IOException {

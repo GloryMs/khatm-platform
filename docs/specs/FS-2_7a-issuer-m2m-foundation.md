@@ -165,3 +165,26 @@ GET    /api/v1/org/children/{slug}/issuer-clients  (KH-2.6 pattern, parent tenan
 - بند onboarding checklist القائم (مراجعة إملاء الـ slug) يُضاف إليه: **مراجعة أن سر
   الحامل وُلِّد للجذر الإداري الصحيح** — هو الآخر غير قابل للتصحيح رجعياً بعد أول
   `holderRef`.
+
+---
+
+## Errata (2026-09-27, من KH-2.8.1)
+
+> تُلتزم كأول commit مستقل في جلسة KH-2.8.2-BE (نمط A1). تصحّح نص المواصفة ليطابق الواقع
+> المنفَّذ في PR #69؛ لا تغيّر أي قرار D1–D12 إلا D7 (يُصحَّح بـ D-CC في
+> `docs/sessions/SESSION-KH-2.8.2-BE.md`). يجب نقل الفقرة نفسها إلى khatm-docs (هذه نسخة مرآة).
+
+- **مسار الإصدار الفعلي** `POST /api/v1/credentials/issue` (لا `/credentials`)؛ والـ bulk
+  `POST /api/v1/credentials/bulk` مسار API فعلي وداخل النطاق (D4).
+- **جسم المفتاح** `khi_<10 base32>_<43 base64url>` (32 بايت مشفَّرة base64url بلا حشو = 43 حرفاً)؛
+  مفاتيح الاستهلاك بادئتها `khk_` لا `khc_` (§4 «الفلتر»).
+- **خطة الـ org** مفتاحها `{tenantId}` لا `{slug}` (اتساقاً مع `/api/v1/org/**`) — §3.2 و DoD #11.
+- **`key:manage`** كان موجوداً ومزروعاً على `TENANT_ADMIN`/`PLATFORM_ADMIN` منذ V10 — لا migration بيانات.
+- **D7 / §3.1** كُتبا على افتراض أن `/issue` يعيد `claimCode`؛ الواقع: يعيد `sdJwt`، والكود يُسكّ
+  منفصلاً (`POST /{id}/claim-code` للكونسول، أو `mintClaimCodes` في الـ bulk). **يُصحَّح بـ D-CC**
+  (KH-2.8.2: `mintClaimCode` على `IssueRequest`).
+- **لا `VaultTemplate`** في هذا الـ codebase؛ Vault يُبلَغ عبر `RestClient` مباشر (كما في
+  `VaultTransitProvider`) — §4 «الحامل».
+- *(اكتُشف في تحقيق KH-2.8.2)* §3.1 «استجابة `201` كما هي اليوم»: `/issue` يعيد اليوم **`200`** لا
+  `201`. يبقى `200` (لا كسر للعقد)؛ الـ replay يتميّز بالـ header `Idempotent-Replayed: true` لا برمز
+  الحالة — ومعيار القبول #5 يُقرأ «1× إصدار جديد و19× replay».

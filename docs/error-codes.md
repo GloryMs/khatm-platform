@@ -60,3 +60,6 @@
 | `KH-ICL-1409` | 409 | `issuer-client.invalid-transition` |
 | `KH-ICL-0503` | 503 | `issuer-client.holder-secret-unavailable` |
 | `KH-ISS-0400` | 400 | `issuance.validation-failed` |
+| `KH-IDEM-0400` | 400 | `idempotency.key-invalid` |
+| `KH-IDEM-0409` | 409 | `idempotency.in-progress` |
+| `KH-IDEM-0422` | 422 | `idempotency.key-reused` |

@@ -104,7 +104,14 @@
  * <p><b>Published events:</b> {@code CredentialIssued}, {@code CredentialConsumed}, {@code
  * CredentialRevoked} (future — KH-1.3)
  *
- * <p><b>Tables owned:</b> {@code credential}, {@code consumption_event}, {@code claim_code}
+ * <p><b>Tables owned:</b> {@code credential}, {@code consumption_event}, {@code claim_code}, {@code
+ * issuance_idempotency} (KH-2.8.2)
+ *
+ * <p><b>Issuance idempotency (KH-2.8.2, spec FS-2.7a D5–D7):</b> {@code IssuanceIdempotencyGuard}
+ * claims an {@code Idempotency-Key} before any issuance work (mandatory for machine issuer
+ * clients), replays a completed request, and rejects a reused key with a different body. A replay
+ * cannot resend an {@code sdJwt} (never stored); in claim-code mode ({@code mintClaimCode}) {@code
+ * ClaimCodeReissuer} reissues the pending claim code in place instead. See the module README.
  *
  * <p><b>Claim delivery (spec FS-1.2.1):</b> {@code ClaimRedemptionService#redeem} is the on-claim
  * half of the {@code disclosures_enc} zeroing contract FS-0.2 §3.7 opened — the other half,

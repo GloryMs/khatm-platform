@@ -19,10 +19,20 @@ import sy.khatm.platform.shared.error.KhatmException;
  * @param ref the issued credential's human-readable ref; {@code null} on failure
  * @param claimCode a one-time wallet claim code, present only when the request set {@code
  *     mintClaimCodes: true} and this row succeeded
+ * @param holderRef the holder reference the row was issued to — echoed, or generated for a human
+ *     session that sent none (KH-2.8.2, veto V1); {@code null} on failure
+ * @param claimed the holder already claimed this row's credential (only ever {@code true} on an
+ *     idempotent replay, KH-2.8.2)
  * @param error why this row failed; {@code null} on success
  */
 public record BulkIssueItemOutcome(
-    int index, String id, String ref, String claimCode, KhatmException error) {
+    int index,
+    String id,
+    String ref,
+    String claimCode,
+    String holderRef,
+    boolean claimed,
+    KhatmException error) {
 
   /**
    * @return {@code true} if this row issued successfully

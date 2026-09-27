@@ -8,6 +8,8 @@
  * governs the single {@code credential} module's package reach.
  *
  * <p><b>Contains:</b> {@link sy.khatm.platform.credential.worker.ClaimCodeExpiryWorker} — the
- * scheduled {@code disclosures_enc} expiry-zeroing sweep (FS-0.2 §3.7).
+ * scheduled {@code disclosures_enc} expiry-zeroing sweep (FS-0.2 §3.7); {@link
+ * sy.khatm.platform.credential.worker.IdempotencyRetentionSweeper} — deletes expired {@code
+ * issuance_idempotency} rows (KH-2.8.2, spec FS-2.7a D6).
  */
 package sy.khatm.platform.credential.worker;

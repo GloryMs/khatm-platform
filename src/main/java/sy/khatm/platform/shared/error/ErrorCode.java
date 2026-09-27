@@ -520,7 +520,27 @@ public enum ErrorCode {
    * is not 64 lowercase hex characters, or a top-level claim named like a national identifier.
    * Applies to every issuance path, console sessions included.
    */
-  KH_ISS_0400(HttpStatus.BAD_REQUEST, "issuance.validation-failed");
+  KH_ISS_0400(HttpStatus.BAD_REQUEST, "issuance.validation-failed"),
+
+  /**
+   * A machine issuer client called {@code /issue} or {@code /bulk} without an {@code
+   * Idempotency-Key} header, or any caller sent one that is not 1–128 printable ASCII characters
+   * (KH-2.8.2, spec FS-2.7a D5). Human console sessions may omit the header entirely.
+   */
+  KH_IDEM_0400(HttpStatus.BAD_REQUEST, "idempotency.key-invalid"),
+
+  /**
+   * Another request with the same {@code Idempotency-Key} is still in progress (spec FS-2.7a D7).
+   * The response carries {@code Retry-After: 2}; retrying with the identical request then replays
+   * the finished result.
+   */
+  KH_IDEM_0409(HttpStatus.CONFLICT, "idempotency.in-progress"),
+
+  /**
+   * The {@code Idempotency-Key} was already used with a different request body (spec FS-2.7a D7):
+   * the canonical-JSON SHA-256 of this body does not match the stored one. Nothing is issued.
+   */
+  KH_IDEM_0422(HttpStatus.UNPROCESSABLE_ENTITY, "idempotency.key-reused");
 
   private final HttpStatus httpStatus;
   private final String messageKey;

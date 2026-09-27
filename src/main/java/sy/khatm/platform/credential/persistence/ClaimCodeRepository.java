@@ -85,4 +85,24 @@ public interface ClaimCodeRepository extends JpaRepository<ClaimCode, UUID> {
           + "AND c.disclosuresEnc IS NOT NULL "
           + "AND c.claimedAt IS NULL")
   int zeroPendingForCredential(@Param("credentialId") UUID credentialId);
+
+  /**
+   * The newest claim code of one credential, taking a {@code SELECT ... FOR UPDATE} row lock
+   * (KH-2.8.2, spec FS-2.7a D7) — the same row lock {@link #findByCodeHashForUpdate} takes, so an
+   * idempotent replay's in-place reissue serializes against a concurrent redeem of the old code and
+   * against {@link #zeroExpiredUnclaimed}'s bulk {@code UPDATE} (which re-checks its {@code WHERE}
+   * on the row version it waited for, so a row whose {@code expires_at} was just extended is never
+   * zeroed).
+   *
+   * @param credentialId the credential whose latest code to lock
+   * @return the locked row, or empty when the credential never had a claim code (direct mode)
+   */
+  @Lock(LockModeType.PESSIMISTIC_WRITE)
+  Optional<ClaimCode> findFirstByCredentialIdOrderByCreatedAtDesc(UUID credentialId);
+
+  /**
+   * Whether any claim code of this credential was redeemed (KH-2.8.2) — the {@code claimed} flag on
+   * an idempotent issuance replay.
+   */
+  boolean existsByCredentialIdAndClaimedAtIsNotNull(UUID credentialId);
 }

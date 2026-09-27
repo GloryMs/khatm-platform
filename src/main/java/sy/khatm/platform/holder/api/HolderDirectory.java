@@ -1,6 +1,7 @@
 package sy.khatm.platform.holder.api;
 
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * SPI for resolving pseudonymous holders by reference.
@@ -31,4 +32,15 @@ public interface HolderDirectory {
    * @return the matching holder reference, or empty if no such holder is registered
    */
   Optional<HolderRef> findByPseudoRef(String pseudoRef);
+
+  /**
+   * Look up a holder by its internal id for the current tenant (KH-2.8.2) — how an idempotent
+   * issuance replay reports the {@code holderRef} the original request was issued to, including one
+   * the platform generated for a human session that sent none (spec FS-2.7a D7, veto V1). RLS keeps
+   * the lookup inside the current tenant.
+   *
+   * @param holderId the {@code credential.holder_id} to resolve
+   * @return the holder reference, or empty if no such holder exists in the current tenant
+   */
+  Optional<HolderRef> findById(UUID holderId);
 }

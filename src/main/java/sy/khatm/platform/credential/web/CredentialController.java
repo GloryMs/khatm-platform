@@ -1,6 +1,9 @@
 package sy.khatm.platform.credential.web;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.enums.ParameterIn;
+import io.swagger.v3.oas.annotations.headers.Header;
 import io.swagger.v3.oas.annotations.media.Content;
 import io.swagger.v3.oas.annotations.media.Schema;
 import io.swagger.v3.oas.annotations.responses.ApiResponse;
@@ -17,6 +20,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -41,6 +45,8 @@ import sy.khatm.platform.credential.domain.BulkIssueItemOutcome;
 import sy.khatm.platform.credential.domain.BulkIssueOutcome;
 import sy.khatm.platform.credential.domain.ClaimCodeIssued;
 import sy.khatm.platform.credential.domain.CredentialService;
+import sy.khatm.platform.credential.domain.IssuanceContext;
+import sy.khatm.platform.credential.domain.IssuanceResult;
 import sy.khatm.platform.credential.domain.VerifyOutcome;
 import sy.khatm.platform.shared.SystemAccessExecutor;
 import sy.khatm.platform.shared.TenantContext;
@@ -71,6 +77,24 @@ import sy.khatm.platform.shared.web.ErrorEnvelope;
 @ConditionalOnProperty(name = "khatm.web.enabled", havingValue = "true", matchIfMissing = true)
 class CredentialController {
 
+  /** Request header carrying the caller's idempotency key (spec FS-2.7a D5). */
+  static final String IDEMPOTENCY_KEY = "Idempotency-Key";
+
+  /** Response header marking a replayed issuance (spec FS-2.7a D7). */
+  static final String IDEMPOTENT_REPLAYED = "Idempotent-Replayed";
+
+  private static final String IDEMPOTENCY_KEY_DOC =
+      "1-128 printable ASCII characters naming this request (KH-2.8.2, spec FS-2.7a D5). REQUIRED"
+          + " for machine issuer clients (Bearer khi_...; KH-IDEM-0400 without it), optional and"
+          + " honored for console sessions and tenant API keys. Retrying the identical request with"
+          + " the same key never issues twice: it replays the original result with"
+          + " Idempotent-Replayed: true. A replay cannot resend an sdJwt (never stored), so machine"
+          + " connectors SHOULD request mintClaimCode(s): a replay then reissues the claim code"
+          + " while it is unclaimed (the previous code stops working), reports claimed:true once"
+          + " the wallet has claimed it, or deliveryLost:true when nothing is left to deliver. The"
+          + " same key with a different body is KH-IDEM-0422; a twin still in progress is"
+          + " KH-IDEM-0409. Keys are kept for 30 days.";
+
   private final CredentialService service;
   private final BulkIssuanceService bulkIssuance;
   private final MessageSource messageSource;
@@ -99,7 +123,16 @@ class CredentialController {
               + " (compact JWT plus every disclosure); the platform never stores it in that"
               + " form.",
       responses = {
-        @ApiResponse(responseCode = "200", description = "Credential issued"),
+        @ApiResponse(
+            responseCode = "200",
+            description = "Credential issued",
+            headers =
+                @Header(
+                    name = IDEMPOTENT_REPLAYED,
+                    description =
+                        "Present with value true when this response was replayed from the"
+                            + " Idempotency-Key record and nothing new was issued",
+                    schema = @Schema(type = "boolean"))),
         @ApiResponse(
             responseCode = "400",
             description =
@@ -110,11 +143,39 @@ class CredentialController {
         @ApiResponse(
             responseCode = "500",
             description = "Signing failed (KH-KEY-0500) or another unexpected error",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "409",
+            description =
+                "A request with the same Idempotency-Key is still in progress (KH-IDEM-0409);"
+                    + " retry after the Retry-After seconds",
+            headers =
+                @Header(
+                    name = "Retry-After",
+                    description = "Seconds to wait before retrying (always 2)",
+                    schema = @Schema(type = "integer")),
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "422",
+            description =
+                "The Idempotency-Key was already used with a different request body"
+                    + " (KH-IDEM-0422); nothing was issued",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
       })
   @PostMapping("/issue")
-  ResponseEntity<IssueResponse> issue(@Valid @RequestBody IssueRequest req) {
-    return ResponseEntity.ok(service.issue(req));
+  ResponseEntity<IssueResponse> issue(
+      @Parameter(in = ParameterIn.HEADER, name = IDEMPOTENCY_KEY, description = IDEMPOTENCY_KEY_DOC)
+          @RequestHeader(name = IDEMPOTENCY_KEY, required = false)
+          String idempotencyKey,
+      @Valid @RequestBody IssueRequest req) {
+    IssuanceResult result = service.issue(req, new IssuanceContext(idempotencyKey));
+    return withReplayHeader(result.replayed()).body(result.response());
+  }
+
+  /** 200 either way; a replay is told apart by the header, never by the status (spec errata). */
+  private static ResponseEntity.BodyBuilder withReplayHeader(boolean replayed) {
+    ResponseEntity.BodyBuilder ok = ResponseEntity.ok();
+    return replayed ? ok.header(IDEMPOTENT_REPLAYED, "true") : ok;
   }
 
   @Operation(
@@ -130,7 +191,16 @@ class CredentialController {
               + " exactly once. Requires the same scope as /issue: session or TENANT API key"
               + " (a CONSUMING_PARTY key is always 403 here).",
       responses = {
-        @ApiResponse(responseCode = "200", description = "Per-item report (always 200)"),
+        @ApiResponse(
+            responseCode = "200",
+            description = "Per-item report (always 200)",
+            headers =
+                @Header(
+                    name = IDEMPOTENT_REPLAYED,
+                    description =
+                        "Present with value true when this response was replayed from the"
+                            + " Idempotency-Key record and nothing new was issued",
+                    schema = @Schema(type = "boolean"))),
         @ApiResponse(
             responseCode = "400",
             description =
@@ -148,21 +218,45 @@ class CredentialController {
             description =
                 "Missing the issue scope, or called with a CONSUMING_PARTY API key instead of a"
                     + " console session or TENANT API key",
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "409",
+            description =
+                "A request with the same Idempotency-Key is still in progress (KH-IDEM-0409);"
+                    + " retry after the Retry-After seconds",
+            headers =
+                @Header(
+                    name = "Retry-After",
+                    description = "Seconds to wait before retrying (always 2)",
+                    schema = @Schema(type = "integer")),
+            content = @Content(schema = @Schema(implementation = ErrorEnvelope.class))),
+        @ApiResponse(
+            responseCode = "422",
+            description =
+                "The Idempotency-Key was already used with a different request body"
+                    + " (KH-IDEM-0422); nothing was issued",
             content = @Content(schema = @Schema(implementation = ErrorEnvelope.class)))
       })
   @PostMapping("/bulk")
-  BulkIssueResponse bulkIssue(@Valid @RequestBody BulkIssueRequest req) {
-    BulkIssueOutcome outcome = bulkIssuance.bulkIssue(req);
-    return new BulkIssueResponse(
-        outcome.total(),
-        outcome.succeeded(),
-        outcome.failed(),
-        outcome.results().stream().map(this::toItemResult).toList());
+  ResponseEntity<BulkIssueResponse> bulkIssue(
+      @Parameter(in = ParameterIn.HEADER, name = IDEMPOTENCY_KEY, description = IDEMPOTENCY_KEY_DOC)
+          @RequestHeader(name = IDEMPOTENCY_KEY, required = false)
+          String idempotencyKey,
+      @Valid @RequestBody BulkIssueRequest req) {
+    BulkIssueOutcome outcome = bulkIssuance.bulkIssue(req, new IssuanceContext(idempotencyKey));
+    return withReplayHeader(outcome.replayed())
+        .body(
+            new BulkIssueResponse(
+                outcome.total(),
+                outcome.succeeded(),
+                outcome.failed(),
+                outcome.results().stream().map(this::toItemResult).toList()));
   }
 
   private BulkIssueItemResult toItemResult(BulkIssueItemOutcome r) {
     if (r.succeeded()) {
-      return new BulkIssueItemResult(r.index(), "ISSUED", r.id(), r.ref(), r.claimCode(), null);
+      return new BulkIssueItemResult(
+          r.index(), "ISSUED", r.id(), r.ref(), r.claimCode(), null, r.holderRef(), r.claimed());
     }
     KhatmException error = r.error();
     String message =
@@ -173,7 +267,9 @@ class CredentialController {
         null,
         null,
         null,
-        new BulkIssueItemError(error.errorCode().code(), message));
+        new BulkIssueItemError(error.errorCode().code(), message),
+        null,
+        false);
   }
 
   @Operation(

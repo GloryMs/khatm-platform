@@ -146,6 +146,7 @@ public class CredentialService {
   private final TenantDirectory tenants;
   private final TenantJwksUriBuilder jwksUriBuilder;
   private final IssuerClientSchemaAccess issuerClientSchemas;
+  private final IssuanceIdempotencyGuard idempotency;
   private final Set<String> forbiddenClaimNames;
 
   /** The connector contract's holder reference: a lowercase hex SHA-256 HMAC (spec FS-2.7a D8). */
@@ -176,9 +177,11 @@ public class CredentialService {
       TenantDirectory tenants,
       TenantJwksUriBuilder jwksUriBuilder,
       IssuerClientSchemaAccess issuerClientSchemas,
+      IssuanceIdempotencyGuard idempotency,
       @Value("${khatm.issuance.forbidden-claim-names:nationalId,nid,national_id,ssn,passportNo}")
           List<String> forbiddenClaimNames) {
     this.issuerClientSchemas = issuerClientSchemas;
+    this.idempotency = idempotency;
     this.forbiddenClaimNames =
         forbiddenClaimNames.stream()
             .map(name -> name.trim().toLowerCase(Locale.ROOT))
@@ -208,23 +211,94 @@ public class CredentialService {
 
   // ── Issue ────────────────────────────────────────────────────────────────
 
+  /**
+   * Issue one credential with no request headers — every internal caller (seeders, the bulk loop's
+   * rows, tests). Equivalent to {@link #issue(IssueRequest, IssuanceContext)} with {@link
+   * IssuanceContext#NONE}; a machine issuer client can therefore never reach this path over HTTP
+   * without its mandatory {@code Idempotency-Key} being checked first.
+   */
   @Transactional
   public IssueResponse issue(IssueRequest req) {
+    return issue(req, IssuanceContext.NONE).response();
+  }
+
+  /**
+   * Issue one row of a bulk batch (KH-2.8.2). The batch's own {@code Idempotency-Key} (claimed by
+   * {@link BulkIssuanceService}) already covers every row, so a row carries no key of its own —
+   * everything else (connector contract, schema allowlist, attestation, V1-b holder reference) is
+   * exactly {@link #issue(IssueRequest, IssuanceContext)}'s fresh path.
+   */
+  @Transactional
+  public IssueResponse issueBatchRow(IssueRequest req) {
+    Optional<CurrentActor> actor = currentActorResolver.resolve();
+    CurrentActor.ActorKind actorKind = actor.map(CurrentActor::kind).orElse(null);
+    UUID issuerClientId =
+        actorKind == CurrentActor.ActorKind.API_KEY_ISSUER_CLIENT ? actor.get().id() : null;
+    return issueFresh(req, actorKind, issuerClientId);
+  }
+
+  /**
+   * Issue one credential, idempotently when the request carries an {@code Idempotency-Key}
+   * (KH-2.8.2, spec FS-2.7a D5–D7).
+   *
+   * <p>The key is claimed first, inside this same transaction ({@link IssuanceIdempotencyGuard}):
+   * any failure below rolls the claim back with everything else, and a concurrent twin with the
+   * same key waits on the unique index, then replays this call's committed result. With {@code
+   * mintClaimCode} the claim code is minted in this transaction too, so "issued" and "deliverable"
+   * are one atomic fact.
+   *
+   * @param req the issuance request
+   * @param context request headers ({@code Idempotency-Key})
+   * @return the response, and whether it was a replay
+   * @throws ValidationException {@link ErrorCode#KH_IDEM_0400} for a machine issuer client without
+   *     a key, or a malformed key; {@link ErrorCode#KH_ISS_0400} for a connector-contract violation
+   * @throws ConflictException {@link ErrorCode#KH_IDEM_0409} / {@link ErrorCode#KH_IDEM_0422}
+   */
+  @Transactional
+  public IssuanceResult issue(IssueRequest req, IssuanceContext context) {
+    Optional<CurrentActor> actor = currentActorResolver.resolve();
+    CurrentActor.ActorKind actorKind = actor.map(CurrentActor::kind).orElse(null);
+    UUID issuerClientId =
+        actorKind == CurrentActor.ActorKind.API_KEY_ISSUER_CLIENT ? actor.get().id() : null;
+
+    String key = idempotency.effectiveKey(context, issuerClientId != null);
+    IssuanceIdempotencyGuard.Claim claim = null;
+    if (key != null) {
+      claim =
+          idempotency.claim(
+              IssuanceIdempotency.Scope.ISSUE, key, idempotency.requestHash(req), issuerClientId);
+      if (claim.isReplay()) {
+        return new IssuanceResult(
+            idempotency.replayIssue(
+                claim.existing(), Boolean.TRUE.equals(req.mintClaimCode()), key),
+            true);
+      }
+    }
+
+    IssueResponse issued = issueFresh(req, actorKind, issuerClientId);
+    if (claim != null) {
+      idempotency.completeIssue(claim.rowId(), UUID.fromString(issued.id()));
+    }
+    return new IssuanceResult(issued, false);
+  }
+
+  private IssueResponse issueFresh(
+      IssueRequest req, CurrentActor.ActorKind actorKind, UUID issuerClientId) {
     UUID tenantId = TenantContext.current();
     UUID id = Uuidv7.generate();
     int maxUses = req.maxUses() == null ? 1 : req.maxUses();
     int validMinutes = req.validMinutes() == null ? 60 : req.validMinutes();
     String schemaCode = req.schemaCode() == null ? "GenericDocument/v1" : req.schemaCode();
     Map<String, Object> claims = req.claims() == null ? Map.of() : req.claims();
-    // Spec FS-2.7a D8: the connector contract applies to EVERY issuance path, console included.
-    validateConnectorContract(req.holderRef(), claims);
     String holderPseudoRef = req.holderRef();
-    UUID issuerClientId =
-        currentActorResolver
-            .resolve()
-            .filter(a -> a.kind() == CurrentActor.ActorKind.API_KEY_ISSUER_CLIENT)
-            .map(CurrentActor::id)
-            .orElse(null);
+    // KH-2.8.2 (veto V1-b): a human console session (channel C, no system to compute the HMAC) may
+    // omit holderRef — it gets a random, unlinkable one. Machine callers never do.
+    if ((holderPseudoRef == null || holderPseudoRef.isBlank())
+        && actorKind == CurrentActor.ActorKind.USER) {
+      holderPseudoRef = HolderRefs.random();
+    }
+    // Spec FS-2.7a D8: the connector contract applies to EVERY issuance path, console included.
+    validateConnectorContract(holderPseudoRef, claims);
     List<String> sdFields = req.sdFields() == null ? List.copyOf(claims.keySet()) : req.sdFields();
 
     SchemaRef schemaRef =
@@ -343,12 +417,26 @@ public class CredentialService {
     eventPublisher.publishEvent(new CredentialIssued(ref, null, now, c.getTenantId()));
     audit.record(AuditAction.CREDENTIAL_ISSUED, "credential", ref, null);
 
+    // KH-2.8.2 (D-CC, veto V2): the claim code is minted in the issuing transaction, so a
+    // credential is never committed without the code its caller asked for. issueClaimCode joins
+    // this transaction (plain self-call; no new proxy boundary needed).
+    ClaimCodeIssued minted = null;
+    if (Boolean.TRUE.equals(req.mintClaimCode())) {
+      minted = issueClaimCode(id, presentation, Duration.ofMinutes(DEFAULT_CLAIM_CODE_TTL_MINUTES));
+      audit.record(AuditAction.CLAIM_CODE_ISSUED, "credential", ref, null);
+    }
+
     return new IssueResponse(
         id.toString(),
         ref,
         presentation,
         false,
-        issuerClientId == null ? null : issuerClientId.toString());
+        issuerClientId == null ? null : issuerClientId.toString(),
+        holderPseudoRef,
+        minted == null ? null : minted.code(),
+        minted == null ? null : minted.expiresAt(),
+        false,
+        false);
   }
 
   /**

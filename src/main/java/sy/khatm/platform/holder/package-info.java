@@ -6,7 +6,8 @@
  *
  * <p><b>Exposed API:</b> {@code api/} sub-package — {@link
  * sy.khatm.platform.holder.api.HolderDirectory#ensureHolder} finds or registers a holder by
- * pseudonymous reference (KH-0.2.1).
+ * pseudonymous reference (KH-0.2.1); {@code findByPseudoRef} and {@code findById} (KH-2.8.2, the
+ * idempotent-replay {@code holderRef} lookup) read without registering.
  *
  * <p><b>Published events:</b> (none yet)
  *
