@@ -4,7 +4,7 @@
 
 ## 2026-09-24: Valute token has been renewed until: 2026-10-25.
 
-## KH-2.8.2-BE — issuance idempotency + claim code over M2M + human-session `holderRef` — PR OPEN, NOT MERGED
+## KH-2.8.2-BE — issuance idempotency + claim code over M2M + human-session `holderRef` — DONE & MERGED via PR #70
 (branch `feat/KH-2.8.2-issuance-idempotency`, spec `docs/specs/FS-2_7a-issuer-m2m-foundation.md` D5–D7 + the
 2026-09-27 errata, brief `docs/sessions/SESSION-KH-2.8.2-BE.md`; 2026-09-27.) `mvn verify` green **524/524**
 (509 baseline + 15 new), Spotless/Checkstyle/Modulith green, migration V19 additive-only, `openapi.json`
@@ -18,8 +18,9 @@ credential** (`CRI-2026-407875`); (3) third replay → `claimed:true`, no code; 
 `422 KH-IDEM-0422`, no header → `400 KH-IDEM-0400`; direct-mode replay → `sdJwt:null, deliveryLost:true`; scope /
 tampered-key / nationalId / bad-holderRef checks unchanged from KH-2.8.1. (6) `api`+`worker` logs: zero hits for
 `demo-001`, `khi_`, both codes, the holderRef, the holder secret, the key body; three `ISSUANCE_REPLAYED` audit
-rows (actor `API_KEY`, `keySha256` only) with the expected flags. **Still open: §6 step 5** — console-session
-issue with an empty `holderRef` (needs Majd's TOTP login; command printed by the script, step 11).
+rows (actor `API_KEY`, `keySha256` only) with the expected flags. (5) console-session issue with an empty
+`holderRef` → 200 with a generated 64-hex `holderRef` — **done by Majd, 2026-09-27. Round fully signed off; merge
+approved by Majd (2026-09-27).**
 `demo-m2m.sh` gained `DEMO_PAUSE=1` (pause also on piped stdin) so the round can be driven from a tool without
 step 3 reissuing the code before the wallet scans.
 
