@@ -187,11 +187,19 @@ khatm:
       # rotation grace window (retire_after) has ended. Authentication already refuses them on its
       # own the instant the window passes — this only makes the stored status agree.
       retire-sweep-ms: 60000
+    issuance-idempotency:
+      # KH-2.8.2 (spec FS-2.7a D6, ADR-09): how often IdempotencyRetentionSweeper deletes
+      # issuance_idempotency rows whose retention (khatm.issuance.idempotency.retention) elapsed.
+      retention-sweep-ms: 3600000
   issuance:
     # KH-2.8.1 (spec FS-2.7a D8): top-level claim names rejected at issuance (KH-ISS-0400),
     # case-insensitive, for EVERY issuance path. A cheap net against a connector that would push a
     # national identifier into the platform ("National ID never enters Khatm").
     forbidden-claim-names: nationalId,nid,national_id,ssn,passportNo
+    idempotency:
+      # KH-2.8.2 (spec FS-2.7a D6, veto V5): how long an Idempotency-Key is remembered; a retry
+      # after this window issues anew. ISO-8601 duration.
+      retention: P30D
   issuer:
     rotation:
       # Spec FS-2.7a D10/V4: grace window a rotated-out client keeps working for, and its ceiling.

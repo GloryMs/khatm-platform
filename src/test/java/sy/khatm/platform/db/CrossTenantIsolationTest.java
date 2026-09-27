@@ -287,6 +287,69 @@ class CrossTenantIsolationTest extends RbacHttpTestSupport {
   }
 
   /**
+   * KH-2.8.2 (spec FS-2.7a D6): {@code issuance_idempotency} is tenant-isolated like every other
+   * table. Two tenants using the very same {@code Idempotency-Key} and body neither collide (each
+   * issues its own credential) nor see each other's row; a retry in tenant A replays tenant A's
+   * credential only.
+   */
+  @Test
+  void idempotencyKeys_areTenantScoped_noCollisionAndNoCrossTenantVisibility() throws Exception {
+    AdminSession admin = loginAsAdmin();
+    Tenant tenantA = onboardTenantWithKey(admin, "idem-a");
+    Tenant tenantB = onboardTenantWithKey(admin, "idem-b");
+    String sharedKey = "shared-key-" + UUID.randomUUID();
+    Map<String, Object> body =
+        Map.of(
+            "schemaCode",
+            "CrossTenantIdem/v1",
+            "holderRef",
+            HolderRefs.of("idem-shared-holder"),
+            "claims",
+            Map.of("field", "value"));
+
+    ResponseEntity<String> fromA = issueWithKey(tenantA.rawKey(), body, sharedKey);
+    ResponseEntity<String> fromB = issueWithKey(tenantB.rawKey(), body, sharedKey);
+    assertThat(fromA.getHeaders().containsKey("Idempotent-Replayed")).isFalse();
+    assertThat(fromB.getHeaders().containsKey("Idempotent-Replayed"))
+        .as("tenant B's first use of the same key is a fresh issuance, not A's replay")
+        .isFalse();
+    String credentialA = JSON.readTree(fromA.getBody()).get("id").asText();
+    String credentialB = JSON.readTree(fromB.getBody()).get("id").asText();
+    assertThat(credentialB).isNotEqualTo(credentialA);
+
+    ResponseEntity<String> retryA = issueWithKey(tenantA.rawKey(), body, sharedKey);
+    assertThat(retryA.getHeaders().getFirst("Idempotent-Replayed")).isEqualTo("true");
+    assertThat(JSON.readTree(retryA.getBody()).get("id").asText()).isEqualTo(credentialA);
+
+    TenantContext.set(tenantA.id(), tenantA.slug());
+    try {
+      List<String> visible =
+          jdbc.queryForList(
+              "SELECT credential_id::text FROM issuance_idempotency WHERE idempotency_key = ?",
+              String.class,
+              sharedKey);
+      assertThat(visible).containsExactly(credentialA);
+    } finally {
+      TenantContext.clear();
+    }
+  }
+
+  private ResponseEntity<String> issueWithKey(
+      String rawKey, Map<String, Object> body, String idempotencyKey) {
+    HttpHeaders headers = new HttpHeaders();
+    headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + rawKey);
+    headers.set("Idempotency-Key", idempotencyKey);
+    ResponseEntity<String> response =
+        rest.exchange(
+            "/api/v1/credentials/issue",
+            HttpMethod.POST,
+            new HttpEntity<>(body, headers),
+            String.class);
+    assertThat(response.getStatusCode()).as(response.getBody()).isEqualTo(HttpStatus.OK);
+    return response;
+  }
+
+  /**
    * KH-2.1 Part B regression pin: {@code CredentialService#verify} runs under {@code
    * SystemAccessExecutor} (no principal, no ambient tenant of its own) — before this fix, the
    * verify response's convenience {@code statusListUri} field was always built using whichever

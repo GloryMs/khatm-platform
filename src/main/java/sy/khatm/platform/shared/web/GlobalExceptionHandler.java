@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
 import org.springframework.context.MessageSource;
 import org.springframework.context.i18n.LocaleContextHolder;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -34,6 +35,9 @@ import sy.khatm.platform.shared.error.KhatmException;
 class GlobalExceptionHandler {
 
   private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
+
+  /** {@code Retry-After} for {@link ErrorCode#KH_IDEM_0409} (an in-progress idempotent twin). */
+  private static final String IDEMPOTENCY_RETRY_AFTER_SECONDS = "2";
 
   private final MessageSource messageSource;
 
@@ -62,8 +66,12 @@ class GlobalExceptionHandler {
           currentTraceId());
     }
 
-    return ResponseEntity.status(errorCode.httpStatus())
-        .body(envelope(errorCode.code(), ex.messageKey(), message, List.of()));
+    ResponseEntity.BodyBuilder response = ResponseEntity.status(errorCode.httpStatus());
+    if (errorCode == ErrorCode.KH_IDEM_0409) {
+      // Spec FS-2.7a D7: the concurrent twin is still running — tell the connector when to retry.
+      response.header(HttpHeaders.RETRY_AFTER, IDEMPOTENCY_RETRY_AFTER_SECONDS);
+    }
+    return response.body(envelope(errorCode.code(), ex.messageKey(), message, List.of()));
   }
 
   @ExceptionHandler(MethodArgumentNotValidException.class)

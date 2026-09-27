@@ -11,9 +11,10 @@ import java.util.Map;
  *
  * @param claims claim name/value pairs to disclose selectively — identical meaning to {@link
  *     IssueRequest#claims}
- * @param pseudoRef pseudonymous holder identifier for this row; {@code null} falls back to {@code
- *     CredentialService#issue}'s own default, the same behavior a single-issue call with no {@code
- *     holderRef} would get
+ * @param pseudoRef pseudonymous holder identifier for this row — the same contract as {@link
+ *     IssueRequest#holderRef}: 64 lowercase hex, mandatory for machine callers; a human session may
+ *     leave it {@code null} and the row is issued to a fresh random reference, unique per row
+ *     (KH-2.8.2, veto V1-b), reported back in that row's {@code holderRef}
  * @param validMinutes overrides {@link BulkIssueRequest#defaults}' {@code validMinutes} for this
  *     row only; {@code null} uses the batch default
  * @param maxUses overrides {@link BulkIssueRequest#defaults}' {@code maxUses} for this row only;

@@ -52,6 +52,12 @@ class HolderDirectoryService implements HolderDirectory {
         .map(HolderDirectoryService::toRef);
   }
 
+  @Override
+  @Transactional(readOnly = true)
+  public Optional<HolderRef> findById(UUID holderId) {
+    return holders.findById(holderId).map(HolderDirectoryService::toRef);
+  }
+
   private static HolderRef toRef(Holder holder) {
     return new HolderRef(holder.getId(), holder.getPseudoRef());
   }

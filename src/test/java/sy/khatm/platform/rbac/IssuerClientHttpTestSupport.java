@@ -191,8 +191,36 @@ abstract class IssuerClientHttpTestSupport extends RbacHttpTestSupport {
     return rest.exchange(path, method, new HttpEntity<>(body, headers), String.class);
   }
 
+  /**
+   * {@code POST /issue} as a machine client with a fresh random {@code Idempotency-Key} (mandatory
+   * for issuer clients since KH-2.8.2).
+   */
   protected ResponseEntity<String> m2mIssue(String rawKey, Map<String, Object> body) {
-    return m2m(HttpMethod.POST, "/api/v1/credentials/issue", rawKey, body);
+    return m2mIssue(rawKey, body, "test-" + UUID.randomUUID());
+  }
+
+  /** {@code POST /issue} as a machine client with the given {@code Idempotency-Key}. */
+  protected ResponseEntity<String> m2mIssue(
+      String rawKey, Map<String, Object> body, String idempotencyKey) {
+    return m2m(HttpMethod.POST, "/api/v1/credentials/issue", rawKey, body, idempotencyKey);
+  }
+
+  /** {@code POST /bulk} as a machine client with the given {@code Idempotency-Key}. */
+  protected ResponseEntity<String> m2mBulk(
+      String rawKey, Map<String, Object> body, String idempotencyKey) {
+    return m2m(HttpMethod.POST, "/api/v1/credentials/bulk", rawKey, body, idempotencyKey);
+  }
+
+  /** A machine-to-machine call carrying an {@code Idempotency-Key} header (none when null). */
+  protected ResponseEntity<String> m2m(
+      HttpMethod method, String path, String rawKey, Object body, String idempotencyKey) {
+    HttpHeaders headers = new HttpHeaders();
+    headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + rawKey);
+    headers.setContentType(MediaType.APPLICATION_JSON);
+    if (idempotencyKey != null) {
+      headers.set("Idempotency-Key", idempotencyKey);
+    }
+    return rest.exchange(path, method, new HttpEntity<>(body, headers), String.class);
   }
 
   /** The error envelope with the two per-request fields removed, for byte-for-byte comparison. */

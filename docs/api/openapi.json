@@ -163,8 +163,14 @@
           "claimCode" : {
             "type" : "string"
           },
+          "claimed" : {
+            "type" : "boolean"
+          },
           "error" : {
             "$ref" : "#/components/schemas/BulkIssueItemError"
+          },
+          "holderRef" : {
+            "type" : "string"
           },
           "id" : {
             "type" : "string"
@@ -857,12 +863,17 @@
             "type" : "object"
           },
           "holderRef" : {
-            "minLength" : 1,
+            "description" : "64 lowercase hex characters (the connector's holder HMAC). Required for machine callers; a human console session may omit it and the platform generates a random one, returned in the response's holderRef.",
+            "pattern" : "^[0-9a-f]{64}$",
             "type" : "string"
           },
           "maxUses" : {
             "format" : "int32",
             "type" : "integer"
+          },
+          "mintClaimCode" : {
+            "description" : "Mint a one-time wallet claim code in the same transaction and return it as claimCode. Machine connectors SHOULD set this: an idempotent replay can reissue a claim code, never an sdJwt.",
+            "type" : "boolean"
           },
           "schemaCode" : {
             "type" : "string"
@@ -882,14 +893,31 @@
             "type" : "integer"
           }
         },
-        "required" : [ "holderRef" ],
         "type" : "object"
       },
       "IssueResponse" : {
         "description" : "Result of a successful SD-JWT credential issuance",
         "properties" : {
+          "claimCode" : {
+            "nullable" : true,
+            "type" : "string"
+          },
+          "claimCodeExpiresAt" : {
+            "format" : "date-time",
+            "nullable" : true,
+            "type" : "string"
+          },
+          "claimCodeReissued" : {
+            "type" : "boolean"
+          },
           "claimed" : {
             "type" : "boolean"
+          },
+          "deliveryLost" : {
+            "type" : "boolean"
+          },
+          "holderRef" : {
+            "type" : "string"
           },
           "id" : {
             "type" : "string"
@@ -3361,6 +3389,15 @@
       "post" : {
         "description" : "The C3 console wizard's CSV-per-schema flow (KH-1.1.3) — up to 200 items, one schema per batch, each issued independently through the same single-issue path (no parallel issuance logic, no bypass of any single-issue guard). One bad row never rolls back the batch: the response reports every item's outcome by index, ISSUED or FAILED with its own error. Setting mintClaimCodes:true mints a one-time wallet claim code for every successfully issued item (the existing POST /{id}/claim-code path) and returns it in that item's result — shown here exactly once. Requires the same scope as /issue: session or TENANT API key (a CONSUMING_PARTY key is always 403 here).",
         "operationId" : "bulkIssue",
+        "parameters" : [ {
+          "description" : "1-128 printable ASCII characters naming this request (KH-2.8.2, spec FS-2.7a D5). REQUIRED for machine issuer clients (Bearer khi_...; KH-IDEM-0400 without it), optional and honored for console sessions and tenant API keys. Retrying the identical request with the same key never issues twice: it replays the original result with Idempotent-Replayed: true. A replay cannot resend an sdJwt (never stored), so machine connectors SHOULD request mintClaimCode(s): a replay then reissues the claim code while it is unclaimed (the previous code stops working), reports claimed:true once the wallet has claimed it, or deliveryLost:true when nothing is left to deliver. The same key with a different body is KH-IDEM-0422; a twin still in progress is KH-IDEM-0409. Keys are kept for 30 days.",
+          "in" : "header",
+          "name" : "Idempotency-Key",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
         "requestBody" : {
           "content" : {
             "application/json" : {
@@ -3380,7 +3417,16 @@
                 }
               }
             },
-            "description" : "Per-item report (always 200)"
+            "description" : "Per-item report (always 200)",
+            "headers" : {
+              "Idempotent-Replayed" : {
+                "description" : "Present with value true when this response was replayed from the Idempotency-Key record and nothing new was issued",
+                "schema" : {
+                  "type" : "boolean"
+                },
+                "style" : "simple"
+              }
+            }
           },
           "400" : {
             "content" : {
@@ -3411,6 +3457,35 @@
               }
             },
             "description" : "Missing the issue scope, or called with a CONSUMING_PARTY API key instead of a console session or TENANT API key"
+          },
+          "409" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "A request with the same Idempotency-Key is still in progress (KH-IDEM-0409); retry after the Retry-After seconds",
+            "headers" : {
+              "Retry-After" : {
+                "description" : "Seconds to wait before retrying (always 2)",
+                "schema" : {
+                  "type" : "integer"
+                },
+                "style" : "simple"
+              }
+            }
+          },
+          "422" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "The Idempotency-Key was already used with a different request body (KH-IDEM-0422); nothing was issued"
           }
         },
         "summary" : "Issue a batch of credentials against one schema",
@@ -3521,6 +3596,15 @@
       "post" : {
         "description" : "Every claim becomes a salted, selectively-disclosable SD-JWT disclosure (spec FS-0.4 D1) — none of them appear as a plaintext value in the persisted, signed payload. The response's sdJwt is a one-time delivery of the full presentation (compact JWT plus every disclosure); the platform never stores it in that form.",
         "operationId" : "issue",
+        "parameters" : [ {
+          "description" : "1-128 printable ASCII characters naming this request (KH-2.8.2, spec FS-2.7a D5). REQUIRED for machine issuer clients (Bearer khi_...; KH-IDEM-0400 without it), optional and honored for console sessions and tenant API keys. Retrying the identical request with the same key never issues twice: it replays the original result with Idempotent-Replayed: true. A replay cannot resend an sdJwt (never stored), so machine connectors SHOULD request mintClaimCode(s): a replay then reissues the claim code while it is unclaimed (the previous code stops working), reports claimed:true once the wallet has claimed it, or deliveryLost:true when nothing is left to deliver. The same key with a different body is KH-IDEM-0422; a twin still in progress is KH-IDEM-0409. Keys are kept for 30 days.",
+          "in" : "header",
+          "name" : "Idempotency-Key",
+          "required" : false,
+          "schema" : {
+            "type" : "string"
+          }
+        } ],
         "requestBody" : {
           "content" : {
             "application/json" : {
@@ -3540,7 +3624,16 @@
                 }
               }
             },
-            "description" : "Credential issued"
+            "description" : "Credential issued",
+            "headers" : {
+              "Idempotent-Replayed" : {
+                "description" : "Present with value true when this response was replayed from the Idempotency-Key record and nothing new was issued",
+                "schema" : {
+                  "type" : "boolean"
+                },
+                "style" : "simple"
+              }
+            }
           },
           "400" : {
             "content" : {
@@ -3551,6 +3644,35 @@
               }
             },
             "description" : "Bean Validation failed (e.g. a missing holderRef); the schema requires attestation and none was submitted (KH-ATT-0400); or attestation was submitted for a schema that does not require it (KH-ATT-0401, spec FS-2.4 item 2)"
+          },
+          "409" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "A request with the same Idempotency-Key is still in progress (KH-IDEM-0409); retry after the Retry-After seconds",
+            "headers" : {
+              "Retry-After" : {
+                "description" : "Seconds to wait before retrying (always 2)",
+                "schema" : {
+                  "type" : "integer"
+                },
+                "style" : "simple"
+              }
+            }
+          },
+          "422" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
+            "description" : "The Idempotency-Key was already used with a different request body (KH-IDEM-0422); nothing was issued"
           },
           "500" : {
             "content" : {

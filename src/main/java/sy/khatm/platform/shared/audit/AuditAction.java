@@ -431,5 +431,14 @@ public enum AuditAction {
    * D9). {@code entityRef}/{@code detail.rootSlug} is the root tenant's slug; the secret is never
    * audited. Recorded exactly once per root tenant.
    */
-  HOLDER_SECRET_GENERATED
+  HOLDER_SECRET_GENERATED,
+
+  /**
+   * An issuance request was answered from its {@code Idempotency-Key} record instead of issuing
+   * again (KH-2.8.2, spec FS-2.7a D7/D11). {@code entityRef} is the credential ref ({@code ISSUE})
+   * or the schema code ({@code BULK}); {@code detail} carries only {@code keySha256} (the SHA-256
+   * of the key — never the key itself), {@code scope}, {@code claimCodeReissued}, and {@code
+   * deliveryLost}. No code, no {@code holderRef}, no claim value.
+   */
+  ISSUANCE_REPLAYED
 }

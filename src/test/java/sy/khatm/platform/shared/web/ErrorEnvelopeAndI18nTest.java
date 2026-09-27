@@ -147,13 +147,15 @@ class ErrorEnvelopeAndI18nTest extends ErrorEnvelopeTestSupport {
 
   // ── DoD #3: Bean Validation 400 with translated details[] ──────────────────────────────────
 
+  // KH-2.8.2 (veto V1-b) moved holderRef's presence rule into the service — it now depends on who
+  // is calling, which Bean Validation cannot express — so this DoD probe uses the bulk endpoint's
+  // still-annotated schemaCode instead. Same envelope, same translated details[] contract.
   @Test
-  void issue_missingHolderRef_returns400WithTranslatedDetails() throws Exception {
-    Map<String, Object> requestBody =
-        Map.of("schemaCode", "ValidationProbe/v1", "claims", Map.of());
+  void bulk_missingSchemaCode_returns400WithTranslatedDetails() throws Exception {
+    Map<String, Object> requestBody = Map.of("items", List.of(Map.of("claims", Map.of())));
     ResponseEntity<String> response =
         rest.exchange(
-            "/api/v1/credentials/issue",
+            "/api/v1/credentials/bulk",
             HttpMethod.POST,
             new HttpEntity<>(requestBody, authHeaders()),
             String.class);
@@ -165,7 +167,7 @@ class ErrorEnvelopeAndI18nTest extends ErrorEnvelopeTestSupport {
     assertThat(details.isArray()).isTrue();
     assertThat(details).hasSize(1);
     JsonNode detail = details.get(0);
-    assertThat(detail.get("field").asText()).isEqualTo("holderRef");
+    assertThat(detail.get("field").asText()).isEqualTo("schemaCode");
     assertThat(detail.get("messageKey").asText()).isEqualTo("validation.NotBlank");
     assertThat(detail.get("message").asText()).isNotBlank();
   }

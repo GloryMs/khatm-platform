@@ -2,7 +2,6 @@ package sy.khatm.platform.credential.api;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotBlank;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -20,9 +19,12 @@ import java.util.UUID;
  *     sy.khatm.platform.credential.domain.CredentialService#issue} finds-or-creates a schema for it
  *     at version 1 (KH-0.2.1's stand-in path, still active until every caller supplies {@code
  *     schemaId} instead). Ignored when {@code schemaId} is present.
- * @param holderRef pseudonymous holder identifier; never a real name or national ID. Mandatory
- *     (spec FS-0.6a §5 DoD #3 exercises this field's Bean Validation) — a credential must always
- *     name who it was issued to, even pseudonymously.
+ * @param holderRef pseudonymous holder identifier: exactly 64 lowercase hex characters (the
+ *     connector's HMAC, spec FS-2.7a D8); never a real name or national ID. Mandatory for every
+ *     machine caller ({@code KH-ISS-0400} when missing). A human console session may leave it out:
+ *     the platform then generates a random one (KH-2.8.2, veto V1-b) and returns it in {@link
+ *     IssueResponse#holderRef}. The rule depends on the caller, so it is enforced in the service,
+ *     not by Bean Validation.
  * @param maxUses maximum number of times this credential may be consumed; defaults to 1
  * @param validMinutes validity window in minutes from issuance; defaults to 60
  * @param claims claim name/value pairs to disclose selectively (document-specific metadata; no PII
@@ -43,17 +45,34 @@ import java.util.UUID;
  *     ever resolve version 1, see {@link sy.khatm.platform.schema.api.SchemaCatalog#findByCode}).
  *     {@code null} means "no specific version pinned," preserving the {@code schemaCode}-only
  *     quick-issue behavior exactly.
+ * @param mintClaimCode when {@code true}, a one-time wallet claim code is minted in the same
+ *     transaction as the credential and returned in {@link IssueResponse#claimCode} (KH-2.8.2, spec
+ *     FS-2.7a D-CC) — the recommended delivery mode for machine connectors, because an idempotent
+ *     replay can reissue a claim code but can never resend an {@code sdJwt}. {@code null}/{@code
+ *     false}: direct {@code sdJwt} delivery only, as before.
  */
 @Schema(name = "IssueRequest", description = "Request to issue a new SD-JWT verifiable credential")
 public record IssueRequest(
     String schemaCode,
-    @NotBlank @Schema(requiredMode = Schema.RequiredMode.REQUIRED) String holderRef,
+    @Schema(
+            description =
+                "64 lowercase hex characters (the connector's holder HMAC). Required for machine"
+                    + " callers; a human console session may omit it and the platform generates a"
+                    + " random one, returned in the response's holderRef.",
+            pattern = "^[0-9a-f]{64}$")
+        String holderRef,
     Integer maxUses,
     Integer validMinutes,
     Map<String, Object> claims,
     List<String> sdFields,
     @Valid AttestationRequest attestation,
-    UUID schemaId) {
+    UUID schemaId,
+    @Schema(
+            description =
+                "Mint a one-time wallet claim code in the same transaction and return it as"
+                    + " claimCode. Machine connectors SHOULD set this: an idempotent replay can"
+                    + " reissue a claim code, never an sdJwt.")
+        Boolean mintClaimCode) {
 
   /**
    * Convenience constructor for every existing caller that has no specific schema version to pin —
@@ -67,6 +86,31 @@ public record IssueRequest(
       Map<String, Object> claims,
       List<String> sdFields,
       AttestationRequest attestation) {
-    this(schemaCode, holderRef, maxUses, validMinutes, claims, sdFields, attestation, null);
+    this(schemaCode, holderRef, maxUses, validMinutes, claims, sdFields, attestation, null, null);
+  }
+
+  /**
+   * Convenience constructor for callers pinning a schema version without asking for a claim code —
+   * equivalent to the canonical constructor with {@code mintClaimCode=null}.
+   */
+  public IssueRequest(
+      String schemaCode,
+      String holderRef,
+      Integer maxUses,
+      Integer validMinutes,
+      Map<String, Object> claims,
+      List<String> sdFields,
+      AttestationRequest attestation,
+      UUID schemaId) {
+    this(
+        schemaCode,
+        holderRef,
+        maxUses,
+        validMinutes,
+        claims,
+        sdFields,
+        attestation,
+        schemaId,
+        null);
   }
 }
