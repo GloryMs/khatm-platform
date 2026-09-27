@@ -8,8 +8,20 @@
 (branch `feat/KH-2.8.2-issuance-idempotency`, spec `docs/specs/FS-2_7a-issuer-m2m-foundation.md` D5–D7 + the
 2026-09-27 errata, brief `docs/sessions/SESSION-KH-2.8.2-BE.md`; 2026-09-27.) `mvn verify` green **524/524**
 (509 baseline + 15 new), Spotless/Checkstyle/Modulith green, migration V19 additive-only, `openapi.json`
-additive except the two V1-b relaxations below. **Open for Majd:** the live `[MAJD]` round (brief §6, script
-ready), and the Arabic-review gate on the 3 new `idempotency.*` keys (quoted in the PR).
+additive except the two V1-b relaxations below. **Arabic-review gate: the 3 new `idempotency.*` keys approved
+as-is by Majd (2026-09-27).** Errata mirrored into khatm-docs `specs/FS-2_7a-issuer-m2m-foundation.md` (file is
+untracked there, like its sibling specs — edited, not committed).
+**Live `[MAJD]` round (brief §6), 2026-09-27, local compose rebuilt from this branch (V19 applied), QR base
+`http://172.16.3.106:8080`:** (1) `demo-001` + `mintClaimCode` → 200, code A; (2) identical request → 200
+`Idempotent-Replayed: true`, code B, `claimCodeReissued:true`, `sdJwt:null` — **wallet: A rejected, B showed the
+credential** (`CRI-2026-407875`); (3) third replay → `claimed:true`, no code; (4) different body →
+`422 KH-IDEM-0422`, no header → `400 KH-IDEM-0400`; direct-mode replay → `sdJwt:null, deliveryLost:true`; scope /
+tampered-key / nationalId / bad-holderRef checks unchanged from KH-2.8.1. (6) `api`+`worker` logs: zero hits for
+`demo-001`, `khi_`, both codes, the holderRef, the holder secret, the key body; three `ISSUANCE_REPLAYED` audit
+rows (actor `API_KEY`, `keySha256` only) with the expected flags. **Still open: §6 step 5** — console-session
+issue with an empty `holderRef` (needs Majd's TOTP login; command printed by the script, step 11).
+`demo-m2m.sh` gained `DEMO_PAUSE=1` (pause also on piped stdin) so the round can be driven from a tool without
+step 3 reissuing the code before the wallet scans.
 
 **Vetoes as approved (Majd, 2026-09-27, all defaults):** V1 = (b) `holderRef` optional for human sessions,
 generated when absent; V2 = (a) `mintClaimCode` on `IssueRequest` (no `POST /{id}/claim-code` for M2M); V3 =

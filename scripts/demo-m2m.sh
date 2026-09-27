@@ -12,7 +12,8 @@
 #   IDEM_KEY        the Idempotency-Key of the replay story  (default demo-001; a key already used on this
 #                   database makes step 1 a replay too — pick a new one, e.g. IDEM_KEY=demo-002)
 #
-# The replay story (KH-2.8.2) pauses for the wallet between steps when run in a terminal.
+# The replay story (KH-2.8.2) pauses for the wallet between steps when run in a terminal (or with
+# DEMO_PAUSE=1, when stdin is a pipe).
 # Nothing here is destructive; it issues a few local demo credentials.
 
 set -u
@@ -25,7 +26,8 @@ say()  { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 show() { printf '%s\n' "$1" | (command -v jq >/dev/null 2>&1 && jq . 2>/dev/null || cat); }
 brief() { printf '%s\n' "$1" | (command -v jq >/dev/null 2>&1 && jq -c '{code,messageKey}' 2>/dev/null || cat); }
 field() { printf '%s' "$1" | sed -n "s/.*\"$2\":\"\([^\"]*\)\".*/\1/p"; }
-pause() { if [ -t 0 ]; then read -r -p "   ... press Enter to continue " _; fi; }
+# Waits for Enter in a terminal; DEMO_PAUSE=1 also waits when stdin is a pipe (driving the demo from a tool).
+pause() { if [ -t 0 ] || [ "${DEMO_PAUSE:-0}" = 1 ]; then echo "   ... press Enter to continue"; read -r _; fi; }
 
 scrape() { docker compose logs khatm-api 2>/dev/null | grep -m1 "$1" | sed -E "s/.*$1 *= *//" | tr -d '\r'; }
 KHI_KEY="${KHI_KEY:-$(scrape 'apiKey')}"
