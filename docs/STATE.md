@@ -4,13 +4,36 @@
 
 ## 2026-09-24: Valute token has been renewed until: 2026-10-25.
 
-## KH-2.8.1-BE — `issuer_client` + M2M auth + `issue` scope + tenant holder secret — PR OPEN, NOT MERGED
+## KH-2.8.1-BE — `issuer_client` + M2M auth + `issue` scope + tenant holder secret — DONE & MERGED via PR #69
 (branch `feat/KH-2.8.1-issuer-client`, spec `docs/specs/FS-2.7a-issuer-m2m-foundation.md` D1–D4, D8–D9,
 D11–D12; brief `docs/sessions/SESSION-KH-2.8.1-BE.md`; 2026-09-24.) `mvn verify` green **509/509**
 (478 baseline + 31 new), Spotless/Checkstyle/Modulith green, `openapi.json` additive-only (structural
-diff: 0 removed, 0 changed, 17 added), migration V18 additive-only. **Not merged — awaits Majd's
-review and the live [MAJD] round (`scripts/demo-m2m.sh`, brief §5).** **KH-2.8.2-BE (idempotency,
-D5–D7) was NOT started.**
+diff: 0 removed, 0 changed, 17 added), migration V18 additive-only. **Signed off by Majd (2026-09-27) and
+merged via PR #69** (all four CI checks green — Build and verify, Trivy, compose-smoke, gitleaks — see "CI fixes"
+below). **KH-2.8.2-BE (idempotency, D5–D7) was NOT started.**
+
+**Sign-offs (Majd, 2026-09-27).** (1) Live `[MAJD]` round on the local compose stack, done: demo script run end to
+end, **the wallet scanned the claim code and the credential showed**, issuer correct. Getting there needed one
+local-environment fix unrelated to this code: the default tenant's active VAULT signing key (`key-2`) had vanished
+with the in-memory dev Vault, so issuing returned `KH-KEY-0503` until the key was rotated (`key-3`, TOTP-verified
+admin session). (2) The universal `holderRef` rule and the central issuer-client `SecurityConfig` rule reviewed
+and accepted. (3) The 8 new Arabic message keys reviewed — approved as written, no wording changes.
+**The compose stack itself booted live for the first time here** (V18 applied to the existing local DB, KV v2
+mounted by `khatm-vault-init`, the demo client seeded, and the holder secret in Vault KV read back byte-identical
+to the value the seeder printed).
+
+**Console follow-up — REQUIRED before the platform release containing this PR is deployed (decision C).** The
+universal 64-hex `holderRef` rule breaks the console's attested single-issue form and its bulk `pseudoRef` column
+(details under Lessons). This is a separate session **in the khatm-console repo** — brief drafted as
+`SESSION-C13a-holderref-contract.md` (scope: shared `holderRef` helper, attested form validation + EN/AR guidance,
+bulk column required/valid, `KH-ISS-0400` error mapping, contract re-vendor; explicitly NO in-browser HMAC and NO
+national-ID input). **Not started; nothing in khatm-console has been changed.** Deploy order: console C13a ships
+with (or before) the platform release; the platform must not be deployed to an environment whose console still
+sends free-form `holderRef`s. The console's `/clients` screen stays C13.
+
+**Still operator work (not done by this session):** staging Vault needs the KV v2 mount + re-applied policy before
+the first root-tenant issuer client is created there (steps in `docs/deploy-staging.md`, "KV v2 for the tenant holder
+secret"); until then that creation fails closed with `KH-ICL-0503`.
 
 **What shipped.** New Modulith module `issuerclient/` (`api`: `IssuerClientAuthenticator`,
 `IssuerClientPrincipal`, `IssuerClientSchemaAccess`; `domain`: entity, argon2id-hashed once-shown
@@ -87,8 +110,9 @@ reachability-based `.trivyignore` entries (BC only generates the self-signed PKC
 path validation, no untrusted ASN.1 parsing). CVE-2026-13506 was triaged from its advisory title only — re-check.
 **Open:** before any future BC bump, make `SoftKeyProvider`'s certificate subject independent of the kid length.
 
-**Next:** review + `[MAJD]` live round → merge → KH-2.8.2-BE (D5–D7 idempotency; also decides the
-claim-code delivery shape above) → C13 console screen.
+**Next:** console **C13a** (holderRef contract — required before deploying this) → KH-2.8.2-BE (D5–D7 idempotency;
+also decides the claim-code delivery shape above) → C13 console clients screen → staging KV operator steps at
+deploy time.
 
 ## Current phase / task
 **fix/role-grant-ceiling — DONE & MERGED via PR #68**
