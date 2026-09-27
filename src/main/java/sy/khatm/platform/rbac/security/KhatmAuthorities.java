@@ -30,6 +30,7 @@ final class KhatmAuthorities {
   static final String ACTOR_USER = "ACTOR_USER";
   static final String ACTOR_API_KEY_TENANT = "ACTOR_API_KEY_TENANT";
   static final String ACTOR_API_KEY_CONSUMING_PARTY = "ACTOR_API_KEY_CONSUMING_PARTY";
+  static final String ACTOR_API_KEY_ISSUER_CLIENT = "ACTOR_API_KEY_ISSUER_CLIENT";
 
   static Collection<GrantedAuthority> build(CurrentActor.ActorKind kind, Set<String> scopes) {
     Collection<GrantedAuthority> authorities = new ArrayList<>(scopes.size() + 1);
@@ -45,6 +46,7 @@ final class KhatmAuthorities {
       case USER -> ACTOR_USER;
       case API_KEY_TENANT -> ACTOR_API_KEY_TENANT;
       case API_KEY_CONSUMING_PARTY -> ACTOR_API_KEY_CONSUMING_PARTY;
+      case API_KEY_ISSUER_CLIENT -> ACTOR_API_KEY_ISSUER_CLIENT;
     };
   }
 }

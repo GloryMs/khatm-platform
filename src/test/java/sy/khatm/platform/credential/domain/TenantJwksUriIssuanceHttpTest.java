@@ -57,7 +57,14 @@ class TenantJwksUriIssuanceHttpTest extends RbacHttpTestSupport {
     TenantContext.set(tenantId, tenantSlug);
     try {
       return credentialService.issue(
-          new IssueRequest("GenericDocument/v1", "jwks-e2e-holder", 1, 60, Map.of(), null, null));
+          new IssueRequest(
+              "GenericDocument/v1",
+              "ff25862c33952e58f3ed65a868e0a41fadc3d9c140f493dc817af43c55766429",
+              1,
+              60,
+              Map.of(),
+              null,
+              null));
     } finally {
       TenantContext.clear();
     }
@@ -80,7 +87,13 @@ class TenantJwksUriIssuanceHttpTest extends RbacHttpTestSupport {
     IssueResponse issued =
         credentialService.issue(
             new IssueRequest(
-                "GenericDocument/v1", "jwks-default-holder", 1, 60, Map.of(), null, null));
+                "GenericDocument/v1",
+                "0c8c62f9e919e9e036b4e44bbe59292c3bfac8c2228ac9ed37a3b4a78d4c40f3",
+                1,
+                60,
+                Map.of(),
+                null,
+                null));
 
     String compactJwt = SDJWT.parse(issued.sdJwt()).getCredentialJwt();
     JWTClaimsSet claims = SignedJWT.parse(compactJwt).getJWTClaimsSet();

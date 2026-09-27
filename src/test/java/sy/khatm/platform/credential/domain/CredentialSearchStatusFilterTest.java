@@ -19,6 +19,7 @@ import sy.khatm.platform.credential.api.IssueResponse;
 import sy.khatm.platform.schema.api.SchemaCatalog;
 import sy.khatm.platform.schema.api.SchemaSummary;
 import sy.khatm.platform.shared.error.ValidationException;
+import sy.khatm.platform.support.HolderRefs;
 import sy.khatm.platform.support.IntegrationTestSupport;
 
 /**
@@ -190,7 +191,14 @@ class CredentialSearchStatusFilterTest extends IntegrationTestSupport {
 
   private IssueResponse issue(String schemaCode, String holderRef) {
     return credentialService.issue(
-        new IssueRequest(schemaCode, holderRef, 1, 60, Map.of("field", "value"), List.of(), null));
+        new IssueRequest(
+            schemaCode,
+            HolderRefs.of(holderRef),
+            1,
+            60,
+            Map.of("field", "value"),
+            List.of(),
+            null));
   }
 
   /**

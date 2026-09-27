@@ -33,6 +33,7 @@ import sy.khatm.platform.rbac.persistence.RoleRepository;
 import sy.khatm.platform.shared.LocalizedText;
 import sy.khatm.platform.shared.TenantContext;
 import sy.khatm.platform.shared.Uuidv7;
+import sy.khatm.platform.support.HolderRefs;
 
 /**
  * Spec FS-1.3 DoD #3 / FS-2.1 D8 — {@code GET /sl/{tenantSlug}/{listCode}} at the HTTP level:
@@ -137,7 +138,7 @@ class StatusListControllerHttpTest extends RbacHttpTestSupport {
             "schemaCode",
             "StatusListHttpProbe/v1",
             "holderRef",
-            "holder-status-http-" + UUID.randomUUID(),
+            HolderRefs.unique("holder-status-http-"),
             "claims",
             Map.of("field", "value"));
     HttpHeaders headers = new HttpHeaders();

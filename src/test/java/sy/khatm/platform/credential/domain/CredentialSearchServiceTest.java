@@ -13,6 +13,7 @@ import sy.khatm.platform.credential.api.IssueRequest;
 import sy.khatm.platform.credential.api.IssueResponse;
 import sy.khatm.platform.schema.api.SchemaCatalog;
 import sy.khatm.platform.schema.api.SchemaSummary;
+import sy.khatm.platform.support.HolderRefs;
 import sy.khatm.platform.support.IntegrationTestSupport;
 
 /**
@@ -27,7 +28,7 @@ class CredentialSearchServiceTest extends IntegrationTestSupport {
 
   @Test
   void search_byRef_returnsExactMatch() {
-    IssueResponse issued = issue("SearchByRef/v1", "holder-search-ref");
+    IssueResponse issued = issue("SearchByRef/v1", HolderRefs.of("holder-search-ref"));
 
     CredentialPage page =
         credentialService.search(issued.ref(), null, null, null, null, null, null);
@@ -48,9 +49,9 @@ class CredentialSearchServiceTest extends IntegrationTestSupport {
 
   @Test
   void search_byPseudoRef_returnsOnlyThatHoldersCredentials() {
-    String pseudoRef = "holder-search-pseudo-" + UUID.randomUUID();
+    String pseudoRef = HolderRefs.unique("holder-search-pseudo-");
     IssueResponse issued = issue("SearchByPseudoRef/v1", pseudoRef);
-    issue("SearchByPseudoRefOther/v1", "holder-search-pseudo-other-" + UUID.randomUUID());
+    issue("SearchByPseudoRefOther/v1", HolderRefs.unique("holder-search-pseudo-other-"));
 
     CredentialPage page = credentialService.search(null, pseudoRef, null, null, null, null, null);
 
@@ -59,8 +60,8 @@ class CredentialSearchServiceTest extends IntegrationTestSupport {
 
   @Test
   void search_bySchemaId_filtersToThatSchemaOnly() {
-    IssueResponse issued = issue("SearchBySchemaId/v1", "holder-search-schema");
-    issue("SearchBySchemaIdOther/v1", "holder-search-schema-other");
+    IssueResponse issued = issue("SearchBySchemaId/v1", HolderRefs.of("holder-search-schema"));
+    issue("SearchBySchemaIdOther/v1", HolderRefs.of("holder-search-schema-other"));
     UUID schemaId = schemaIdFor("SearchBySchemaId/v1");
 
     CredentialPage page = credentialService.search(null, null, schemaId, null, null, null, null);
@@ -71,9 +72,9 @@ class CredentialSearchServiceTest extends IntegrationTestSupport {
 
   @Test
   void search_byRevoked_filtersOutActiveCredentials() {
-    IssueResponse issued = issue("SearchByRevoked/v1", "holder-search-revoked");
+    IssueResponse issued = issue("SearchByRevoked/v1", HolderRefs.of("holder-search-revoked"));
     credentialService.revoke(UUID.fromString(issued.id()));
-    issue("SearchByRevokedOther/v1", "holder-search-revoked-other");
+    issue("SearchByRevokedOther/v1", HolderRefs.of("holder-search-revoked-other"));
 
     CredentialPage revokedOnly =
         credentialService.search(null, null, null, Boolean.TRUE, null, null, null);
@@ -99,7 +100,7 @@ class CredentialSearchServiceTest extends IntegrationTestSupport {
 
   @Test
   void search_sortsByIssuedAtDescending() {
-    String pseudoRef = "holder-search-order-" + UUID.randomUUID();
+    String pseudoRef = HolderRefs.unique("holder-search-order-");
     IssueResponse first = issue("SearchOrderFirst/v1", pseudoRef);
     IssueResponse second = issue("SearchOrderSecond/v1", pseudoRef);
 

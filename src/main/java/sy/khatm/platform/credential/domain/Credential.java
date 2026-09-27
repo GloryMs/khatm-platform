@@ -75,11 +75,27 @@ public class Credential {
   @Column(name = "issued_by")
   private UUID issuedBy;
 
+  /**
+   * The machine issuer client that issued this credential (KH-2.8.1, spec FS-2.7a D6); {@code null}
+   * for console-session issuance. A plain column — this module never reads the {@code
+   * issuer_client} table.
+   */
+  @Column(name = "issuer_client_id")
+  private UUID issuerClientId;
+
   @Column(name = "created_at", nullable = false)
   private Instant createdAt;
 
   // Accessors — public so sub-packages within this module can read/write them.
   // Modulith enforces that external modules cannot import this class at all.
+
+  public UUID getIssuerClientId() {
+    return issuerClientId;
+  }
+
+  public void setIssuerClientId(UUID issuerClientId) {
+    this.issuerClientId = issuerClientId;
+  }
 
   public UUID getId() {
     return id;

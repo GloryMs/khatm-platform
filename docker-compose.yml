@@ -71,7 +71,13 @@ services:
     environment:
       VAULT_ADDR: http://khatm-vault:8200
       VAULT_TOKEN: ${KHATM_KEYS_VAULT_TOKEN:-khatm-vault-dev-root-token-change-me}
-    entrypoint: ["sh", "-c", "vault secrets enable transit || true"]
+    # KH-2.8.1 (spec FS-2.7a D9/V3): also mounts KV v2 at khatm/ — where the tenant-level holder
+    # HMAC secret lives (khatm/data/tenants/<root-slug>/holder-hmac). Both idempotent.
+    entrypoint:
+      - "sh"
+      - "-c"
+      - "vault secrets enable transit || true; vault secrets enable -path=khatm kv-v2 || true"
+
     networks: [khatm-net]
 
   khatm-api:

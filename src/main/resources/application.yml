@@ -182,6 +182,26 @@ khatm:
     claim-code:
       # FS-0.2 §3.7 expiry-zeroing sweep interval. Default 300000 ms = 5 minutes (task step 5a).
       expiry-sweep-ms: 300000
+    issuer-client:
+      # KH-2.8.1 (spec FS-2.7a D10): how often RetiringSweeper revokes issuer clients whose
+      # rotation grace window (retire_after) has ended. Authentication already refuses them on its
+      # own the instant the window passes — this only makes the stored status agree.
+      retire-sweep-ms: 60000
+  issuance:
+    # KH-2.8.1 (spec FS-2.7a D8): top-level claim names rejected at issuance (KH-ISS-0400),
+    # case-insensitive, for EVERY issuance path. A cheap net against a connector that would push a
+    # national identifier into the platform ("National ID never enters Khatm").
+    forbidden-claim-names: nationalId,nid,national_id,ssn,passportNo
+  issuer:
+    rotation:
+      # Spec FS-2.7a D10/V4: grace window a rotated-out client keeps working for, and its ceiling.
+      default-retire-hours: 24
+      max-retire-hours: 72
+    holder-secret:
+      # Spec FS-2.7a D9: Vault KV v2 location of the tenant-level holder HMAC secret, as
+      # "<mount>/<path>" -> <mount>/data/<path>/<root-slug>/holder-hmac. Reuses khatm.keys.vault.*
+      # for address/token; only written when khatm.keys.vault.enabled=true.
+      kv-path: khatm/tenants
   status:
     publish:
       # KH-1.3 (spec FS-1.3 D5/§3): periodic catch-up sweep interval — republishes any status list

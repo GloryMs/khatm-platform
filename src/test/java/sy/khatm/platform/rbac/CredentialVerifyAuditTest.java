@@ -18,6 +18,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import sy.khatm.platform.rbac.domain.ApiKeyOwnerType;
 import sy.khatm.platform.rbac.domain.ApiKeyService;
 import sy.khatm.platform.rbac.domain.CreatedApiKey;
+import sy.khatm.platform.support.HolderRefs;
 
 /**
  * KH-1.1.3 D6 — {@code POST /api/v1/credentials/verify} records {@code CREDENTIAL_VERIFY_OK}/{@code
@@ -80,7 +81,7 @@ class CredentialVerifyAuditTest extends RbacHttpTestSupport {
             "schemaCode",
             "VerifyAuditProbe/v1",
             "holderRef",
-            "holder-verify-audit-" + UUID.randomUUID(),
+            HolderRefs.unique("holder-verify-audit-"),
             "claims",
             Map.of("secretValue", secretValue));
     HttpHeaders headers = new HttpHeaders();

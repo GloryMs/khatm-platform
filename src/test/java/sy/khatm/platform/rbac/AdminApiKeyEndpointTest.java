@@ -19,6 +19,7 @@ import sy.khatm.platform.rbac.domain.ApiKeyOwnerType;
 import sy.khatm.platform.rbac.domain.ApiKeyService;
 import sy.khatm.platform.rbac.domain.CreatedApiKey;
 import sy.khatm.platform.shared.TenantContext;
+import sy.khatm.platform.support.HolderRefs;
 import sy.khatm.platform.tenant.api.TenantAdmin;
 import sy.khatm.platform.tenant.api.TenantView;
 
@@ -242,7 +243,7 @@ class AdminApiKeyEndpointTest extends RbacHttpTestSupport {
   private ResponseEntity<String> issueWith(String rawKey) {
     HttpHeaders headers = new HttpHeaders();
     headers.set(HttpHeaders.AUTHORIZATION, "Bearer " + rawKey);
-    Map<String, Object> body = Map.of("holderRef", "holder-admin-key-probe");
+    Map<String, Object> body = Map.of("holderRef", HolderRefs.of("holder-admin-key-probe"));
     return rest.exchange(
         "/api/v1/credentials/issue",
         HttpMethod.POST,

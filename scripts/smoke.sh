@@ -26,6 +26,9 @@ BASE_URL="${BASE_URL:-http://localhost:8080}"
 ADMIN_USER="${KHATM_BOOTSTRAP_ADMIN_USERNAME:-admin}"
 ADMIN_PASS="${KHATM_BOOTSTRAP_ADMIN_PASSWORD:-khatm-local-dev-admin-change-me}"
 SCHEMA_CODE="${SCHEMA_CODE:-CriminalRecordExtract/v1}"
+# KH-2.8.1 (spec FS-2.7a D8): every issuance path requires holderRef to be 64 lowercase hex chars
+# (the shape of a SHA-256 HMAC). A fresh, deterministic-per-run value derived from this shell's PID.
+SMOKE_HOLDER_REF="$(printf 'smoke-%s' "$$" | sha256sum | cut -d' ' -f1)"
 
 COOKIE_JAR="$(mktemp)"
 trap 'rm -f "$COOKIE_JAR"' EXIT
@@ -140,7 +143,7 @@ check_e2e() {
     -c "$COOKIE_JAR" -b "$COOKIE_JAR" \
     -H 'Content-Type: application/json' \
     -H "X-XSRF-TOKEN: $xsrf" \
-    -d '{"schemaCode":"'"$SCHEMA_CODE"'","holderRef":"smoke-'"$$"'","maxUses":1,"validMinutes":60,"claims":{"result":"NO_RECORD","caseNumber":"SMOKE-001","issuedAt":"2026-07-17"},"sdFields":["caseNumber","issuedAt"]}' \
+    -d '{"schemaCode":"'"$SCHEMA_CODE"'","holderRef":"'"$SMOKE_HOLDER_REF"'","maxUses":1,"validMinutes":60,"claims":{"result":"NO_RECORD","caseNumber":"SMOKE-001","issuedAt":"2026-07-17"},"sdFields":["caseNumber","issuedAt"]}' \
     "$BASE_URL/api/v1/credentials/issue")"
 
   local sdjwt

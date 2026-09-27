@@ -476,7 +476,51 @@ public enum ErrorCode {
    * child of the calling {@code org:admin}'s own tenant — deliberately one code for both (see this
    * enum's own class Javadoc, {@code ORG} batch).
    */
-  KH_ORG_0404(HttpStatus.NOT_FOUND, "org.child-not-found");
+  KH_ORG_0404(HttpStatus.NOT_FOUND, "org.child-not-found"),
+
+  /**
+   * A {@code Bearer khi_...} issuer-client key is missing, malformed, unknown, wrong, expired,
+   * retired, suspended, or revoked (KH-2.8.1, spec FS-2.7a D12). One external body for every flavor
+   * (anti-enumeration): the real reason lives only in the {@code ISSUER_CLIENT_AUTH_FAILED} audit
+   * row's {@code detail.reason}, never in the response.
+   */
+  KH_AUTH_0401(HttpStatus.UNAUTHORIZED, "error.auth.unauthenticated"),
+
+  /**
+   * A valid issuer-client principal called a route outside its allowlist (KH-2.8.1, spec FS-2.7a
+   * D4): only issuance and reading its own credentials are permitted, everything else is denied.
+   */
+  KH_AUTH_0403(HttpStatus.FORBIDDEN, "error.auth.scope-denied"),
+
+  /**
+   * Registry-only (spec FS-2.7a D12): an issuer client that authenticated with the right secret but
+   * is suspended or revoked. Never returned as such — the external response is {@link
+   * #KH_AUTH_0401}'s body verbatim so status cannot be enumerated; this code is what the audit row
+   * records internally.
+   */
+  KH_ICL_0409(HttpStatus.CONFLICT, "error.icl.unavailable"),
+
+  /** An issuer-client admin request failed a business check (schema ids, retire window, name). */
+  KH_ICL_0400(HttpStatus.BAD_REQUEST, "issuer-client.validation-failed"),
+
+  /** A requested issuer client does not exist in the current tenant. */
+  KH_ICL_0404(HttpStatus.NOT_FOUND, "issuer-client.not-found"),
+
+  /** The requested lifecycle transition is not legal from the client's current status. */
+  KH_ICL_1409(HttpStatus.CONFLICT, "issuer-client.invalid-transition"),
+
+  /**
+   * The tenant-level holder HMAC secret could not be written to Vault KV (unreachable or denied).
+   * Fail-closed: the client is not created, so a secret can never be generated and lost.
+   */
+  KH_ICL_0503(HttpStatus.SERVICE_UNAVAILABLE, "issuer-client.holder-secret-unavailable"),
+
+  /**
+   * An issuance request violated the connector contract (spec FS-2.7a D8): a {@code holderRef} that
+   * is not 64 lowercase hex characters, or a top-level claim named like a national identifier.
+   * Applies to every issuance path, console sessions included.
+   */
+  KH_ISS_0400(HttpStatus.BAD_REQUEST, "issuance.validation-failed");
 
   private final HttpStatus httpStatus;
   private final String messageKey;

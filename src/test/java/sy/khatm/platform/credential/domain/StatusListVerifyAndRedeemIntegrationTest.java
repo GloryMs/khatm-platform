@@ -30,7 +30,7 @@ class StatusListVerifyAndRedeemIntegrationTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "StatusVerify/v1",
-                "holder-status-verify",
+                "c2018913c53d42d03b60317b7ec1a82a3eafe9ae74e8688347939b479a10da2a",
                 1,
                 60,
                 Map.of("field", "value"),
@@ -51,7 +51,7 @@ class StatusListVerifyAndRedeemIntegrationTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "StatusVerifyRevoked/v1",
-                "holder-status-verify-revoked",
+                "aa2e6523a02b3e83fba2be4101aedafd5a84ceab8f0f20e5444dd41385fde5c4",
                 1,
                 60,
                 Map.of("field", "value"),
@@ -85,7 +85,7 @@ class StatusListVerifyAndRedeemIntegrationTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "StatusRedeem/v1",
-                "holder-status-redeem",
+                "bd8114ab610b1f24caebbb4677c537df5c3aa4ee6b6d21a1f3ca079066c83243",
                 1,
                 60,
                 Map.of("field", "value"),
@@ -114,7 +114,7 @@ class StatusListVerifyAndRedeemIntegrationTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "StatusIssueEmbed/v1",
-                "holder-status-issue-embed",
+                "b26b2258d7ca8c38db2b3e338963b43462ef9eadb7dc4364c244ceac53081419",
                 1,
                 60,
                 Map.of("field", "value"),

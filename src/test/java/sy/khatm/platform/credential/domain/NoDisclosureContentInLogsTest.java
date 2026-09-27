@@ -64,7 +64,14 @@ class NoDisclosureContentInLogsTest extends IntegrationTestSupport {
 
     IssueResponse issued =
         credentialService.issue(
-            new IssueRequest("LogProbe/v1", "holder-log-probe", 1, 60, claims, List.of(), null));
+            new IssueRequest(
+                "LogProbe/v1",
+                "6812e6986fbd47479690d96ca64a331d34e15dd25f249d19c694e9bba524db67",
+                1,
+                60,
+                claims,
+                List.of(),
+                null));
     credentialService.verify(issued.sdJwt());
     credentialService.issueClaimCode(
         UUID.fromString(issued.id()), issued.sdJwt(), Duration.ofMinutes(5));
@@ -97,7 +104,13 @@ class NoDisclosureContentInLogsTest extends IntegrationTestSupport {
     IssueResponse issued =
         credentialService.issue(
             new IssueRequest(
-                "SweepLogProbe/v1", "holder-sweep-log", 1, 60, claims, List.of(), null));
+                "SweepLogProbe/v1",
+                "7e9865842b3423b158a5d7af369bf3028753af58052f50c16ac87a4461306196",
+                1,
+                60,
+                claims,
+                List.of(),
+                null));
     credentialService.issueClaimCode(
         UUID.fromString(issued.id()), issued.sdJwt(), Duration.ofMinutes(5));
     List<String> saltsUsed =
@@ -141,7 +154,13 @@ class NoDisclosureContentInLogsTest extends IntegrationTestSupport {
     IssueResponse issued =
         credentialService.issue(
             new IssueRequest(
-                "RedeemLogProbe/v1", "holder-redeem-log-probe", 1, 60, claims, List.of(), null));
+                "RedeemLogProbe/v1",
+                "d8f78083383f5b13a68ba7d4dd7cf49221964c7e350e8d9a2441285de684371f",
+                1,
+                60,
+                claims,
+                List.of(),
+                null));
     ClaimCodeIssued claimCode =
         credentialService.issueClaimCode(
             UUID.fromString(issued.id()), issued.sdJwt(), Duration.ofMinutes(5));
@@ -176,7 +195,13 @@ class NoDisclosureContentInLogsTest extends IntegrationTestSupport {
     IssueResponse issued =
         credentialService.issue(
             new IssueRequest(
-                "MintLogProbe/v1", "holder-mint-log-probe", 1, 60, claims, List.of(), null));
+                "MintLogProbe/v1",
+                "5f689a0c4d83a3f1f08ed01564e9ecd2005894f9163269eb16edd2b9f7aa7c34",
+                1,
+                60,
+                claims,
+                List.of(),
+                null));
 
     List<String> saltsUsed =
         SDJWT.parse(issued.sdJwt()).getDisclosures().stream()

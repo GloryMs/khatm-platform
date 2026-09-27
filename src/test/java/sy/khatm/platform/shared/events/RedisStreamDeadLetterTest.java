@@ -10,7 +10,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -30,6 +29,7 @@ import sy.khatm.platform.credential.api.IssueRequest;
 import sy.khatm.platform.credential.api.IssueResponse;
 import sy.khatm.platform.credential.domain.CredentialService;
 import sy.khatm.platform.credential.events.CredentialIssued;
+import sy.khatm.platform.support.HolderRefs;
 
 /**
  * Task step 7c — a handler that always fails is retried up to {@code maxAttempts} (default 3); the
@@ -97,7 +97,7 @@ class RedisStreamDeadLetterTest {
         credentialService.issue(
             new IssueRequest(
                 "WorkerDlq/v1",
-                "holder-dlq-" + UUID.randomUUID(),
+                HolderRefs.unique("holder-dlq-"),
                 1,
                 60,
                 Map.of("result", "NO_RECORD"),

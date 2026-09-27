@@ -51,7 +51,7 @@ class IssuanceSchemaVersionPinTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 code,
-                "holder-schema-pin-v2",
+                "8a41d6b6debf8a778956327b93e8888a97117dee30dfb03724cbf10a2bfcc8cd",
                 1,
                 60,
                 Map.of("test_field", "123456789"),
@@ -80,7 +80,7 @@ class IssuanceSchemaVersionPinTest extends IntegrationTestSupport {
                 credentialService.issue(
                     new IssueRequest(
                         code,
-                        "holder-schema-pin-reject",
+                        "d90d97738823ecd99f121a21e4739ef582bc5e6d504f8a03195f6fea1b713eb6",
                         1,
                         60,
                         Map.of("test_field", "0123456789"),
@@ -102,7 +102,7 @@ class IssuanceSchemaVersionPinTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 code,
-                "holder-schema-pin-default",
+                "144b39f2d83fe1eefca385063ebb170236e6602141542651d57a0d673ab77a28",
                 1,
                 60,
                 Map.of("test_field", "5"),
@@ -124,7 +124,7 @@ class IssuanceSchemaVersionPinTest extends IntegrationTestSupport {
                 credentialService.issue(
                     new IssueRequest(
                         null,
-                        "holder-schema-pin-draft",
+                        "a7b2ae143690cd6ed837e8160c1af76107794016fcf9ca1d591c4c9953504b29",
                         1,
                         60,
                         Map.of("test_field", "5"),
@@ -141,7 +141,7 @@ class IssuanceSchemaVersionPinTest extends IntegrationTestSupport {
                 credentialService.issue(
                     new IssueRequest(
                         null,
-                        "holder-schema-pin-unknown",
+                        "3e031f005c988f559e1defd7143dceb99174469cebb223830c128689ef73b17c",
                         1,
                         60,
                         Map.of("test_field", "5"),

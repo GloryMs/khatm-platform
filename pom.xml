@@ -39,11 +39,17 @@
     <!-- KH-1.1.3-BE PR #29 CI (2026-07-22): CVE-2026-54291, HIGH — SCRAM-SHA-256-PLUS downgrade
          MITM bypass. Patch-level bump, same minor line (42.7.x). -->
     <postgresql.version>42.7.12</postgresql.version>
-    <tomcat.version>10.1.55</tomcat.version>
+    <!-- PR #69 CI (2026-09-24): CVE-2026-65182 / -65905 / -68525 (+1), CRITICAL — Tomcat security
+         constraint / authentication bypass advisories. Patch-level bump, same minor line (10.1.x);
+         Trivy named 10.1.58 as the fix, but that release was never published to Maven Central, so
+         10.1.59 (the next release) is the lowest usable fixed version. -->
+    <tomcat.version>10.1.59</tomcat.version>
     <!-- chore/public-base-url PR #31 CI (2026-07-23): CVE-2026-59901, HIGH — netty-codec Bzip2Decoder
          infinite loop in its RLE state machine (event-loop thread DoS). Patch-level bump, same
          minor line (4.1.13x.Final). -->
-    <netty.version>4.1.136.Final</netty.version>
+    <!-- PR #69 CI (2026-09-24): CVE-2026-75595, CRITICAL — netty-handler SNI routing bypass.
+         4.1.137.Final is the fixed release in the same 4.1.x line. -->
+    <netty.version>4.1.137.Final</netty.version>
     <!-- KH-1.1.3-BE PR #29 CI (2026-07-22): GHSA-r7wm-3cxj-wff9, HIGH — jackson-core async parser
          maxNumberLength bypass (incomplete prior fix). 2.18.8 is the lowest fixed version Trivy
          reports; overriding jackson-bom.version (Boot's own recognized property for the whole
@@ -171,6 +177,14 @@
     <dependency>
       <groupId>org.bouncycastle</groupId>
       <artifactId>bcpkix-jdk18on</artifactId>
+      <!-- PR #69 CI (2026-09-24): CVE-2026-8763 / CVE-2026-13506 are fixed in 1.85, but 1.85 was
+           TRIED and rejected: it enforces RFC 5280 ub-common-name (64 chars) and SoftKeyProvider
+           builds `CN=<kid>` with kid = `<tenant-slug>:key-N`, so a tenant slug of 58+ characters
+           (slugs may be up to 63) could no longer get a signing key. Four existing tests failed with
+           "commonName length 68 exceeds RFC 5280 ub-common-name (64)". Held at 1.78.1; both CVEs are
+           allowlisted in .trivyignore on reachability grounds. A future BC bump must first make
+           SoftKeyProvider's certificate subject independent of the kid length. Keep bcpkix and
+           bcprov on the SAME version. -->
       <version>1.78.1</version>
     </dependency>
 

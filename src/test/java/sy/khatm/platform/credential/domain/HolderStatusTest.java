@@ -29,7 +29,7 @@ class HolderStatusTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "HolderStatusActive/v1",
-                "holder-status-active",
+                "97460b064acf1d2bc421b276fff2e7928a3ea189807e1f53c464ff28f64181b1",
                 2,
                 60,
                 Map.of("field", "value"),
@@ -50,7 +50,7 @@ class HolderStatusTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "HolderStatusExhausted/v1",
-                "holder-status-exhausted",
+                "12e5b1aaad96785ad83e7eced0df1f6a5e18cebb9724cf2bde6c7379adae78c5",
                 1,
                 60,
                 Map.of("field", "value"),
@@ -71,7 +71,7 @@ class HolderStatusTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "HolderStatusRevoked/v1",
-                "holder-status-revoked",
+                "5ddbbbc061cc7288fedfb7391b6705a65ae1e6964611108c666ef18fec8ae335",
                 3,
                 60,
                 Map.of("field", "value"),
@@ -97,7 +97,7 @@ class HolderStatusTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "HolderStatusTampered/v1",
-                "holder-status-tampered",
+                "ef79be9d98953f2e40ee67c1be91bbc1497f3994a55f7560f660b8efde08cdbc",
                 1,
                 60,
                 Map.of("field", "value"),

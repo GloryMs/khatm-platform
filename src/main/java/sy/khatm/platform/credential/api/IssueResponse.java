@@ -14,6 +14,18 @@ import io.swagger.v3.oas.annotations.media.Schema;
  * @param ref human-readable reference (e.g. {@code CRE-2026-482917}); stable across re-issues
  * @param sdJwt the full SD-JWT presentation: {@code
  *     <compact-jwt>~<disclosure_1>~..~<disclosure_n>~}
+ * @param claimed whether the holder's wallet has already claimed this credential (spec FS-2.7a
+ *     §3.1). Always {@code false} on a fresh issuance; the replay semantics that make it meaningful
+ *     arrive with KH-2.8.2.
+ * @param issuerClientId the machine issuer client that issued this credential (KH-2.8.1); {@code
+ *     null} when a console session issued it
  */
 @Schema(name = "IssueResponse", description = "Result of a successful SD-JWT credential issuance")
-public record IssueResponse(String id, String ref, String sdJwt) {}
+public record IssueResponse(
+    String id, String ref, String sdJwt, boolean claimed, String issuerClientId) {
+
+  /** A console-issued, not-yet-claimed credential — the shape every pre-KH-2.8.1 caller means. */
+  public IssueResponse(String id, String ref, String sdJwt) {
+    this(id, ref, sdJwt, false, null);
+  }
+}

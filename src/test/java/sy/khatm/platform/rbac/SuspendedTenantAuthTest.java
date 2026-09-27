@@ -17,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import sy.khatm.platform.rbac.SessionTestSupport.AuthenticatedSession;
 import sy.khatm.platform.rbac.domain.ApiKeyService;
 import sy.khatm.platform.shared.TenantContext;
+import sy.khatm.platform.support.HolderRefs;
 import sy.khatm.platform.tenant.api.TenantAdmin;
 
 /**
@@ -108,7 +109,7 @@ class SuspendedTenantAuthTest extends RbacHttpTestSupport {
             "schemaCode",
             "SuspendedTenantProbe/v1",
             "holderRef",
-            "holder-" + UUID.randomUUID(),
+            HolderRefs.unique("holder-"),
             "claims",
             Map.of("field", "value"));
     return rest.exchange(

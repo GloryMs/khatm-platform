@@ -57,7 +57,8 @@ class DemoSeeder implements CommandLineRunner {
           service.issue(
               new IssueRequest(
                   "CriminalRecordExtract/v1",
-                  "holder-demo-001",
+                  // A fixed demo value in the 64-hex connector-contract shape (spec FS-2.7a D8).
+                  "3b1c0f5d2a6e4b8c9d7f1e0a2b4c6d8e0f1a3b5c7d9e1f2a4b6c8d0e2f4a6b8c",
                   1,
                   60,
                   claims,

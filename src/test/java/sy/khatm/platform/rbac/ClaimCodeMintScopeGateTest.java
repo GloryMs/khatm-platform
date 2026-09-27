@@ -29,6 +29,7 @@ import sy.khatm.platform.rbac.persistence.RoleRepository;
 import sy.khatm.platform.shared.LocalizedText;
 import sy.khatm.platform.shared.TenantContext;
 import sy.khatm.platform.shared.Uuidv7;
+import sy.khatm.platform.support.HolderRefs;
 
 /**
  * KH-1.2.2 — {@code POST /api/v1/credentials/{id}/claim-code} reuses {@code /issue}'s exact scope
@@ -124,7 +125,7 @@ class ClaimCodeMintScopeGateTest extends RbacHttpTestSupport {
             "schemaCode",
             "MintGateProbe/v1",
             "holderRef",
-            "holder-mint-gate-" + UUID.randomUUID(),
+            HolderRefs.unique("holder-mint-gate-"),
             "claims",
             Map.of("field", "value"));
     HttpHeaders headers = new HttpHeaders();

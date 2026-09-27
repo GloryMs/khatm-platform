@@ -27,6 +27,7 @@ import sy.khatm.platform.schema.api.SchemaCatalog;
 import sy.khatm.platform.schema.api.SchemaDefinition;
 import sy.khatm.platform.schema.api.SchemaRef;
 import sy.khatm.platform.shared.LocalizedText;
+import sy.khatm.platform.support.HolderRefs;
 
 /**
  * Spec FS-0.6b DoD #4 — {@code /consume} works with a valid {@code CONSUMING_PARTY} API key and
@@ -280,7 +281,7 @@ class ConsumeApiKeyGateTest extends RbacHttpTestSupport {
             "schemaCode",
             schemaCode,
             "holderRef",
-            "holder-consume-gate-" + UUID.randomUUID(),
+            HolderRefs.unique("holder-consume-gate-"),
             "claims",
             Map.of("field", "value"));
     HttpHeaders headers = new HttpHeaders();

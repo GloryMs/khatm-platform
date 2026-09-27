@@ -244,6 +244,34 @@ curl -s -X POST -H "X-Vault-Token: <app-token>" \
   $V/v1/transit/keys/<prefix>-<tenant>:key-<n+1> -d '{"type":"ecdsa-p256"}'
 ```
 
+### KV v2 for the tenant holder secret (KH-2.8.1, spec FS-2.7a D9/V3)
+
+The first issuer client of a **root** tenant generates a per-tenant holder HMAC secret and stores it
+at `khatm/data/tenants/<root-slug>/holder-hmac` (KV v2, mount `khatm/`). It is written once, with
+check-and-set (`cas: 0`), by the same app token; the platform never reads it back or uses it. On a
+Vault that predates this change, an operator (never the app) does, once:
+
+```bash
+# Mount KV v2 at khatm/ (204 on success; 400 "path is already in use" means it is already there)
+curl -s -X POST $V/v1/sys/mounts/khatm -H "X-Vault-Token: <root>" \
+  -d '{"type":"kv","options":{"version":"2"}}'
+
+# Re-apply the SAME policy file (it now also grants create/update/read on khatm/data/tenants/* and
+# read on khatm/metadata/tenants/*). Policies are resolved at request time, so the existing app token
+# picks the change up with no new token.
+python -c "import json; print(json.dumps({'policy': open('docker/vault-policy/khatm-transit-app.hcl').read()}))" > policy.json
+curl -s -X PUT $V/v1/sys/policies/acl/khatm-transit -H "X-Vault-Token: <root>" --data-binary @policy.json
+rm policy.json
+```
+
+Verified empirically (2026-09-24, Vault 1.17, token bound only to this policy): first `cas=0` write
+succeeds, a second one is rejected with `check-and-set parameter did not match the current version`
+(the platform reads that as "already provisioned"), reads work, and `delete`, `list`, and writes
+outside `khatm/data/tenants/*` are all `403`. Transit signing is unaffected. Until KV is mounted and
+`khatm.keys.vault.enabled=true`, creating a root tenant's first issuer client fails closed
+(`KH-ICL-0503`) rather than silently skipping the secret. Removing a holder secret is a manual Vault
+operation by design (the app has no `delete`).
+
 A `permission denied` here is a policy problem; a connection error is a networking problem.
 `VaultTransitProvider` maps both to the same `KH-KEY-0503`, so they are indistinguishable from
 the application error alone.

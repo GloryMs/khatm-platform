@@ -29,6 +29,7 @@ import sy.khatm.platform.credential.api.IssueRequest;
 import sy.khatm.platform.credential.api.IssueResponse;
 import sy.khatm.platform.credential.domain.CredentialService;
 import sy.khatm.platform.credential.events.CredentialIssued;
+import sy.khatm.platform.support.HolderRefs;
 
 /**
  * Task step 7a (outbox round-trip) and 7b (idempotency). A {@code CredentialIssued} event published
@@ -103,7 +104,7 @@ class RedisStreamWorkerTest {
         credentialService.issue(
             new IssueRequest(
                 "WorkerRoundTrip/v1",
-                "holder-roundtrip-" + UUID.randomUUID(),
+                HolderRefs.unique("holder-roundtrip-"),
                 1,
                 60,
                 Map.of("result", "NO_RECORD"),

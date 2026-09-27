@@ -39,7 +39,7 @@ class ClaimControllerHttpTest extends RbacHttpTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "RedeemHttpHappy/v1",
-                "holder-redeem-http-happy",
+                "c0cfcfc206151ab94496deeaba5eca58d2b983447734e99b8c05b45621c96e6d",
                 1,
                 60,
                 claims,
@@ -79,7 +79,7 @@ class ClaimControllerHttpTest extends RbacHttpTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "RedeemHttpTwice/v1",
-                "holder-redeem-http-twice",
+                "0fd148788b144fbdd2a6082d81b07924c0eff718a145613c43721405532bfc88",
                 1,
                 60,
                 Map.of("result", "X"),

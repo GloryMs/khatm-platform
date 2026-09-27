@@ -29,6 +29,9 @@ class KhatmAccessDeniedHandler implements AccessDeniedHandler {
       HttpServletResponse response,
       AccessDeniedException accessDeniedException)
       throws IOException {
-    envelopeWriter.write(request, response, ErrorCode.KH_RBC_0403);
+    // Spec FS-2.7a D4/D12: an issuer-client principal denied anywhere gets KH-AUTH-0403.
+    boolean issuerClient = ScopeGuard.isIssuerClientAuthenticated();
+    envelopeWriter.write(
+        request, response, issuerClient ? ErrorCode.KH_AUTH_0403 : ErrorCode.KH_RBC_0403);
   }
 }

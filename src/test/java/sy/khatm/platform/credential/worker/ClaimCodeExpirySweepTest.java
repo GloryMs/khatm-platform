@@ -25,6 +25,7 @@ import sy.khatm.platform.shared.SystemAccessExecutor;
 import sy.khatm.platform.shared.TenantContext;
 import sy.khatm.platform.shared.Uuidv7;
 import sy.khatm.platform.shared.audit.AuditService;
+import sy.khatm.platform.support.HolderRefs;
 import sy.khatm.platform.support.IntegrationTestSupport;
 
 /**
@@ -61,7 +62,7 @@ class ClaimCodeExpirySweepTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "Sweep/v1",
-                "holder-sweep-" + UUID.randomUUID(),
+                HolderRefs.unique("holder-sweep-"),
                 1,
                 60,
                 Map.of("result", "NO_RECORD"),
@@ -125,7 +126,7 @@ class ClaimCodeExpirySweepTest extends IntegrationTestSupport {
         credentialService.issue(
             new IssueRequest(
                 "SweepNone/v1",
-                "holder-sweep-none-" + UUID.randomUUID(),
+                HolderRefs.unique("holder-sweep-none-"),
                 1,
                 60,
                 Map.of("result", "NO_RECORD"),
